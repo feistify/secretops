@@ -1,0 +1,18 @@
+.env
+.env.*
+*.secret
+*.key
+*.pem
+*.token
+.audit/
+.plans/
+.secrets/
+__pycache__/
+.pytest_cache/
+.venv/
+dist/
+build/
+*.egg-info/
+
+# Local Infisical CLI project selection
+.infisical.json

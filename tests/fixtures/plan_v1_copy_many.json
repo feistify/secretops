@@ -1,0 +1,21 @@
+{
+  "action": "vault.secret.copy_many",
+  "contract_version": 1,
+  "create_mode": "create_only",
+  "env": "dev",
+  "plan_id": "fixture-copy-many",
+  "secret_mappings": [
+    {"source": "BACKUP_AWS_ACCESS_KEY_ID", "target": "BACKUP_AWS_ACCESS_KEY_ID"},
+    {"source": "BACKUP_S3_BUCKET", "target": "BACKUP_S3_BUCKET"}
+  ],
+  "secret_value_included": false,
+  "source_env": "dev",
+  "status": "planned",
+  "target_env": "staging",
+  "vault_destination": {
+    "backend": "infisical",
+    "domain": "https://vault.example.com/infisical",
+    "path": "/apps/ünïcode",
+    "project_id": "00000000-0000-4000-8000-000000000000"
+  }
+}

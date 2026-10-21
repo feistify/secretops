@@ -1,0 +1,90 @@
+allowed_actions:
+  - vault.read.plan
+  - vault.read.check
+  - vault.secret.generate
+  - vault.secret.rotate
+  - vault.secret.import_file
+  - vault.secret.copy_many
+  - vault.secret.diff_envs
+  - vault.secret.add
+  - github.env_secret.plan
+  - github.env_secret.write
+  - github.env_secret.sync_many
+  - github.env_secret.verify_many
+
+denied_actions:
+  - secret.reveal
+  - secret.export_all
+  - secret.print_value
+  - production.execute_without_approval
+
+actions:
+  vault.read.check:
+    requires_approval: false
+    allowed_environments:
+      - dev
+      - staging
+      - production
+    production_allowed: true
+  vault.secret.generate:
+    requires_approval: true
+    allowed_environments:
+      - dev
+      - staging
+    production_allowed: false
+  vault.secret.rotate:
+    requires_approval: true
+    allowed_environments:
+      - dev
+      - staging
+    production_allowed: false
+  vault.secret.copy_many:
+    requires_approval: true
+    allowed_environments:
+      - dev
+      - staging
+    production_allowed: false
+  vault.secret.diff_envs:
+    requires_approval: false
+    allowed_environments:
+      - dev
+      - staging
+      - production
+    production_allowed: true
+  vault.secret.import_file:
+    requires_approval: true
+    allowed_environments:
+      - dev
+      - staging
+    production_allowed: false
+  vault.secret.add:
+    requires_approval: true
+    allowed_environments:
+      - dev
+      - staging
+    production_allowed: false
+  github.env_secret.plan:
+    requires_approval: true
+    allowed_environments:
+      - dev
+      - staging
+    production_allowed: false
+  github.env_secret.write:
+    requires_approval: true
+    allowed_environments:
+      - dev
+      - staging
+    production_allowed: false
+  github.env_secret.sync_many:
+    requires_approval: true
+    allowed_environments:
+      - dev
+      - staging
+    production_allowed: false
+  github.env_secret.verify_many:
+    requires_approval: false
+    allowed_environments:
+      - dev
+      - staging
+      - production
+    production_allowed: true

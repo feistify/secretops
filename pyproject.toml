@@ -1,0 +1,47 @@
+[project]
+name = "secretops"
+version = "0.1.0"
+description = "A CLI-first broker for approved secret operations without exposing values to coding agents"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [
+    { name = "feist" }
+]
+requires-python = ">=3.11"
+keywords = ["secrets", "devops", "coding-agents", "cli"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Security",
+    "Topic :: System :: Systems Administration",
+]
+dependencies = [
+    "pydantic>=2.13.4",
+    "pyyaml>=6.0.3",
+    "rich>=15.0.0",
+    "typer>=0.26.8",
+]
+
+[project.urls]
+Homepage = "https://github.com/feistify/secretops"
+Documentation = "https://github.com/feistify/secretops/blob/main/docs/INSTALL.md"
+Repository = "https://github.com/feistify/secretops"
+Issues = "https://github.com/feistify/secretops/issues"
+
+[project.scripts]
+secretops = "secretops.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11.8,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
