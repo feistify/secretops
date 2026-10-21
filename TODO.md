@@ -78,6 +78,9 @@ Merged in PR #10: `scripts/install.sh` (install and `--upgrade`), `secretops-con
 - [x] Review the publication checklist with the owner; change visibility only with explicit authorization. The owner reviewed and published `feistify/secretops` and enabled private vulnerability reporting.
 - [x] Prepare the public v0.1 artifact/release and verify its documented installation path. Released as [v0.1.0](https://github.com/feistify/secretops/releases/tag/v0.1.0) with the wheel and source distribution built from the tag; the installer was checked in a clean container before tagging. Publishing to PyPI is deferred. Public source availability is separate from production-readiness claims; production execution remains restricted by policy.
 - Keep the initial scope to a useful repository and early-user feedback. A marketing site is not a prerequisite.
+- [ ] Publish v0.1.0 to PyPI: the same files as the GitHub release, so the hashes match. Prefer trusted publishing from GitHub Actions over a stored API token.
+- [ ] Protect `main` with a ruleset: no force pushes or deletion; consider requiring CI before merge.
+- [ ] Skip CI for documentation-only changes (`paths-ignore`), compatible with a required CI check.
 
 ### 6. Several vault projects per broker — first feature after public v0.1
 
