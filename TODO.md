@@ -10,7 +10,7 @@ The Infisical adapter hardening is implemented and verified against the NAS inst
 
 **Short-term goal:** a human can enter an externally created API key through a hidden prompt, the broker stores it in Infisical, and an agent can transfer it to GitHub through a separately approved plan. The workflow must be documented, repeatable from a clean installation, and require no undocumented helpers from `/tmp`.
 
-Plan destination binding is complete and validated (PR #6). The human secret-entry CLI (`secretops add`) is implemented, with direct and agent-prepared entry validated through the real local sudo broker ([results and limits](docs/validation/interactive-secret-entry.md)). GitHub target reliability and the complete local-sudo entry-to-GitHub workflow are now validated ([results and limits](docs/validation/github-target-reliability.md)). Installation and operating guides are merged (PR #10) and a clean installation is validated with a self-hosted Infisical and GitHub ([results and limits](docs/validation/local-broker-installation.md)). Remaining manual checks are tracked below. The public repository and [v0.1.0](https://github.com/feistify/secretops/releases/tag/v0.1.0) are released. Next: several vault projects per broker (section 6).
+Plan destination binding is complete and validated (PR #6). The human secret-entry CLI (`secretops add`) is implemented, with direct and agent-prepared entry validated through the real local sudo broker ([results and limits](docs/validation/interactive-secret-entry.md)). GitHub target reliability and the complete local-sudo entry-to-GitHub workflow are now validated ([results and limits](docs/validation/github-target-reliability.md)). Installation and operating guides are merged (PR #10) and a clean installation is validated with a self-hosted Infisical and GitHub ([results and limits](docs/validation/local-broker-installation.md)). Remaining manual checks are tracked below. The public repository and [v0.1.0](https://github.com/feistify/secretops/releases/tag/v0.1.0) are released. Next: first real-project use (section 6), then several vault projects per broker (section 7).
 
 ## P1 — Deliver the first complete daily-use workflow
 
@@ -57,6 +57,7 @@ Merged in PR #10: `scripts/install.sh` (install and `--upgrade`), `secretops-con
 
 ### Deferred installation tooling
 
+- [ ] Install from the published release instead of a local build: `install.sh` fetches the exact version from PyPI (or the GitHub release) and checks its hash, so `uv` and a build step are no longer needed. Until then, announcements present PyPI as provenance, not as an installation path: `pip install secretops` alone gives no broker boundary. Decide after the first real-project use shows how much the current installation hurts.
 - [ ] Revisit bundle/manifest tooling and fully locked platform-specific dependency distribution when release needs justify it.
 - [ ] Consider FHS migration, separate token storage and strict non-shell configuration loading as a separate compatibility change.
 - [ ] Consider doctor/admin tooling and a primary separate-agent-account rollout with sudo/TTY hardening; none is required by the minimal installer PR. (The dedicated loopback sshd and pinned host key are part of the existing setup and are installed.)
@@ -82,7 +83,19 @@ Merged in PR #10: `scripts/install.sh` (install and `--upgrade`), `secretops-con
 - [x] Protect `main` with a ruleset: no force pushes or deletion; consider requiring CI before merge. Rulesets: `main` changes only through pull requests, without force pushes or deletion; release tags `v*` cannot be moved or deleted. CI is not required, and there is no bypass list.
 - [x] Skip CI for documentation-only changes (`paths-ignore`): Markdown, `LICENSE` and `NOTICE`. If CI becomes a required check, docs-only pull requests need a solution first.
 
-### 6. Several vault projects per broker — first feature after public v0.1
+### 6. First real-project use — before the next feature
+
+The clean-VM validation proved the workflow with synthetic values. Next, use the published version for a real project (for example ExposeGPU in dev/staging) and record where it is hard.
+
+- [ ] A human enters an existing API key with `secretops add`.
+- [ ] The agent prepares a GitHub sync plan; the human reviews and approves it; the agent executes it and verifies the name.
+- [ ] The project uses the secret, and its agent instructions say how to work through the broker from now on.
+- [ ] Record where it is hard: installation, finding commands, approval, messages or maintenance. Choose one small UX fix from that record.
+- [ ] Ideally, another person follows the installation guide without help.
+
+If one project per broker blocks this work, named destinations (section 7) come first.
+
+### 7. Several vault projects per broker
 
 Today a broker serves one Infisical server, project and folder, set by the human in `broker.env`. With one project per application, that means switching the destination with `secretops-configure`.
 
