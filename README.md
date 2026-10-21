@@ -4,7 +4,7 @@ secretops is a CLI-first broker for developers who want coding agents to manage 
 
 Humans enter credentials and approve writes; agents prepare plans and execute approved operations through a restricted SSH wrapper. Store an API key in Infisical, then let an agent sync it to GitHub through a separately approved plan.
 
-**Early-stage software, preparing for v0.1.** The supported installation path is a local broker on Ubuntu 24.04. Python 3.11 or newer is required; the clean-VM installation was tested with Python 3.12.3, Infisical CLI 0.44.2 and GitHub CLI 2.102.0. See the [validation record and its limits](docs/validation/local-broker-installation.md).
+**v0.1.0, early-stage software.** The supported installation path is a local broker on Ubuntu 24.04. Python 3.11 or newer is required; the clean-VM installation was tested with Python 3.12.3, Infisical CLI 0.44.2 and GitHub CLI 2.102.0. See the [validation record and its limits](docs/validation/local-broker-installation.md).
 
 | Available now | Current limits |
 | --- | --- |

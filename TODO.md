@@ -42,7 +42,7 @@ Design: [GitHub target reliability](docs/design/github-target-reliability.md), m
 
 Scope: [repeat the existing broker setup](docs/design/local-broker-installation.md) in one PR: installer for the current layout, small safe configuration/renewal helper, INSTALL.md, OPERATIONS.md and clean-VM evidence. Existing SSH is a prerequisite; no new deployment architecture or shared-account isolation claim. The [larger managed-installation design](docs/design/local-broker-installation-later.md) is deferred reference.
 
-Merged in PR #10: `scripts/install.sh` (install and `--upgrade`), `secretops-configure` (strict `broker.env` writer, hidden token prompt, `--token-only` renewal), `secretops-local`, [INSTALL.md](docs/INSTALL.md) and [OPERATIONS.md](docs/OPERATIONS.md). 40 installer checks pass in a clean Ubuntu 24.04 container (`tests/test_install_container.sh`). The [clean-VM validation](docs/validation/local-broker-installation.md) ran the first workflow with a self-hosted Infisical and GitHub; it found an sshd start race (fixed in PR #10) and a refused re-execution overwriting the status of an executed plan (fixed in PR #11).
+Merged in PR #10: `scripts/install.sh` (install and `--upgrade`), `secretops-configure` (strict `broker.env` writer, hidden token prompt, `--token-only` renewal), `secretops-local`, [INSTALL.md](docs/INSTALL.md) and [OPERATIONS.md](docs/OPERATIONS.md). Installer checks pass in a clean Ubuntu 24.04 container (`tests/test_install_container.sh`). The [clean-VM validation](docs/validation/local-broker-installation.md) ran the first workflow with a self-hosted Infisical and GitHub; it found an sshd start race (fixed in PR #10) and a refused re-execution overwriting the status of an executed plan (fixed in PR #11).
 
 - [x] Write supported installation and daily-use guides, linked from the README; ship with the entry CLI and before public v0.1. Clearly label who runs each command and on which host.
 - Document installing, verifying, upgrading, and uninstalling secretops itself; include Python >=3.11 and an appropriate package installation path, broker/agent entry points, configuration and state locations, and preservation of credentials, plans, and audit during upgrades.
@@ -70,12 +70,12 @@ Merged in PR #10: `scripts/install.sh` (install and `--upgrade`), `secretops-con
 
 ### 5. Public GitHub repository preparation
 
-- [ ] Prepare a small public early-stage project after the guides and complete workflow are usable. OpenBao and additional integrations are not prerequisites.
-- [ ] Review tracked files, full Git history, and existing Actions logs/artifacts for credentials and private deployment data before changing visibility. Suppress sensitive matches in output and resolve findings before publication.
+- [x] Prepare a small public early-stage project after the guides and complete workflow are usable. OpenBao and additional integrations are not prerequisites.
+- [x] Review the published files for credentials and private deployment data before publication. Tracked files and built packages were reviewed with Gitleaks; the private history, Actions logs and artifacts were not published, so they were not part of the review.
 - [x] Choose an open-source license and add `SECURITY.md` with a private vulnerability reporting channel and supported-version policy. Apache-2.0; GitHub private vulnerability reporting must be enabled in the repository settings when the repository becomes public.
 - [x] Replace the placeholder package description and review release metadata. README describes intended users, supported capabilities, broker boundary, tested versions and limitations, with a synthetic entry-to-GitHub demo. Package metadata marks the project alpha and links source, installation docs and issues; publication remains a separate step.
-- [ ] Publish to a new public repository with fresh history, keeping the existing repository private. The public repository is `feistify/secretops` (organization `feistify`); package URLs point to it. Tracked files were reviewed with Gitleaks before publication; the local `.infisical.json` is no longer tracked.
-- [ ] Review the publication checklist with the owner; change visibility only with explicit authorization. Public visibility exposes Git history and Actions history/logs.
+- [x] Publish to a new public repository with fresh history, keeping the existing repository private. The public repository is `feistify/secretops` (organization `feistify`); package URLs point to it. Tracked files were reviewed with Gitleaks before publication; the local `.infisical.json` is no longer tracked.
+- [x] Review the publication checklist with the owner; change visibility only with explicit authorization. The owner reviewed and published `feistify/secretops` and enabled private vulnerability reporting.
 - [ ] Prepare the public v0.1 artifact/release and verify its documented installation path. Public source availability is separate from production-readiness claims; production execution remains restricted by policy.
 - Keep the initial scope to a useful repository and early-user feedback. A marketing site is not a prerequisite.
 

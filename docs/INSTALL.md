@@ -55,7 +55,9 @@ sudo apt install python3-venv openssh-server git
 ## Install
 
 ```sh
-# Human, in a checkout of this repository
+# Human
+git clone --branch v0.1.0 https://github.com/feistify/secretops.git
+cd secretops
 uv build
 sudo bash scripts/install.sh --wheel dist/secretops-0.1.0-py3-none-any.whl \
     --agent-user agent --infisical-domain https://app.infisical.com
