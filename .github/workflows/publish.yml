@@ -1,0 +1,45 @@
+name: Publish to PyPI
+
+# Publishes the files attached to a GitHub release, without rebuilding them,
+# so PyPI and the release have the same hashes. Uses trusted publishing: no
+# PyPI token is stored. The pypi environment requires the owner's approval.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish, for example v0.1.0
+        required: true
+
+permissions: {}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/secretops/
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Download and check the release files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.event.release.tag_name }}
+        run: |
+          [[ $TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "not a release tag: $TAG"; exit 1; }
+          version=${TAG#v}
+          mkdir dist
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir dist \
+              --pattern "secretops-$version-py3-none-any.whl" --pattern "secretops-$version.tar.gz"
+          [[ $(ls dist | wc -l) == 2 ]] || { echo "expected a wheel and a source distribution"; exit 1; }
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" \
+              --jq '.assets[] | select(.name | startswith("secretops-")) | "\(.digest | ltrimstr("sha256:"))  \(.name)"' > SHA256SUMS
+          (cd dist && sha256sum --check --strict ../SHA256SUMS)
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
