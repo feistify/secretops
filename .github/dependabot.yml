@@ -5,3 +5,7 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    # Propose only versions at least 14 days old: a compromised or broken
+    # release is usually found within days.
+    cooldown:
+      default-days: 14
