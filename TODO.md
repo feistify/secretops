@@ -79,8 +79,8 @@ Merged in PR #10: `scripts/install.sh` (install and `--upgrade`), `secretops-con
 - [x] Prepare the public v0.1 artifact/release and verify its documented installation path. Released as [v0.1.0](https://github.com/feistify/secretops/releases/tag/v0.1.0) with the wheel and source distribution built from the tag; the installer was checked in a clean container before tagging. Public source availability is separate from production-readiness claims; production execution remains restricted by policy.
 - Keep the initial scope to a useful repository and early-user feedback. A marketing site is not a prerequisite.
 - [x] Publish v0.1.0 to PyPI: the same files as the GitHub release, so the hashes match. [Published](https://pypi.org/project/secretops/0.1.0/) by `publish.yml` through trusted publishing, after approval in the `pypi` environment; no PyPI token is stored.
-- [ ] Protect `main` with a ruleset: no force pushes or deletion; consider requiring CI before merge.
-- [ ] Skip CI for documentation-only changes (`paths-ignore`), compatible with a required CI check.
+- [x] Protect `main` with a ruleset: no force pushes or deletion; consider requiring CI before merge. Rulesets: `main` changes only through pull requests, without force pushes or deletion; release tags `v*` cannot be moved or deleted. CI is not required, and there is no bypass list.
+- [x] Skip CI for documentation-only changes (`paths-ignore`): Markdown, `LICENSE` and `NOTICE`. If CI becomes a required check, docs-only pull requests need a solution first.
 
 ### 6. Several vault projects per broker — first feature after public v0.1
 
