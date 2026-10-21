@@ -1,10 +1,21 @@
 name: CI
 
+# Changes only to Markdown or license files do not run the tests: no test
+# reads them. If CI ever becomes a required check, docs-only pull requests
+# would then wait forever; handle that before requiring it.
 on:
   pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - LICENSE
+      - NOTICE
   push:
     branches:
       - main
+    paths-ignore:
+      - '**/*.md'
+      - LICENSE
+      - NOTICE
 
 jobs:
   test:
