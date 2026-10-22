@@ -1,5 +1,7 @@
 # AGENTS.md
 
+**Installing secretops or using it for another project?** Start at [docs/AGENT_START.md](docs/AGENT_START.md). The rest of this file is for developing secretops itself in this repository.
+
 ## Purpose
 
 secretops is a CLI-first SecretOps broker. Its purpose is to help agents and developers plan and execute safe secret operations without exposing secret values.
