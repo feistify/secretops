@@ -163,5 +163,40 @@ check "PyPI download with a wrong pinned hash refused" deny bash /tmp/bad-bundle
 check "broker still runs after the refused upgrade" pass runuser -u secretops-broker -- /usr/local/bin/secretops-broker version
 check "refused download left no partial environment" pass test ! -e /opt/secretops/venv.new
 
+# Uninstall, then install again: nothing may be left that blocks it.
+check "uninstall installed next to configure" pass test -x /usr/local/sbin/secretops-uninstall
+check "uninstall refuses without a terminal or --yes" deny sh -c 'secretops-uninstall < /dev/null'
+check "uninstall left everything in place after refusing" pass test -f /opt/secretops/broker.env
+/usr/sbin/sshd -f /opt/secretops/ssh/sshd_config
+runuser -u secretops-broker -- sleep 60 &
+check "uninstall refuses while a broker command runs" deny secretops-uninstall --yes
+kill $! 2>/dev/null; wait $! 2>/dev/null || true
+mv /usr/sbin/userdel /usr/sbin/userdel.real
+printf '#!/bin/sh\necho "userdel: user is currently used by a process" >&2\nexit 8\n' > /usr/sbin/userdel
+chmod 0755 /usr/sbin/userdel
+check "uninstall stops when the account cannot be removed" deny secretops-uninstall --yes
+check "the failed uninstall can be run again" pass test -x /usr/local/sbin/secretops-uninstall
+check "application kept after the failed uninstall" pass test -f /opt/secretops/install-info
+mv /usr/sbin/userdel.real /usr/sbin/userdel
+check "uninstall" pass secretops-uninstall --yes
+check "agent access gone" deny as_agent secretops-local version
+check "application and token removed" pass test ! -e /opt/secretops
+check "broker account removed" deny getent passwd secretops-broker
+check "broker home removed" pass test ! -e /var/lib/secretops-broker
+check "programs removed" pass sh -c '! ls /usr/local/bin/secretops* /usr/local/sbin/secretops-* 2>/dev/null | grep -q .'
+check "agent broker key removed" pass sh -c '! ls /home/agent/.ssh/secretops_local_* 2>/dev/null | grep -q .'
+history=$(ls -t /root/secretops-uninstall-*.tar.gz | head -n 1)
+check "history archive is root-only" pass test "$(stat -c '%U %a' "$history")" = "root 600"
+check "history archive has plans and audit" pass sh -c "tar -tzf '$history' | grep -q '^plans/' && tar -tzf '$history' | grep -q '^audit/'"
+check "history archive has no token" pass sh -c "! tar -tzf '$history' | grep -q broker.env"
+check "fresh install after uninstall" pass env SUDO_USER=human bash scripts/install.sh --wheel "$WHEEL" \
+    --agent-user agent --infisical-domain http://127.0.0.1:8086 --no-start
+/usr/sbin/sshd -f /opt/secretops/ssh/sshd_config
+check "agent reaches the reinstalled broker" pass as_agent secretops-local version
+pkill -f 'sshd -f /opt/secretops' || true
+archives=$(ls /root/secretops-uninstall-*.tar.gz | wc -l)
+check "uninstall --purge" pass secretops-uninstall --yes --purge
+check "purge leaves no new archive" pass test "$(ls /root/secretops-uninstall-*.tar.gz | wc -l)" = "$archives"
+
 [ "$fail" = 0 ] && echo "All installer checks passed." || { echo "Installer checks failed."; exit 1; }
 EOF

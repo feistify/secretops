@@ -40,7 +40,8 @@ AGENT_KNOWN_HOSTS=secretops_local_known_hosts
 # Installed program -> source file in scripts/.
 WRAPPERS="/usr/local/bin/secretops-broker:secretops-broker
 /usr/local/bin/secretops-agent:secretops-agent
-/usr/local/bin/secretops-local:secretops-local"
+/usr/local/bin/secretops-local:secretops-local
+/usr/local/sbin/secretops-uninstall:secretops-uninstall"
 
 die() {
     echo "install: $*" >&2
@@ -85,7 +86,7 @@ done
 
 [[ $EUID == 0 ]] || die "run with sudo from your own terminal, not from an agent session"
 src=$(cd -- "$(dirname -- "$0")" && pwd)
-for name in secretops-broker secretops-agent secretops-local broker-requirements.txt; do
+for name in secretops-broker secretops-agent secretops-local secretops-uninstall broker-requirements.txt; do
     [[ -f $src/$name ]] || die "missing $src/$name; run from an unpacked installer bundle or a repository checkout"
 done
 if [[ -n $wheel ]]; then
@@ -206,7 +207,7 @@ if [[ $upgrade == 1 ]]; then
     rm -rf "$ROOT/venv.previous" "$ROOT/previous"
     install -d -o root -g root -m 0755 "$ROOT/previous"
     while IFS=: read -r target source; do
-        cp -p "$target" "$ROOT/previous/$(basename -- "$target")"
+        [[ ! -e $target ]] || cp -p "$target" "$ROOT/previous/$(basename -- "$target")"
     done <<< "$WRAPPERS"
     mv "$ROOT/venv" "$ROOT/venv.previous"
     mv "$ROOT/venv.new" "$ROOT/venv"
@@ -246,6 +247,7 @@ if [[ " $(id -nG "$agent_user") " =~ \ (sudo|admin|wheel)\  ]]; then
 fi
 for path in "$ROOT" "$BROKER_HOME" /usr/local/bin/secretops /usr/local/bin/secretops-broker \
     /usr/local/bin/secretops-agent /usr/local/bin/secretops-local /usr/local/sbin/secretops-configure \
+    /usr/local/sbin/secretops-uninstall \
     "$UNIT_FILE" "$agent_home/.ssh/$AGENT_KEY" "$agent_home/.ssh/$AGENT_KEY.pub" \
     "$agent_home/.ssh/$AGENT_KNOWN_HOSTS"; do
     [[ ! -e $path && ! -L $path ]] || die "refusing to overwrite existing $path"
