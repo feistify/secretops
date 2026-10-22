@@ -138,5 +138,30 @@ check "upgrade kept the previous application" pass test -x /opt/secretops/venv.p
 check "upgrade kept broker.env" pass test "$(stat -c '%U %a' /opt/secretops/broker.env)" = "secretops-broker 600"
 check "upgraded broker runs" pass runuser -u secretops-broker -- /usr/local/bin/secretops-broker version
 
+# Installer bundle: the same installer, pinned to one wheel by its hash.
+bundle=$(sh scripts/make-installer-bundle.sh "$WHEEL" /tmp/bundle)
+tar -C /tmp -xzf "$bundle"
+bdir=/tmp/$(basename "$bundle" .tar.gz)
+check "bundle upgrade with the pinned wheel" pass bash "$bdir/install.sh" --upgrade --wheel "$WHEEL"
+mkdir /tmp/other && cp "$WHEEL" /tmp/other/ && printf x >> "/tmp/other/$(basename "$WHEEL")"
+check "bundle refuses a wheel with another hash" deny bash "$bdir/install.sh" --upgrade --wheel "/tmp/other/$(basename "$WHEEL")"
+# The published release from PyPI, pinned like a real bundle.
+python3 - > /tmp/pypi-pin.txt <<'PY'
+import json, urllib.request
+info = json.load(urllib.request.urlopen("https://pypi.org/pypi/secretops/json", timeout=30))
+version = info["info"]["version"]
+wheel = next(f for f in info["urls"] if f["filename"].endswith("-py3-none-any.whl"))
+print(f"secretops=={version} --hash=sha256:{wheel['digests']['sha256']}")
+PY
+pypi_version=$(sed 's/^secretops==\([^ ]*\) .*/\1/' /tmp/pypi-pin.txt)
+cp -r "$bdir" /tmp/pypi-bundle && cp /tmp/pypi-pin.txt /tmp/pypi-bundle/secretops-release.txt
+check "bundle upgrade from PyPI with the pinned hash" pass bash /tmp/pypi-bundle/install.sh --upgrade
+check "installed version is the pinned release" pass grep -qx "version=$pypi_version" /opt/secretops/install-info
+cp -r "$bdir" /tmp/bad-bundle
+sed "s/sha256:.*/sha256:$(printf '0%.0s' $(seq 64))/" /tmp/pypi-pin.txt > /tmp/bad-bundle/secretops-release.txt
+check "PyPI download with a wrong pinned hash refused" deny bash /tmp/bad-bundle/install.sh --upgrade
+check "broker still runs after the refused upgrade" pass runuser -u secretops-broker -- /usr/local/bin/secretops-broker version
+check "refused download left no partial environment" pass test ! -e /opt/secretops/venv.new
+
 [ "$fail" = 0 ] && echo "All installer checks passed." || { echo "Installer checks failed."; exit 1; }
 EOF
