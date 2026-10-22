@@ -14,11 +14,12 @@ secretops lets you manage secrets by name while the values stay with the human, 
 ## Find out where you are
 
 ```sh
-command -v secretops-local && secretops-local version
+command -v secretops-local && secretops-local help
 ```
 
 - **Command not found:** the broker is not installed for your account. Go to [Help the human install](#help-the-human-install).
-- **Prints `secretops <version>`:** the broker works. Go to [Use the broker](#use-the-broker).
+- **Prints the command list:** the broker connection works. Go to [Use the broker](#use-the-broker).
+- **Prints `denied: subcommand not allowed: help`:** the broker works but is older than this guide; `secretops-local version` shows its version. Use the commands below, without `help`.
 - **Prints an SSH or permission error:** the broker exists, but your account is not set up as its agent. Tell the human; the installer's `--agent-user` must be the account you run as.
 
 ## Help the human install
@@ -28,7 +29,7 @@ The installation guide is [INSTALL.md](INSTALL.md). Every command block there sa
 - Check prerequisites and report what is missing: Ubuntu 24.04, Python 3.11 or newer, `python3-venv`, `openssh-server`, `git`, `uv`, a root-owned `infisical` (for example `/usr/bin/infisical`) and, for GitHub sync, a root-owned `gh`.
 - Find your account name (`id -un`) and whether it can use `sudo`. The recommended setup runs you as a separate account without sudo; if you run as the human's own account, tell them that the boundary is then a convention, not enforced.
 - Write out the exact commands from INSTALL.md with the values filled in (version, agent account, Infisical URL), for the human to run.
-- After installation, run `secretops-local version` and `secretops-local actions`.
+- After installation, run `secretops-local help`, `secretops-local version` and `secretops-local actions`.
 
 Only the human:
 
@@ -42,6 +43,7 @@ You reach the broker only through `secretops-local`, with these exact command sh
 
 | Command | What it does |
 | --- | --- |
+| `secretops-local help` | the allowed commands, workflow, exit codes and rules |
 | `secretops-local version` | broker version |
 | `secretops-local actions` | actions the current policy allows and denies |
 | `secretops-local write-recipe NAME.yaml < FILE` | upload a recipe (names and metadata only) |
