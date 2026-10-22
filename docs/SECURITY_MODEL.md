@@ -69,22 +69,32 @@ What this setup enforces:
 - the agent cannot edit plan artifacts, the audit log, or the policy, because the broker user owns them
 - secret values never cross into the agent domain
 
-The broker can be a separate machine (NAS, VPS, home server) or a second Unix user on the same machine, reached through `ssh secretops-broker@localhost`. The boundary is the Unix user, not the machine.
+The broker can be a separate machine (NAS, VPS, home server) or a second Unix user on the same machine, reached through `ssh secretops-broker@localhost`. The boundary is the Unix user, not the machine. Which guarantees hold where is summarised in [Deployment levels](#deployment-levels).
 
-## Enforced vs. convention by deployment
+## Deployment levels
 
-| Guarantee | Agent runs as your own user | Broker host model |
-| --- | --- | --- |
-| secretops output never contains values | enforced | enforced |
-| values never passed as command-line arguments | enforced | enforced |
-| agent cannot read vault credentials | convention | enforced |
-| agent cannot call the vault or provider CLIs directly | convention | enforced |
-| agent cannot approve plans | convention | enforced |
-| agent cannot tamper with plan status, audit log, or policy | convention | enforced |
-| production execution denied by policy | enforced while the policy file is protected | enforced |
-| agent cannot read secrets on its own host | out of scope | out of scope |
+How much secretops protects depends on how you run it. From weakest to strongest:
 
-Running secretops under your own user with an agent is still useful: you get structured plans, approvals, an audit trail, and no values in output. Treat it as a workflow gate, not as a security boundary. If you rely on it for a low-stakes case, say so explicitly instead of implying enforcement that is not there.
+1. **No broker.** You and the agent run secretops under your own account, with the token in your environment. Good for trying it out alone.
+2. **Local broker, agent as you.** `install.sh` with `--agent-user` set to your own account. The token sits with the broker account, but the agent can use your `sudo`, keys and terminal to reach it.
+3. **Local broker, separate agent account.** You, the agent and the broker each have their own account on one machine. This is the recommended setup from [INSTALL.md](INSTALL.md).
+4. **Broker on another machine.** The agent's machine holds no credentials at all; see [BROKER_HOST.md](BROKER_HOST.md).
+
+| Guarantee | 1. No broker | 2. Agent as you | 3. Separate agent account | 4. Broker elsewhere |
+| --- | --- | --- | --- | --- |
+| secretops output never contains values | enforced | enforced | enforced | enforced |
+| values never passed as command-line arguments | enforced | enforced | enforced | enforced |
+| agent cannot read vault credentials | convention | convention | enforced | enforced |
+| agent cannot call the vault or provider CLIs with them | convention | convention | enforced | enforced |
+| agent cannot approve plans | convention | convention | enforced | enforced |
+| agent cannot change plan status, audit log or policy | convention | convention | enforced | enforced |
+| production writes denied by policy | while the policy file is protected | while the policy file is protected | enforced | enforced |
+| root on the agent's machine cannot read vault credentials | no | no | no | enforced |
+| agent cannot read secrets that are already on its own machine | out of scope | out of scope | out of scope | out of scope |
+
+"Convention" means that the agent's instructions forbid it, but nothing stops an agent that ignores them.
+
+**Recommendation:** level 3 for real secrets. Level 4 when the agent's machine is shared, exposed or less trusted than the secrets. Levels 1 and 2 are a workflow gate: you still get plans, approvals, an audit trail and no values in output, but not a boundary. If you use them for a low-stakes case, say so instead of implying enforcement that is not there.
 
 ## Threats and mitigations
 
