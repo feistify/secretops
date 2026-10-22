@@ -53,6 +53,17 @@ app = typer.Typer(
 console = Console()
 
 
+def _load_recipe(file: str):
+    # One line an agent can act on, instead of a traceback. The message names
+    # fields only, never what was written in them.
+    try:
+        return load_recipe(file)
+    except ValueError as error:
+        console.print(f"[red]FAIL[/red] invalid recipe: {error}", soft_wrap=True)
+        console.print("no plan was saved")
+        raise typer.Exit(1) from error
+
+
 @app.command(help="Show the secretops version.", rich_help_panel="Information")
 def version():
     console.print("secretops 0.1.3")
@@ -84,7 +95,7 @@ def plan(
     file: str = typer.Option(..., "--file"),
     save: bool = typer.Option(False, "--save"),
 ):
-    recipe = load_recipe(file)
+    recipe = _load_recipe(file)
     artifact = None
     if save:
         require_recipe_allowed(recipe, console)
@@ -311,7 +322,7 @@ def submit_add_endpoint():
     rich_help_panel="Single-recipe commands (development)",
 )
 def plan_recipe(file: str = typer.Option(..., "--file")):
-    recipe = load_recipe(file)
+    recipe = _load_recipe(file)
     require_recipe_allowed(recipe, console)
     plan_vault_read_recipe(recipe, console)
 
@@ -321,7 +332,7 @@ def plan_recipe(file: str = typer.Option(..., "--file")):
     rich_help_panel="Single-recipe commands (development)",
 )
 def plan_github_env_secret(file: str = typer.Option(..., "--file")):
-    recipe = load_recipe(file)
+    recipe = _load_recipe(file)
     require_recipe_allowed(recipe, console)
 
     if recipe.action not in {
@@ -341,7 +352,7 @@ def plan_github_env_secret(file: str = typer.Option(..., "--file")):
     rich_help_panel="Single-recipe commands (development)",
 )
 def execute(file: str = typer.Option(..., "--file")):
-    recipe = load_recipe(file)
+    recipe = _load_recipe(file)
     execute_recipe_action(recipe, console)
 
 @app.command(
@@ -350,7 +361,7 @@ def execute(file: str = typer.Option(..., "--file")):
     rich_help_panel="Single-recipe commands (development)",
 )
 def execute_recipe(file: str = typer.Option(..., "--file")):
-    recipe = load_recipe(file)
+    recipe = _load_recipe(file)
     require_recipe_allowed(recipe, console)
 
     if recipe.action != "vault.read.check":
