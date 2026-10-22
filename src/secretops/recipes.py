@@ -82,6 +82,12 @@ RECIPE_FIELDS: dict[str, dict[str, Any]] = {
         "secrets": "name",
     },
 }
+# Fields whose value is text. YAML reads 2048 or true as other types, so a
+# repository or environment named like that has to be quoted.
+TEXT_FIELDS = (
+    "secret_name", "env", "source_env", "target_env", "source_file", "create_mode", "rotation_mode",
+    "value_source", "github_host", "github_owner", "github_repo", "github_environment", "github_secret_name",
+)
 FIXED_VALUES = {"create_mode": "create_only", "rotation_mode": "replace_existing", "value_source": "human_prompt"}
 
 
@@ -98,6 +104,9 @@ def check_recipe_fields(data: dict[str, Any]) -> None:
     spec = RECIPE_FIELDS.get(action)
     if spec is None:
         return
+    for field in TEXT_FIELDS:
+        if field in data and data[field] is not None and not isinstance(data[field], str):
+            raise RecipeError(f"{field} must be text; put quotes around it, for example '2048'")
     allowed = ["action", *_field_names(spec["required"]), *_field_names(spec["optional"])]
     for field in data:
         if field not in allowed:
@@ -172,6 +181,8 @@ def load_recipe(path: str | Path) -> Recipe:
         raise RecipeError("a recipe must be a YAML mapping of fields")
     if not data.get("action"):
         raise RecipeError("missing field action")
+    if not isinstance(data["action"], str):
+        raise RecipeError("action must be text, for example action: vault.read.check")
     check_recipe_fields(data)
     github_owner = data.get("github_owner")
     github_repo = data.get("github_repo")

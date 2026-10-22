@@ -43,6 +43,12 @@ def write(tmp_path, text):
         ("secret_name: DUMMY_SECRET\nenv: dev\n", "missing field action"),
         ("- just\n- a list\n", "a recipe must be a YAML mapping"),
         ("action: [unclosed\n", "recipe is not valid YAML"),
+        ("action: [vault.read.check]\nsecret_name: DUMMY_SECRET\nenv: dev\n", "action must be text"),
+        ("action:\n  name: vault.read.check\nsecret_name: DUMMY_SECRET\nenv: dev\n", "action must be text"),
+        ("action: vault.secret.import_file\nenv: dev\nsource_file: 123\n", "source_file must be text"),
+        (SYNC.replace("github_repo: example-app", "github_repo: 2048"), "github_repo must be text; put quotes around it"),
+        (SYNC.replace("env: dev\n", "env: [dev]\n", 1), "env must be text"),
+        (GENERATE.replace("secret_name: DUMMY_SECRET", "secret_name: {name: DUMMY_SECRET}"), "secret_name must be text"),
     ],
 )
 def test_invalid_recipes_are_refused_with_the_field_named(tmp_path, text, message):
@@ -57,6 +63,12 @@ def test_messages_do_not_repeat_what_was_written(tmp_path):
         with pytest.raises(RecipeError) as error:
             load_recipe(write(tmp_path, text))
         assert "sk_live_not_a_real_value" not in str(error.value)
+
+
+def test_quoted_numeric_names_are_accepted(tmp_path):
+    recipe = load_recipe(write(tmp_path, SYNC.replace("github_repo: example-app", "github_repo: '2048'")))
+
+    assert recipe.github_repo == "2048"
 
 
 def test_missing_recipe_file_is_a_recipe_error(tmp_path):
