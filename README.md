@@ -60,6 +60,8 @@ secretops installs as a local broker on Linux, from this repository: `pip instal
 2. Try the [demo](https://github.com/feistify/secretops/blob/main/docs/DEMO.md) with a test project and made-up values.
 3. Add the [agent instructions](https://github.com/feistify/secretops/blob/main/docs/AGENT_USAGE.md#instructions-for-agents-in-consumer-projects) to your project, so your agent uses the broker.
 
+Working with a coding agent? Point it to [docs/AGENT_START.md](https://github.com/feistify/secretops/blob/main/docs/AGENT_START.md): it can check prerequisites and prepare the installation commands, while you run the steps that need `sudo`, a token or a login.
+
 ## Status and limits
 
 **v0.1.2, early-stage software.** Try it with test values first.
@@ -79,6 +81,7 @@ Details: [limitations and tested versions](https://github.com/feistify/secretops
 | [INSTALL](https://github.com/feistify/secretops/blob/main/docs/INSTALL.md) | Installing a local broker |
 | [OPERATIONS](https://github.com/feistify/secretops/blob/main/docs/OPERATIONS.md) | Daily use, failures, token renewal, upgrade, backup |
 | [USAGE](https://github.com/feistify/secretops/blob/main/docs/USAGE.md) | Adding secrets, the plan lifecycle, all actions |
+| [AGENT_START](https://github.com/feistify/secretops/blob/main/docs/AGENT_START.md) | Start page for coding agents |
 | [AGENT_USAGE](https://github.com/feistify/secretops/blob/main/docs/AGENT_USAGE.md) | How agents work with the broker; instructions for your project |
 | [SECURITY_MODEL](https://github.com/feistify/secretops/blob/main/docs/SECURITY_MODEL.md) | What is enforced, threats, safety rules |
 | [CONFIGURATION](https://github.com/feistify/secretops/blob/main/docs/CONFIGURATION.md) | Vault and GitHub settings |

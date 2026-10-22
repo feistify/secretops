@@ -1,5 +1,7 @@
 # Agent usage model
 
+An agent starting from scratch should read [AGENT_START.md](AGENT_START.md) first. This page explains the deployment model behind it and holds the instructions template for consumer projects.
+
 secretops is intended to be used by agents as an installed CLI package, not as a source checkout placed in the agent workspace.
 
 Agents should work with secret names, environments, recipes, saved plans, policy decisions, approval status, audit events, and safe status output. Agents must not receive or print raw secret values.
