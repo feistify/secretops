@@ -53,7 +53,7 @@ console = Console()
 
 @app.command()
 def version():
-    console.print("secretops 0.1.1")
+    console.print("secretops 0.1.2")
 
 
 @app.command("actions")
