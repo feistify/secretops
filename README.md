@@ -4,7 +4,7 @@ secretops is a CLI-first broker for developers who want coding agents to manage 
 
 Humans enter credentials and approve writes; agents prepare plans and execute approved operations through a restricted SSH wrapper. Store an API key in Infisical, then let an agent sync it to GitHub through a separately approved plan.
 
-**v0.1.0, early-stage software.** The supported installation path is a local broker on Ubuntu 24.04. Python 3.11 or newer is required; the clean-VM installation was tested with Python 3.12.3, Infisical CLI 0.44.2 and GitHub CLI 2.102.0. See the [validation record and its limits](docs/validation/local-broker-installation.md).
+**v0.1.1, early-stage software.** The supported installation path is a local broker on Ubuntu 24.04. Python 3.11 or newer is required; the clean-VM installation was tested with Python 3.12.3, Infisical CLI 0.44.2 and GitHub CLI 2.102.0. See the [validation record and its limits](https://github.com/feistify/secretops/blob/main/docs/validation/local-broker-installation.md).
 
 | Available now | Current limits |
 | --- | --- |
@@ -19,15 +19,15 @@ secretops must never print secret values or persist them in plans, audit, or log
 
 ## Installation
 
-To run secretops as a local broker for a coding agent on Linux, follow [docs/INSTALL.md](docs/INSTALL.md): `scripts/install.sh` creates the broker account, the restricted agent SSH access and the human tools, and `secretops-configure` stores the vault token at a hidden prompt. Daily use, failures, token renewal, upgrade, backup and uninstall are in [docs/OPERATIONS.md](docs/OPERATIONS.md).
+To run secretops as a local broker for a coding agent on Linux, follow [docs/INSTALL.md](https://github.com/feistify/secretops/blob/main/docs/INSTALL.md): `scripts/install.sh` creates the broker account, the restricted agent SSH access and the human tools, and `secretops-configure` stores the vault token at a hidden prompt. Daily use, failures, token renewal, upgrade, backup and uninstall are in [docs/OPERATIONS.md](https://github.com/feistify/secretops/blob/main/docs/OPERATIONS.md).
 
-Agents use the installed broker through `secretops-local`, never a source checkout of secretops or its credentials. [docs/BROKER_HOST.md](docs/BROKER_HOST.md) explains the deployment model and other variants (remote broker host, ephemeral broker); [docs/AGENT_USAGE.md](docs/AGENT_USAGE.md) explains the agent operating model and the consumer-project instructions.
+Agents use the installed broker through `secretops-local`, never a source checkout of secretops or its credentials. [docs/BROKER_HOST.md](https://github.com/feistify/secretops/blob/main/docs/BROKER_HOST.md) explains the deployment model and other variants (remote broker host, ephemeral broker); [docs/AGENT_USAGE.md](https://github.com/feistify/secretops/blob/main/docs/AGENT_USAGE.md) explains the agent operating model and the consumer-project instructions.
 
 For development, `uv run secretops ...` in this repository uses the configuration described below.
 
 ## Demo: enter once, sync through an approved plan
 
-After completing [installation and authentication](docs/INSTALL.md), use a test Infisical project and a test GitHub repository with a `dev` environment. The commands below are for the installed local broker. Enter a made-up, single-line value for this demo; never give it to the agent. Run commands one at a time and stop on any failure; exit 3 means the agent must ask the human to resolve an unknown write outcome before continuing.
+After completing [installation and authentication](https://github.com/feistify/secretops/blob/main/docs/INSTALL.md), use a test Infisical project and a test GitHub repository with a `dev` environment. The commands below are for the installed local broker. Enter a made-up, single-line value for this demo; never give it to the agent. Run commands one at a time and stop on any failure; exit 3 means the agent must ask the human to resolve an unknown write outcome before continuing.
 
 **Human, in your own terminal:**
 
@@ -92,7 +92,7 @@ secretops-local execute-plan --id VERIFY_PLAN_ID
 # present names: DEMO_API_KEY
 ```
 
-Replace `VERIFY_PLAN_ID` with the second plan's ID. Verification needs no approval under the default policy and confirms only that the name exists, not value equality. The human deletes the demo secrets from Infisical and GitHub when finished. See [OPERATIONS.md](docs/OPERATIONS.md) for failure handling and daily use.
+Replace `VERIFY_PLAN_ID` with the second plan's ID. Verification needs no approval under the default policy and confirms only that the name exists, not value equality. The human deletes the demo secrets from Infisical and GitHub when finished. See [OPERATIONS.md](https://github.com/feistify/secretops/blob/main/docs/OPERATIONS.md) for failure handling and daily use.
 
 ## Security model
 
@@ -123,7 +123,7 @@ Breaking change: plans are bound to their destination. A saved plan records `con
 
 ## GitHub configuration
 
-GitHub workflows require `gh` and a stored CLI login for the executing broker user. A human configures that login; agents use only the restricted broker interface. See [GitHub authentication and migration instructions](docs/BROKER_HOST.md#github-authentication-human-only).
+GitHub workflows require `gh` and a stored CLI login for the executing broker user. A human configures that login; agents use only the restricted broker interface. See [GitHub authentication and migration instructions](https://github.com/feistify/secretops/blob/main/docs/BROKER_HOST.md#github-authentication-human-only).
 
 **Breaking change:** `GH_TOKEN`, `GITHUB_TOKEN`, `GH_ENTERPRISE_TOKEN`, and `GITHUB_ENTERPRISE_TOKEN` are no longer forwarded, including tokens set in `broker.env`. Token-only installations must migrate to a stored broker-user login. The GitHub child process receives an explicit environment allowlist; unrelated credentials such as `INFISICAL_TOKEN` are excluded.
 
@@ -177,9 +177,9 @@ The basic read-only check action is also supported:
 
 ## Adding a secret you already have
 
-`secretops add` stores one new secret whose value a human has, for example an API key created in a provider console. Direct and agent-prepared entry have passed live validation through the local sudo broker. Human submission over SSH and use inside tmux remain untested; see the [validation record](docs/validation/interactive-secret-entry.md).
+`secretops add` stores one new secret whose value a human has, for example an API key created in a provider console. Direct and agent-prepared entry have passed live validation through the local sudo broker. Human submission over SSH and use inside tmux remain untested; see the [validation record](https://github.com/feistify/secretops/blob/main/docs/validation/interactive-secret-entry.md).
 
-After [one-time client and broker setup](docs/BROKER_HOST.md#human-secret-entry), choose either interactive metadata entry, a named secret, or an agent-prepared plan:
+After [one-time client and broker setup](https://github.com/feistify/secretops/blob/main/docs/BROKER_HOST.md#human-secret-entry), choose either interactive metadata entry, a named secret, or an agent-prepared plan:
 
 ```bash
 secretops add
@@ -200,7 +200,7 @@ Save? [y/N]: y
 Saved and verified.
 ```
 
-The broker shows the destination and checks that the name is absent before asking for the value; the value is entered without echo, sent once over the human's own broker access (SSH or sudo), and confirmed by read-back. When an agent has prepared the plan, the human runs `secretops add --plan <plan_id>`. The agent key cannot do this step. With Infisical, create-only is a check followed by a write, not an atomic create. Setup and limits: [Human secret entry](docs/BROKER_HOST.md#human-secret-entry).
+The broker shows the destination and checks that the name is absent before asking for the value; the value is entered without echo, sent once over the human's own broker access (SSH or sudo), and confirmed by read-back. When an agent has prepared the plan, the human runs `secretops add --plan <plan_id>`. The agent key cannot do this step. With Infisical, create-only is a check followed by a write, not an atomic create. Setup and limits: [Human secret entry](https://github.com/feistify/secretops/blob/main/docs/BROKER_HOST.md#human-secret-entry).
 
 ## Standard safety flow
 
@@ -215,7 +215,7 @@ ssh BROKER_ALIAS preflight-plan --id <plan_id>
 ssh BROKER_ALIAS execute-plan --id <plan_id>
 ```
 
-The agent cannot approve or reject plans. See [the broker operating flow](docs/BROKER_HOST.md#operating-flow) for human approval commands and [agent instructions](docs/AGENT_USAGE.md#instructions-for-agents-in-consumer-projects) for the consumer-project template.
+The agent cannot approve or reject plans. See [the broker operating flow](https://github.com/feistify/secretops/blob/main/docs/BROKER_HOST.md#operating-flow) for human approval commands and [agent instructions](https://github.com/feistify/secretops/blob/main/docs/AGENT_USAGE.md#instructions-for-agents-in-consumer-projects) for the consumer-project template.
 
 The following commands are for a human operating from a development checkout with their own configured identity. They do not establish an agent security boundary:
 
@@ -285,7 +285,7 @@ secrets:
     target: GENERATED_DUMMY_PASSWORD
 ```
 
-Save the YAML above as `github-sync.yaml`, replace the example owner and repository with your intended test target, and ensure GitHub authentication is configured for the executing user (see [broker setup](docs/BROKER_HOST.md#github-authentication-human-only)). Then run:
+Save the YAML above as `github-sync.yaml`, replace the example owner and repository with your intended test target, and ensure GitHub authentication is configured for the executing user (see [broker setup](https://github.com/feistify/secretops/blob/main/docs/BROKER_HOST.md#github-authentication-human-only)). Then run:
 
 ```bash
 uv run secretops plan --file github-sync.yaml --save
@@ -320,10 +320,10 @@ These invariants are part of the product contract:
 - Infisical create-only checks existence and writes in separate calls. It refuses an existing secret when observed, but cannot guarantee atomic create-only behavior against a concurrent writer. Keep other writers coordinated; plan destination binding does not add conditional writes.
 - GitHub calls have per-call timeouts and explicit acknowledged/unknown write outcomes, with partial-sync reporting. Acknowledgement relies on the CLI exit status; GitHub does not provide secret-value read-back, and name presence cannot resolve an unknown write.
 - Human interactive entry is available through `secretops add`; the complete local-sudo entry-to-GitHub workflow has been validated. Human entry over SSH and use inside tmux remain untested, and the exact local terminal emulator identity/version remains unconfirmed. The separate `vault.secret.import_file` workflow remains available for human-provisioned broker-private files.
-- One broker per machine, and one Infisical server, project and folder per broker. The human sets this destination; recipes cannot choose it. With one Infisical project per application, switch with `sudo secretops-configure` (open plans for the old destination then need a new plan). Several named destinations per broker are the next planned feature; see [TODO.md](TODO.md).
+- One broker per machine, and one Infisical server, project and folder per broker. The human sets this destination; recipes cannot choose it. With one Infisical project per application, switch with `sudo secretops-configure` (open plans for the old destination then need a new plan). Several named destinations per broker are the next planned feature; see [TODO.md](https://github.com/feistify/secretops/blob/main/TODO.md).
 - Tested: Infisical CLI `0.43.99`, self-hosted server `0.161.10`; GitHub CLI `2.4.0+dfsg1` for host-qualified metadata verification and a human-approved synthetic secret write with the isolated environment. A separate metadata check confirmed the test name; the value was not read back. These are tested versions, not a compatibility guarantee for every version.
 
-See [Infisical acceptance results](docs/design/infisical-adapter-hardening.md) and [destination-binding validation](docs/design/plan-destination-binding.md#manual-validation-result--2026-10-18). See also [GitHub environment-isolation validation](docs/validation/github-environment-isolation.md), [interactive entry validation](docs/validation/interactive-secret-entry.md), and [the complete entry-to-GitHub validation](docs/validation/github-target-reliability.md) for live results and their evidence limits. Installation and daily operation: [docs/INSTALL.md](docs/INSTALL.md) and [docs/OPERATIONS.md](docs/OPERATIONS.md), validated on a clean VM ([results and limits](docs/validation/local-broker-installation.md)).
+See [Infisical acceptance results](https://github.com/feistify/secretops/blob/main/docs/design/infisical-adapter-hardening.md) and [destination-binding validation](https://github.com/feistify/secretops/blob/main/docs/design/plan-destination-binding.md#manual-validation-result--2026-10-18). See also [GitHub environment-isolation validation](https://github.com/feistify/secretops/blob/main/docs/validation/github-environment-isolation.md), [interactive entry validation](https://github.com/feistify/secretops/blob/main/docs/validation/interactive-secret-entry.md), and [the complete entry-to-GitHub validation](https://github.com/feistify/secretops/blob/main/docs/validation/github-target-reliability.md) for live results and their evidence limits. Installation and daily operation: [docs/INSTALL.md](https://github.com/feistify/secretops/blob/main/docs/INSTALL.md) and [docs/OPERATIONS.md](https://github.com/feistify/secretops/blob/main/docs/OPERATIONS.md), validated on a clean VM ([results and limits](https://github.com/feistify/secretops/blob/main/docs/validation/local-broker-installation.md)).
 
 PR numbers and commit hashes in historical design and validation records refer to private development history before v0.1 and may not be accessible from this public repository.
 
@@ -358,4 +358,4 @@ CI does not require repository secrets, provider credentials, real Infisical acc
 
 ## Security and license
 
-Report vulnerabilities privately; see [SECURITY.md](SECURITY.md). secretops is licensed under the [Apache License 2.0](LICENSE).
+Report vulnerabilities privately; see [SECURITY.md](https://github.com/feistify/secretops/blob/main/SECURITY.md). secretops is licensed under the [Apache License 2.0](https://github.com/feistify/secretops/blob/main/LICENSE).

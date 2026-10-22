@@ -56,10 +56,10 @@ sudo apt install python3-venv openssh-server git
 
 ```sh
 # Human
-git clone --branch v0.1.0 https://github.com/feistify/secretops.git
+git clone --branch v0.1.1 https://github.com/feistify/secretops.git
 cd secretops
 uv build
-sudo bash scripts/install.sh --wheel dist/secretops-0.1.0-py3-none-any.whl \
+sudo bash scripts/install.sh --wheel dist/secretops-0.1.1-py3-none-any.whl \
     --agent-user agent --infisical-domain https://app.infisical.com
 ```
 
@@ -67,7 +67,7 @@ Options: `--infisical-bin PATH` (default `/usr/bin/infisical`), `--gh-bin PATH` 
 
 ```text
 PASS: agent reaches the broker through the restricted SSH key.
-Installed secretops 0.1.0. Vault credentials are not configured yet.
+Installed secretops 0.1.1. Vault credentials are not configured yet.
 ```
 
 The installer downloads the Python dependencies from PyPI with the hashes pinned in `scripts/broker-requirements.txt`.
