@@ -15,6 +15,7 @@ Tested: Ubuntu 24.04 with its Python 3.12, installer checks in a clean Ubuntu 24
 | `/opt/secretops/plans`, `audit`, `recipes` | `secretops-broker`, 0700 | saved plans, audit log, uploaded recipes |
 | `/usr/local/bin/secretops-broker`, `secretops-agent`, `secretops-local`, `secretops` | root | broker wrapper, agent forced command, agent client, human client |
 | `/usr/local/sbin/secretops-configure` | root | human-only configuration and token helper |
+| `/usr/local/sbin/secretops-uninstall` | root | human-only removal; see [OPERATIONS.md](OPERATIONS.md#uninstall) |
 | `secretops-local-sshd.service` | root | SSH listener on `127.0.0.1:22222` only, broker account, agent key only |
 | agent's `~/.ssh/secretops_local_*` | agent | agent key and the pinned broker host key |
 | human's `~/.config/secretops/client.yaml` | human | how `secretops add` reaches the broker (local sudo) |
@@ -126,7 +127,7 @@ If the installer stops partway, it changed only these paths. Inspect them, then 
 sudo systemctl disable --now secretops-local-sshd.service 2>/dev/null
 sudo rm -f /etc/systemd/system/secretops-local-sshd.service /usr/local/bin/secretops \
     /usr/local/bin/secretops-broker /usr/local/bin/secretops-agent /usr/local/bin/secretops-local \
-    /usr/local/sbin/secretops-configure
+    /usr/local/sbin/secretops-configure /usr/local/sbin/secretops-uninstall
 sudo rm -rf /opt/secretops /var/lib/secretops-broker
 sudo userdel secretops-broker
 # In the agent account: rm ~/.ssh/secretops_local_agent_ed25519* ~/.ssh/secretops_local_known_hosts

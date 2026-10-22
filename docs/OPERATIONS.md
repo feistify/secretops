@@ -122,18 +122,11 @@ The restored audit log gets its own name, so it never overwrites newer records. 
 
 ## Uninstall
 
-This keeps plans and audit in `/opt/secretops`; delete them separately only when you no longer need the history.
-
 ```sh
 # Human
-sudo systemctl disable --now secretops-local-sshd.service
-sudo rm -f /opt/secretops/ssh/authorized_keys          # removes the agent's access first
-sudo rm -f /etc/systemd/system/secretops-local-sshd.service /usr/local/bin/secretops \
-    /usr/local/bin/secretops-broker /usr/local/bin/secretops-agent /usr/local/bin/secretops-local \
-    /usr/local/sbin/secretops-configure
-sudo rm -f /opt/secretops/broker.env                    # the token
-sudo -u secretops-broker sh -c 'cd / && gh auth logout --hostname github.com'
-sudo systemctl daemon-reload
+sudo secretops-uninstall
 ```
 
-Then revoke the machine identity token in Infisical and the broker's GitHub authorization, and in the agent account remove `~/.ssh/secretops_local_agent_ed25519*` and `~/.ssh/secretops_local_known_hosts`. The `secretops-broker` account owns the kept plans and audit; remove it (`sudo userdel -r secretops-broker`) only together with them.
+It lists what it removes and asks once. It removes the agent's access first, then the SSH service, the application with `broker.env` (the token), the programs, the `secretops-broker` account with its GitHub login, and the agent's broker key. Plans, audit and policy are kept in a root-only archive, `/root/secretops-uninstall-DATE.tar.gz`, which never contains the token; `--purge` skips the archive. Pause the agent first: it refuses while a broker command is running. If it stops partway, for example because the broker account cannot be removed, fix the cause and run it again; the programs are removed last.
+
+Then revoke what stays valid outside the machine: the Infisical machine identity token, and the broker's GitHub CLI authorization in your GitHub settings under Applications. Your own `~/.config/secretops/client.yaml` is left in place.
