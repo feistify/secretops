@@ -210,6 +210,8 @@ check "new agent account exists" pass getent passwd coder
 check "new agent account has no administrator group" pass sh -c '! id -nG coder | grep -qwE "sudo|admin|wheel"'
 check "new agent account has no password" pass sh -c 'test "$(getent shadow coder | cut -d: -f2)" = "!"'
 check "install-info records the created account" pass grep -qx agent_created=yes /opt/secretops/install-info
+check "upgrade after create-agent-user" pass bash scripts/install.sh --upgrade --wheel "$WHEEL"
+check "upgrade keeps the created-account record" pass grep -qx agent_created=yes /opt/secretops/install-info
 /usr/sbin/sshd -f /opt/secretops/ssh/sshd_config
 check "new agent reaches the broker" pass runuser -u coder -- env HOME=/home/coder secretops-local version
 pkill -f 'sshd -f /opt/secretops' || true

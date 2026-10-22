@@ -183,7 +183,7 @@ installer=secretops-install-1
 version=$("$ROOT/venv/bin/python" -I -c 'from importlib.metadata import version; print(version("secretops"))')
 wheel_sha256=$wheel_sha256
 agent_user=$agent_user
-agent_created=$([[ -n $create_agent ]] && echo yes || echo no)
+agent_created=$agent_created
 port=$port
 installed=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
@@ -207,6 +207,9 @@ if [[ $upgrade == 1 ]]; then
     fi
     agent_user=$(info_value agent_user)
     port=$(info_value port)
+    # Installations from before --create-agent-user did not create the account.
+    agent_created=$(info_value agent_created)
+    [[ $agent_created == yes ]] || agent_created=no
     build_venv "$ROOT/venv.new"
     rm -rf "$ROOT/venv.previous" "$ROOT/previous"
     install -d -o root -g root -m 0755 "$ROOT/previous"
@@ -238,6 +241,7 @@ sys.exit(packaged != open(sys.argv[1]).read())' "$ROOT/policy.yaml"; then
 fi
 
 # --- fresh installation: check everything before changing anything ---
+agent_created=no
 if [[ -n $create_agent ]]; then
     [[ -z $agent_user ]] || die "use either --agent-user or --create-agent-user"
     [[ $create_agent =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || die "--create-agent-user: invalid account name"
@@ -284,6 +288,7 @@ trap 'echo "install: failed partway; see docs/INSTALL.md, \"Remove a failed inst
 if [[ -n $create_agent ]]; then
     # A normal login account, in no administrator group, password locked.
     useradd --create-home --shell /bin/bash "$agent_user"
+    agent_created=yes
     agent_home=$(getent passwd "$agent_user" | cut -d: -f6)
     echo "Created the agent account $agent_user (no sudo, no password)."
 fi
