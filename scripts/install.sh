@@ -173,7 +173,7 @@ fetch_packages() {
     if [[ -z $wheel ]]; then
         "$fetch_dir/venv/bin/python" -I -m pip download --quiet --no-cache-dir --disable-pip-version-check \
             --require-hashes --only-binary=:all: --no-deps -d "$fetch_dir/program" -r "$release_pin" \
-            || die "could not download secretops $pin_version with the pinned hash; nothing was changed"
+            || die "could not download secretops $pin_version with the pinned hash; nothing was changed. If it was released minutes ago, PyPI may still be updating; try again shortly"
         wheel=$fetch_dir/program/secretops-$pin_version-py3-none-any.whl
         [[ -f $wheel && $(sha256sum -- "$wheel" | cut -d' ' -f1) == "$pin_sha256" ]] \
             || die "downloaded secretops does not match the pinned hash; nothing was changed"
