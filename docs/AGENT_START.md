@@ -82,20 +82,7 @@ The human can also do it without your plan: `secretops add STRIPE_KEY --env stag
 
 ### Recipes
 
-| Action | Example |
-| --- | --- |
-| `vault.read.check` (does a name exist) | [dummy-vault-check.yaml](../examples/recipes/dummy-vault-check.yaml) |
-| `vault.secret.add` (human enters the value) | above |
-| `vault.secret.generate` | [vault-secret-generate.yaml](../examples/recipes/vault-secret-generate.yaml) |
-| `vault.secret.rotate` | [vault-secret-rotate.yaml](../examples/recipes/vault-secret-rotate.yaml) |
-| `vault.secret.copy_many` (between environments) | [vault-secret-copy-many.yaml](../examples/recipes/vault-secret-copy-many.yaml) |
-| `vault.secret.diff_envs` (compare names) | [vault-secret-diff-envs.yaml](../examples/recipes/vault-secret-diff-envs.yaml) |
-| `vault.secret.import_file` (human-provided file) | [vault-secret-import-file.yaml](../examples/recipes/vault-secret-import-file.yaml) |
-| `github.env_secret.write` (one secret) | [github-env-secret-write.yaml](../examples/recipes/github-env-secret-write.yaml) |
-| `github.env_secret.sync_many` | [github-env-secret-sync-many.yaml](../examples/recipes/github-env-secret-sync-many.yaml) |
-| `github.env_secret.verify_many` (names only) | [github-env-secret-verify-many.yaml](../examples/recipes/github-env-secret-verify-many.yaml) |
-
-Replace the example owner, repository, environments and names with the human's. Each action is described in [USAGE.md](USAGE.md#actions). The vault project and folder are set by the human in the broker, not in recipes.
+The [recipe reference](RECIPES.md) lists every action with its fields, whether it needs approval, the allowed environments and an example. Replace the example owner, repository, environments and names with the human's. The vault project and folder are set by the human in the broker, not in recipes. Every environment a recipe names, including the GitHub environment, must be one the policy allows (by default `dev` and `staging` for writes).
 
 Rotation changes only the vault; syncing to GitHub is a separate plan. GitHub never returns values: `verify_many` proves that a name exists, not which value it has.
 

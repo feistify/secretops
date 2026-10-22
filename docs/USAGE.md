@@ -65,6 +65,8 @@ plan --save -> show-plan -> preflight-plan -> approve-plan -> execute-plan
 
 ## Actions
 
+Fields and an example for every action are in the [recipe reference](RECIPES.md).
+
 The current MVP has proven these workflows with dummy dev/staging smoke tests. Production execution for write, sync, generate, rotate, copy, and import-file workflows is intentionally blocked by policy until production-specific controls are expanded:
 
 - `vault.secret.generate`
