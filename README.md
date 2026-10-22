@@ -68,9 +68,20 @@ The complete walkthrough, with verification and cleanup, is in the [demo](https:
 
 ## Get started
 
-secretops installs as a local broker on Linux, from this repository: `pip install secretops` alone does not set up the broker account and the restricted agent access.
+On Ubuntu 24.04, with `git`, `uv`, `python3-venv`, `openssh-server` and a root-owned `infisical` CLI installed, in your own terminal:
 
-1. [Install](https://github.com/feistify/secretops/blob/main/docs/INSTALL.md) the broker and connect Infisical and GitHub.
+```sh
+git clone --branch v0.1.2 https://github.com/feistify/secretops.git
+cd secretops
+uv build
+sudo bash scripts/install.sh --wheel dist/secretops-0.1.2-py3-none-any.whl \
+    --agent-user agent --infisical-domain https://app.infisical.com
+sudo secretops-configure        # Infisical project, folder and token (hidden prompt)
+```
+
+`--agent-user` is the Linux account your coding agent runs as. The installer creates the broker account, the restricted agent access and your tools. secretops itself is built from the release tag; its dependencies come from PyPI with pinned hashes. A release download that needs no `git` or build is planned.
+
+1. Follow the [installation guide](https://github.com/feistify/secretops/blob/main/docs/INSTALL.md) for the details: prerequisites, a separate agent account, the GitHub login and checks.
 2. Try the [demo](https://github.com/feistify/secretops/blob/main/docs/DEMO.md) with a test project and made-up values.
 3. Add the [agent instructions](https://github.com/feistify/secretops/blob/main/docs/AGENT_USAGE.md#instructions-for-agents-in-consumer-projects) to your project, so your agent uses the broker.
 
