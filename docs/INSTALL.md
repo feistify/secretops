@@ -30,7 +30,7 @@ The installer never asks for, reads or writes a credential, and never calls Infi
 
 **Recommended:** run the agent as a separate account without sudo. Then the agent cannot use your sudo, SSH keys or terminal, and approval stays with you:
 
-The installer can create it: use `--create-agent-user agent` instead of `--agent-user agent` in [Install](#install). It creates a normal account without sudo and without a password. Or create it yourself:
+The installer can create it: `--create-agent-user agent` in [Install](#install). It creates a normal account without sudo and without a password. Or create it yourself:
 
 ```sh
 # Human
@@ -54,34 +54,34 @@ What each setup protects is compared in [deployment levels](SECURITY_MODEL.md#de
 
 ```sh
 # Human
-sudo apt install python3-venv openssh-server git
+sudo apt install python3-venv openssh-server curl
 ```
 
 - **OpenSSH server**: on Ubuntu, installing `openssh-server` also starts the normal network-facing `ssh` service. secretops does not use it. If you do not want it: `sudo systemctl disable --now ssh.service ssh.socket`.
 - **Infisical CLI**: install it as root following the [official instructions](https://infisical.com/docs/cli/overview), so that it is `/usr/bin/infisical` or another root-owned path. The installer refuses a CLI that the broker or another user could replace. The tested CLI version is in the validation records.
 - **Infisical project and machine identity**: an Infisical Cloud account or a self-hosted instance ([self-hosting](https://infisical.com/docs/self-hosting/overview)). Installing secretops does not install Infisical. Create a project and a [machine identity](https://infisical.com/docs/documentation/platform/identities/machine-identities) with access only to that project and the environments you use (for example `dev` and `staging`), able to read and write secrets there. Use [token auth](https://infisical.com/docs/documentation/platform/identities/token-auth) or another method that gives you an access token; note when it expires.
 - **GitHub CLI** (only for GitHub sync): `gh` installed as root, for example from the [official package](https://github.com/cli/cli/blob/trunk/docs/install_linux.md).
-- **uv** (to build the wheel): see the [uv installation](https://docs.astral.sh/uv/getting-started/installation/).
 
 ## Install
 
+Download the installer bundle of the release, check it, unpack it and run it:
+
 ```sh
 # Human
-git clone --branch v0.1.2 https://github.com/feistify/secretops.git
-cd secretops
-uv build
-sudo bash scripts/install.sh --wheel dist/secretops-0.1.2-py3-none-any.whl \
-    --agent-user agent --infisical-domain https://app.infisical.com
+curl -fsSLO https://github.com/feistify/secretops/releases/download/v0.1.3/secretops-0.1.3-installer.tar.gz
+sha256sum secretops-0.1.3-installer.tar.gz      # must match the SHA-256 in the release notes
+tar -xzf secretops-0.1.3-installer.tar.gz && cd secretops-0.1.3-installer
+sudo ./install.sh --create-agent-user agent --infisical-domain https://app.infisical.com
 ```
 
-Options: `--infisical-bin PATH` (default `/usr/bin/infisical`), `--gh-bin PATH` (default `/usr/bin/gh` if present), `--port PORT` (default 22222). The installer refuses to overwrite an existing installation, account, port, or agent key. The last lines check that the agent reaches the broker:
+For an existing agent account use `--agent-user NAME` instead of `--create-agent-user NAME`. Other options: `--infisical-bin PATH` (default `/usr/bin/infisical`), `--gh-bin PATH` (default `/usr/bin/gh` if present), `--port PORT` (default 22222), `--allow-untested-os` for distributions other than Ubuntu and Debian. The installer checks the system first and refuses to overwrite an existing installation, account, port, or agent key. The last lines check that the agent reaches the broker:
 
 ```text
 PASS: agent reaches the broker through the restricted SSH key.
-Installed secretops 0.1.2. Vault credentials are not configured yet.
+Installed secretops 0.1.3. Vault credentials are not configured yet.
 ```
 
-The installer downloads the Python dependencies from PyPI with the hashes pinned in `scripts/broker-requirements.txt`.
+The installer installs secretops 0.1.3 from PyPI, checked against the SHA-256 pinned in the bundle's `secretops-release.txt`, and its dependencies with the hashes pinned in `broker-requirements.txt`. With GitHub CLI you can also check where the bundle was built: `gh attestation verify secretops-0.1.3-installer.tar.gz --repo feistify/secretops`. To install from a repository checkout instead, see [DEVELOPMENT.md](DEVELOPMENT.md#install-a-broker-from-a-checkout).
 
 ## Configure the vault
 

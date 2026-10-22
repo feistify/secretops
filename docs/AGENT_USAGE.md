@@ -6,67 +6,9 @@ secretops is intended to be used by agents as an installed CLI package, not as a
 
 Agents should work with secret names, environments, recipes, saved plans, policy decisions, approval status, audit events, and safe status output. Agents must not receive or print raw secret values.
 
-## Installation for agent usage
+## Installation
 
-Build release artifacts from a trusted development or CI environment:
-
-```bash
-uv build
-```
-
-This produces artifacts such as:
-
-```text
-dist/secretops-<version>-py3-none-any.whl
-dist/secretops-<version>.tar.gz
-```
-
-Install the wheel into an isolated Python environment. Do not use an editable install for agent deployment.
-
-Inside a virtual environment (`python3` must be Python 3.11 or newer):
-
-```bash
-python3 -m venv /path/to/venv
-/path/to/venv/bin/python -m pip install dist/secretops-<version>-py3-none-any.whl
-/path/to/venv/bin/secretops version
-```
-
-With pipx:
-
-```bash
-pipx install dist/secretops-<version>-py3-none-any.whl
-secretops version
-```
-
-With uv tool:
-
-```bash
-uv tool install dist/secretops-<version>-py3-none-any.whl
-secretops version
-```
-
-For agent deployments, install the package artifact and expose only the `secretops` CLI plus explicitly approved recipe/plan paths. Do not put the `secretops` source repository in the agent workspace.
-
-The recommended deployment shape is the broker host model in `BROKER_HOST.md`: a dedicated broker user holds the vault credentials and plan store, and the agent reaches the CLI only through an SSH forced-command allowlist.
-
-## Recommended first distribution path
-
-The recommended first distribution method is GitHub Releases with built wheel and source distribution artifacts attached.
-
-On tag, CI can run:
-
-```bash
-uv build
-```
-
-and publish:
-
-```text
-dist/*.whl
-dist/*.tar.gz
-```
-
-A Python registry such as GitHub Packages or another package index can be considered later. It is not required for the first agent deployment.
+A human installs the broker as described in [INSTALL.md](INSTALL.md); an agent can help as described in [AGENT_START.md](AGENT_START.md). The agent gets only `secretops-local`, never the secretops source, a Python installation of it, or its credentials. Other deployment shapes (a broker on another machine, an ephemeral broker) are in [BROKER_HOST.md](BROKER_HOST.md).
 
 ## Agent operating model
 

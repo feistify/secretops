@@ -55,7 +55,7 @@ console = Console()
 
 @app.command(help="Show the secretops version.", rich_help_panel="Information")
 def version():
-    console.print("secretops 0.1.2")
+    console.print("secretops 0.1.3")
 
 
 @app.command(
