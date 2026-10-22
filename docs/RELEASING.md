@@ -2,7 +2,7 @@
 
 How the maintainer publishes a version. Release tags cannot be moved or deleted, so a mistake after tagging means a new patch version.
 
-1. **Release pull request.** Raise the version in `pyproject.toml`, `uv.lock` (`uv lock`), the `secretops version` output in `src/secretops/cli.py`, README (status line and install commands), `docs/INSTALL.md` and the examples in `scripts/install.sh`. Merge it after CI passes.
+1. **Release pull request.** Raise the version in `pyproject.toml`, `uv.lock` (`uv lock`), the `secretops version` output in `src/secretops/cli.py`, README (status line and the bundle URL and names in Get started), `docs/INSTALL.md` (bundle URL, names and expected output) and the checkout example in `scripts/install.sh`. Merge it after CI passes.
 2. **Tag.** On the merge commit, after CI on `main` passed:
    ```sh
    git tag -a vX.Y.Z -m "secretops vX.Y.Z" MERGE_COMMIT

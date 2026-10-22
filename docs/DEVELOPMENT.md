@@ -14,6 +14,20 @@ uv run secretops approve-plan --id <plan_id>
 uv run secretops execute-plan --id <plan_id>
 ```
 
+## Install a broker from a checkout
+
+To test unreleased changes, build the wheel and pass it to the installer; it then skips the PyPI download:
+
+```sh
+# Human
+uv build
+sudo bash scripts/install.sh --wheel dist/secretops-VERSION-py3-none-any.whl \
+    --create-agent-user agent --infisical-domain https://app.infisical.com
+sudo bash scripts/install.sh --upgrade --wheel dist/secretops-VERSION-py3-none-any.whl
+```
+
+`tests/test_install_container.sh` runs the installer in throwaway Ubuntu and Debian containers.
+
 ## Dummy/dev examples
 
 These are human-operated development-checkout examples using the [configuration](CONFIGURATION.md). Installed deployments use the installed CLI; agents use the [broker flow](USAGE.md#plan-lifecycle).

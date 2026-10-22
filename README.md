@@ -29,7 +29,7 @@ agent  ── secretops-local (restricted SSH) ──▶  broker  ──▶  Inf
 
 The boundary is only as strong as the separation: recommended are three accounts on one machine (you, the agent, the broker); strongest is a broker on another machine. If the agent runs as your own user, it can use your `sudo` and secretops is a workflow gate, not a boundary. See [deployment levels](https://github.com/feistify/secretops/blob/main/docs/SECURITY_MODEL.md#deployment-levels).
 
-**Why not just `pip install secretops`?** The PyPI package is only the program. The separation above (broker account, restricted agent access, your tools) is set up by `scripts/install.sh` from this repository, so installation starts from GitHub.
+**Why not just `pip install secretops`?** The PyPI package is only the program. The separation above (broker account, restricted agent access, your tools) needs root and is set up by the installer from the GitHub release, which takes the program from PyPI.
 
 ## What it can do
 
@@ -70,18 +70,17 @@ The complete walkthrough, with verification and cleanup, is in the [demo](https:
 
 ## Get started
 
-On Ubuntu 24.04 or Debian 12, with `git`, `uv`, `python3-venv`, `openssh-server` and a root-owned `infisical` CLI installed, in your own terminal:
+On Ubuntu 24.04 or Debian 12, with `curl`, `python3-venv`, `openssh-server` and a root-owned `infisical` CLI installed, in your own terminal:
 
 ```sh
-git clone --branch v0.1.2 https://github.com/feistify/secretops.git
-cd secretops
-uv build
-sudo bash scripts/install.sh --wheel dist/secretops-0.1.2-py3-none-any.whl \
-    --agent-user agent --infisical-domain https://app.infisical.com
+curl -fsSLO https://github.com/feistify/secretops/releases/download/v0.1.3/secretops-0.1.3-installer.tar.gz
+sha256sum secretops-0.1.3-installer.tar.gz      # compare with the release notes
+tar -xzf secretops-0.1.3-installer.tar.gz && cd secretops-0.1.3-installer
+sudo ./install.sh --create-agent-user agent --infisical-domain https://app.infisical.com
 sudo secretops-configure        # Infisical project, folder and token (hidden prompt)
 ```
 
-`--agent-user` is the Linux account your coding agent runs as. The installer creates the broker account, the restricted agent access and your tools. secretops itself is built from the release tag; its dependencies come from PyPI with pinned hashes. A release download that needs no `git` or build is planned.
+`--create-agent-user` creates a separate account without sudo for your coding agent; to use an existing account, give `--agent-user NAME` instead. The installer sets up the broker account, the restricted agent access and your tools, and installs secretops 0.1.3 from PyPI, checked against the hash in the bundle. `sudo secretops-uninstall` removes it again.
 
 1. Follow the [installation guide](https://github.com/feistify/secretops/blob/main/docs/INSTALL.md) for the details: prerequisites, a separate agent account, the GitHub login and checks.
 2. Try the [demo](https://github.com/feistify/secretops/blob/main/docs/DEMO.md) with a test project and made-up values.
@@ -91,14 +90,14 @@ Working with a coding agent? Point it to [docs/AGENT_START.md](https://github.co
 
 ## Status and limits
 
-**v0.1.2, early-stage software.** Try it with test values first.
+**v0.1.3, early-stage software.** Try it with test values first.
 
 | Available now | Current limits |
 | --- | --- |
 | Hidden entry, generation, rotation, import and environment copy in Infisical | One Infisical project and folder per broker; switch with `sudo secretops-configure` |
 | Sync to GitHub environment secrets and name verification | GitHub cannot return values: secretops verifies names, not values |
 | Saved plans bound to their destination, human approval, audit without values | Production writes are refused by the default policy |
-| Local broker with restricted agent access, installed by `scripts/install.sh` | Ubuntu 24.04 or Debian 12 with Python 3.11 or newer; run the agent under its own account, otherwise it is a workflow gate, not a security boundary |
+| Local broker with restricted agent access, an installer and an uninstaller | Ubuntu 24.04 or Debian 12 with Python 3.11 or newer; run the agent under its own account, otherwise it is a workflow gate, not a security boundary |
 
 Details: [limitations and tested versions](https://github.com/feistify/secretops/blob/main/docs/LIMITATIONS.md).
 

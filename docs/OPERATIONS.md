@@ -64,10 +64,9 @@ The GitHub login is renewed the same way it was created: `cd / && sudo -u secret
 ## Upgrade
 
 1. Pause the agent and finish any `secretops add`.
-2. **Human**, in a checkout of the new version:
+2. **Human:** download, check and unpack the new version's installer bundle as in [INSTALL.md](INSTALL.md#install), then in its directory:
    ```sh
-   uv build
-   sudo bash scripts/install.sh --upgrade --wheel dist/secretops-VERSION-py3-none-any.whl
+   sudo ./install.sh --upgrade
    ```
    It refuses while broker processes are running. It builds and checks the new application before switching, then replaces the wrappers. `broker.env`, policy, plans, audit, the SSH service and keys are not changed. If the new version ships a different default policy, it says so and leaves yours unchanged.
 3. Read the release notes: a new plan contract version means open plans must be planned and approved again.
@@ -84,6 +83,8 @@ sudo mv /opt/secretops/venv.previous /opt/secretops/venv
 for name in secretops-broker secretops-agent secretops-local; do
     sudo install -o root -g root -m 0755 /opt/secretops/previous/$name /usr/local/bin/$name
 done
+[ ! -f /opt/secretops/previous/secretops-uninstall ] || sudo install -o root -g root -m 0755 \
+    /opt/secretops/previous/secretops-uninstall /usr/local/sbin/secretops-uninstall
 sudo -u secretops-broker /usr/local/bin/secretops-broker version
 ```
 

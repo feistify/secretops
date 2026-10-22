@@ -12,7 +12,7 @@
 # from PyPI and pip checks it against the pinned SHA-256. In a checkout, pass
 # a wheel built with `uv build` instead:
 #
-#   sudo bash scripts/install.sh --wheel dist/secretops-0.1.2-py3-none-any.whl \
+#   sudo bash scripts/install.sh --wheel dist/secretops-0.1.3-py3-none-any.whl \
 #       --agent-user USER --infisical-domain https://vault.example.com
 #
 # Fresh install creates the secretops-broker account, /opt/secretops (root-
