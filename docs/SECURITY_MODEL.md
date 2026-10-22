@@ -76,7 +76,7 @@ The broker can be a separate machine (NAS, VPS, home server) or a second Unix us
 How much secretops protects depends on how you run it. From weakest to strongest:
 
 1. **No broker.** You and the agent run secretops under your own account, with the token in your environment. Good for trying it out alone.
-2. **Local broker, agent as you.** `install.sh` with `--agent-user` set to your own account. The token sits with the broker account, but the agent can use your `sudo`, keys and terminal to reach it.
+2. **Local broker, agent as you.** `install.sh` with `--agent-user` set to your own account. The token sits with the broker account. The agent can read your own files, and it can reach the broker's files through your `sudo` unless `sudo` asks for a password the agent never sees. A password-protected `sudo` makes the rows marked convention much harder to break, but it is not part of secretops.
 3. **Local broker, separate agent account.** You, the agent and the broker each have their own account on one machine. This is the recommended setup from [INSTALL.md](INSTALL.md).
 4. **Broker on another machine.** The agent's machine holds no credentials at all; see [BROKER_HOST.md](BROKER_HOST.md).
 
@@ -90,6 +90,7 @@ How much secretops protects depends on how you run it. From weakest to strongest
 | agent cannot change plan status, audit log or policy | convention | convention | enforced | enforced |
 | production writes denied by policy | while the policy file is protected | while the policy file is protected | enforced | enforced |
 | root on the agent's machine cannot read vault credentials | no | no | no | enforced |
+| agent cannot read the human's own files (SSH keys, `gh` login, `.env` files) | no | no | enforced | enforced |
 | agent cannot read secrets that are already on its own machine | out of scope | out of scope | out of scope | out of scope |
 
 "Convention" means that the agent's instructions forbid it, but nothing stops an agent that ignores them.
