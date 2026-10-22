@@ -30,9 +30,17 @@ The installer never asks for, reads or writes a credential, and never calls Infi
 
 **Recommended:** run the agent as a separate account without sudo. Then the agent cannot use your sudo, SSH keys or terminal, and approval stays with you:
 
+The installer can create it: use `--create-agent-user agent` instead of `--agent-user agent` in [Install](#install). It creates a normal account without sudo and without a password. Or create it yourself:
+
 ```sh
 # Human
 sudo adduser --disabled-password --gecos '' agent      # not in the sudo group
+```
+
+Then, as that account, clone your project:
+
+```sh
+# Human
 sudo -iu agent git clone https://github.com/OWNER/PROJECT.git
 ```
 

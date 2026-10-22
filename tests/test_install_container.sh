@@ -198,5 +198,23 @@ archives=$(ls /root/secretops-uninstall-*.tar.gz | wc -l)
 check "uninstall --purge" pass secretops-uninstall --yes --purge
 check "purge leaves no new archive" pass test "$(ls /root/secretops-uninstall-*.tar.gz | wc -l)" = "$archives"
 
+# A new agent account created by the installer.
+check "create-agent-user refuses an existing account" deny env SUDO_USER=human bash scripts/install.sh \
+    --wheel "$WHEEL" --create-agent-user agent --infisical-domain http://127.0.0.1:8086 --no-start
+check "create-agent-user and agent-user together refused" deny env SUDO_USER=human bash scripts/install.sh \
+    --wheel "$WHEEL" --agent-user agent --create-agent-user coder --infisical-domain http://127.0.0.1:8086 --no-start
+check "refusals created no account" deny getent passwd coder
+check "install with a new agent account" pass env SUDO_USER=human bash scripts/install.sh --wheel "$WHEEL" \
+    --create-agent-user coder --infisical-domain http://127.0.0.1:8086 --no-start
+check "new agent account exists" pass getent passwd coder
+check "new agent account has no administrator group" pass sh -c '! id -nG coder | grep -qwE "sudo|admin|wheel"'
+check "new agent account has no password" pass sh -c 'test "$(getent shadow coder | cut -d: -f2)" = "!"'
+check "install-info records the created account" pass grep -qx agent_created=yes /opt/secretops/install-info
+/usr/sbin/sshd -f /opt/secretops/ssh/sshd_config
+check "new agent reaches the broker" pass runuser -u coder -- env HOME=/home/coder secretops-local version
+pkill -f 'sshd -f /opt/secretops' || true
+check "uninstall names the created account" pass sh -c 'secretops-uninstall --yes --purge | grep -q "userdel -r coder"'
+check "uninstall keeps the created account" pass getent passwd coder
+
 [ "$fail" = 0 ] && echo "All installer checks passed." || { echo "Installer checks failed."; exit 1; }
 EOF
