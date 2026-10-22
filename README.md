@@ -19,7 +19,7 @@ Coding agents can set up deployments, but an API key they handle can end up in t
 ```text
 you    ── secretops add, approve-plan ──────────────┐
                                                     ▼
-agent  ── secretops-local (restricted SSH) ──▶  broker  ──▶  Infisical (values)
+agent  ── secretops-local (restricted SSH) ──▶  broker  ◀──▶  Vault (Infisical): values
                                                     └──────▶  GitHub environment secrets
 ```
 

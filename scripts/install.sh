@@ -158,22 +158,38 @@ trusted() {
 
 # Build a venv from the hash-pinned dependencies and the wheel, owned by
 # root and checked before it is used.
+# Download every package before anything on the system changes, so a
+# network or PyPI problem stops the installer with nothing to clean up. pip
+# checks each file against the pinned hashes; the venv is then built from
+# these files only, without the network.
+fetch_packages() {
+    fetch_dir=$(mktemp -d)
+    trap 'rm -rf -- "$fetch_dir"' EXIT
+    echo "Downloading packages from PyPI (checked against pinned hashes)..."
+    "$PYTHON" -m venv "$fetch_dir/venv"
+    "$fetch_dir/venv/bin/python" -I -m pip download --quiet --no-cache-dir --disable-pip-version-check \
+        --require-hashes --only-binary=:all: -d "$fetch_dir/packages" -r "$src/broker-requirements.txt" \
+        || die "could not download the dependencies with their pinned hashes; nothing was changed"
+    if [[ -z $wheel ]]; then
+        "$fetch_dir/venv/bin/python" -I -m pip download --quiet --no-cache-dir --disable-pip-version-check \
+            --require-hashes --only-binary=:all: --no-deps -d "$fetch_dir/program" -r "$release_pin" \
+            || die "could not download secretops $pin_version with the pinned hash; nothing was changed"
+        wheel=$fetch_dir/program/secretops-$pin_version-py3-none-any.whl
+        [[ -f $wheel && $(sha256sum -- "$wheel" | cut -d' ' -f1) == "$pin_sha256" ]] \
+            || die "downloaded secretops does not match the pinned hash; nothing was changed"
+    fi
+}
+
 build_venv() {
     local dest=$1
     [[ ! -e $dest && ! -L $dest ]] || die "$dest exists; inspect and remove it first"
     echo "Building application environment..."
     "$PYTHON" -m venv "$dest"
     "$dest/bin/python" -I -m pip install --quiet --no-cache-dir --disable-pip-version-check \
+        --no-index --find-links "$fetch_dir/packages" \
         --require-hashes --only-binary=:all: -r "$src/broker-requirements.txt"
-    if [[ -n $wheel ]]; then
-        "$dest/bin/python" -I -m pip install --quiet --no-cache-dir --disable-pip-version-check \
-            --no-deps "$wheel"
-    else
-        echo "Downloading secretops $pin_version from PyPI (checked against the pinned hash)..."
-        "$dest/bin/python" -I -m pip install --quiet --no-cache-dir --disable-pip-version-check \
-            --require-hashes --only-binary=:all: --no-deps -r "$release_pin" \
-            || { rm -rf -- "$dest"; die "could not install secretops $pin_version from PyPI with the pinned hash"; }
-    fi
+    "$dest/bin/python" -I -m pip install --quiet --no-cache-dir --disable-pip-version-check \
+        --no-index --no-deps "$wheel"
     chown -R root:root "$dest"
     chmod -R go-w "$dest"
     smoke "$dest" || die "application check failed in $dest"
@@ -233,6 +249,7 @@ if [[ $upgrade == 1 ]]; then
     # Installations from before --create-agent-user did not create the account.
     agent_created=$(info_value agent_created)
     [[ $agent_created == yes ]] || agent_created=no
+    fetch_packages
     build_venv "$ROOT/venv.new"
     rm -rf "$ROOT/venv.previous" "$ROOT/previous"
     install -d -o root -g root -m 0755 "$ROOT/previous"
@@ -306,6 +323,7 @@ if [[ -n $gh_bin ]]; then
     trusted "$gh_bin" || die "$gh_bin must be an executable whose path is root-owned and not writable by others"
 fi
 
+fetch_packages
 trap 'echo "install: failed partway; see docs/INSTALL.md, \"Remove a failed installation\"" >&2' ERR
 
 if [[ -n $create_agent ]]; then

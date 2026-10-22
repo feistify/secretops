@@ -227,5 +227,11 @@ pkill -f 'sshd -f /opt/secretops' || true
 check "uninstall names the created account" pass sh -c 'secretops-uninstall --yes --purge | grep -q "userdel -r coder"'
 check "uninstall keeps the created account" pass getent passwd coder
 
+# Packages are downloaded and checked before anything changes.
+check "fresh install with a wrong pin refused" deny env SUDO_USER=human bash /tmp/bad-bundle/install.sh \
+    --create-agent-user coder2 --infisical-domain http://127.0.0.1:8086 --no-start
+check "refused fresh install changed nothing" pass sh -c \
+    '! getent passwd coder2 && ! getent passwd secretops-broker && test ! -e /opt/secretops'
+
 [ "$fail" = 0 ] && echo "All installer checks passed." || { echo "Installer checks failed."; exit 1; }
 EOF
