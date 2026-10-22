@@ -1,9 +1,10 @@
 #!/bin/sh
-# Runs scripts/install.sh in a throwaway Ubuntu 24.04 container and checks
-# the installed boundary. Needs Docker and network access (apt, PyPI).
-# Not part of pytest; run before changing the installer:
+# Runs scripts/install.sh in a throwaway container and checks the installed
+# boundary. Needs Docker and network access (apt, PyPI). Not part of pytest;
+# run before changing the installer, on both tested systems:
 #
 #   uv build && sh tests/test_install_container.sh
+#   IMAGE=debian:12 sh tests/test_install_container.sh
 #
 # The container has no systemd, so the installer runs with --no-start and
 # the test starts the dedicated sshd itself. A fake infisical CLI stands in
@@ -12,7 +13,7 @@ set -eu
 REPO=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 WHEEL=$(ls "$REPO"/dist/secretops-*-py3-none-any.whl | head -n 1)
 exec docker run --rm -i -v "$REPO:/src:ro" -e WHEEL="/src/dist/$(basename "$WHEEL")" \
-    ubuntu:24.04 bash -s <<'EOF'
+    "${IMAGE:-ubuntu:24.04}" bash -s <<'EOF'
 set -eu
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq >/dev/null
@@ -39,6 +40,14 @@ check() { # label, expected (pass|deny), command...
 as_agent() { runuser -u agent -- env HOME=/home/agent "$@"; }
 
 cd /src
+echo "System: $(. /etc/os-release && echo "$PRETTY_NAME")"
+cp -L /etc/os-release /tmp/os-release.real
+rm /etc/os-release
+sed 's/^ID=.*/ID=fedora/; s/^PRETTY_NAME=.*/PRETTY_NAME="Fedora Linux 40"/' /tmp/os-release.real > /etc/os-release
+check "untested distribution refused with its name" pass sh -c 'env SUDO_USER=human bash scripts/install.sh --wheel "$WHEEL" --agent-user agent --infisical-domain http://127.0.0.1:8086 --no-start 2>&1 | grep -q "untested system: Fedora Linux 40"'
+check "--allow-untested-os passes the system check" pass sh -c '! env SUDO_USER=human bash scripts/install.sh --wheel "$WHEEL" --allow-untested-os 2>&1 | grep -q "untested system: Fedora Linux 40\. Tested"'
+cp /tmp/os-release.real /etc/os-release
+check "no systemd refused unless --no-start" pass sh -c 'env SUDO_USER=human bash scripts/install.sh --wheel "$WHEEL" --agent-user agent --infisical-domain http://127.0.0.1:8086 2>&1 | grep -q "systemd is not running"'
 check "install refuses without the agent user flag" deny env SUDO_USER=human bash scripts/install.sh --wheel "$WHEEL"
 runuser -u agent -- sh -c 'cp /usr/bin/infisical /home/agent/own-infisical && ln -s own-infisical /home/agent/evil-link'
 check "install refuses a link to an agent-owned binary" deny env SUDO_USER=human bash scripts/install.sh \

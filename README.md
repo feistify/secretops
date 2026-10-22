@@ -70,7 +70,7 @@ The complete walkthrough, with verification and cleanup, is in the [demo](https:
 
 ## Get started
 
-On Ubuntu 24.04, with `git`, `uv`, `python3-venv`, `openssh-server` and a root-owned `infisical` CLI installed, in your own terminal:
+On Ubuntu 24.04 or Debian 12, with `git`, `uv`, `python3-venv`, `openssh-server` and a root-owned `infisical` CLI installed, in your own terminal:
 
 ```sh
 git clone --branch v0.1.2 https://github.com/feistify/secretops.git
@@ -98,7 +98,7 @@ Working with a coding agent? Point it to [docs/AGENT_START.md](https://github.co
 | Hidden entry, generation, rotation, import and environment copy in Infisical | One Infisical project and folder per broker; switch with `sudo secretops-configure` |
 | Sync to GitHub environment secrets and name verification | GitHub cannot return values: secretops verifies names, not values |
 | Saved plans bound to their destination, human approval, audit without values | Production writes are refused by the default policy |
-| Local broker with restricted agent access, installed by `scripts/install.sh` | Ubuntu 24.04 with Python 3.11 or newer; run the agent under its own account, otherwise it is a workflow gate, not a security boundary |
+| Local broker with restricted agent access, installed by `scripts/install.sh` | Ubuntu 24.04 or Debian 12 with Python 3.11 or newer; run the agent under its own account, otherwise it is a workflow gate, not a security boundary |
 
 Details: [limitations and tested versions](https://github.com/feistify/secretops/blob/main/docs/LIMITATIONS.md).
 

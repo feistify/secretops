@@ -4,7 +4,7 @@ This guide installs secretops as a local broker on one Linux machine: the human 
 
 Every command block says who runs it. "Human" means your own terminal, not a terminal or tool session of the agent: never run `sudo` or enter a token through an agent (for example Claude Code's `!` prefix).
 
-Tested: Ubuntu 24.04 with its Python 3.12, installer checks in a clean Ubuntu 24.04 container (`tests/test_install_container.sh`). A clean-VM run with a self-hosted Infisical and GitHub is recorded in [local-broker-installation.md](validation/local-broker-installation.md). Other distributions are not tested.
+Tested: Ubuntu 24.04 with its Python 3.12; installer checks in clean Ubuntu 24.04 and Debian 12 containers (`tests/test_install_container.sh`). A clean-VM run with a self-hosted Infisical and GitHub is recorded in [local-broker-installation.md](validation/local-broker-installation.md). Other distributions are not tested.
 
 ## What gets installed
 

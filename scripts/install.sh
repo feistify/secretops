@@ -65,12 +65,13 @@ Usage:
   --gh-bin PATH           root-owned gh CLI (default: /usr/bin/gh if present)
   --port PORT             loopback SSH port for the agent (default: 22222)
   --no-start              write the SSH service but do not enable or start it
+  --allow-untested-os     install on a distribution other than Ubuntu or Debian
   --upgrade               replace application and wrappers of an existing install
 EOF
 }
 
 wheel="" agent_user="" create_agent="" domain="" infisical_bin=/usr/bin/infisical gh_bin="" port=22222
-upgrade=0 start=1
+upgrade=0 start=1 allow_untested_os=0
 while [[ $# -gt 0 ]]; do
     case $1 in
         --wheel) wheel=${2:?}; shift 2 ;;
@@ -81,6 +82,7 @@ while [[ $# -gt 0 ]]; do
         --gh-bin) gh_bin=${2:?}; shift 2 ;;
         --port) port=${2:?}; shift 2 ;;
         --no-start) start=0; shift ;;
+        --allow-untested-os) allow_untested_os=1; shift ;;
         --upgrade) upgrade=1; shift ;;
         -h | --help) usage; exit 0 ;;
         *) usage >&2; exit 2 ;;
@@ -88,6 +90,27 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ $EUID == 0 ]] || die "run with sudo from your own terminal, not from an agent session"
+
+# --- the system: stop here with a clear message rather than fail midway ---
+[[ $(uname -s) == Linux ]] || die "secretops brokers run on Linux only"
+os_id=$(. /etc/os-release 2>/dev/null && echo "${ID:-unknown}") || os_id=unknown
+os_name=$(. /etc/os-release 2>/dev/null && echo "${PRETTY_NAME:-$os_id}") || os_name=$os_id
+case $os_id in
+    ubuntu | debian) ;;
+    *)
+        [[ $allow_untested_os == 1 ]] \
+            || die "untested system: $os_name. Tested: Ubuntu 24.04 and Debian 12. To try anyway, add --allow-untested-os"
+        echo "WARNING: untested system: $os_name."
+        ;;
+esac
+missing=()
+for command in sshd ssh ssh-keygen ss runuser useradd userdel pgrep stat sha256sum tar; do
+    command -v "$command" >/dev/null || missing+=("$command")
+done
+[[ ${#missing[@]} == 0 ]] || die "missing commands: ${missing[*]} (Ubuntu and Debian: apt install openssh-server openssh-client iproute2 procps)"
+if [[ $upgrade == 0 && $start == 1 && ! -d /run/systemd/system ]]; then
+    die "systemd is not running; it starts the broker's SSH service. Use --no-start to only write the service"
+fi
 src=$(cd -- "$(dirname -- "$0")" && pwd)
 for name in secretops-broker secretops-agent secretops-local secretops-uninstall broker-requirements.txt; do
     [[ -f $src/$name ]] || die "missing $src/$name; run from an unpacked installer bundle or a repository checkout"
@@ -115,7 +138,7 @@ elif [[ -z $wheel ]]; then
 fi
 
 "$PYTHON" -c 'import sys, ensurepip, venv; sys.exit(sys.version_info < (3, 11))' 2>/dev/null \
-    || die "$PYTHON 3.11+ with venv is required (Ubuntu: apt install python3-venv)"
+    || die "$PYTHON 3.11 or newer with venv is required; found: $("$PYTHON" -V 2>&1 || echo none) (Ubuntu and Debian: apt install python3-venv)"
 
 # An executable that runs with the broker's credentials must not be
 # replaceable by an unprivileged user: it and every parent directory must be

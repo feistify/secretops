@@ -26,7 +26,7 @@ command -v secretops-local && secretops-local help
 
 The installation guide is [INSTALL.md](INSTALL.md). Every command block there says who runs it. You may:
 
-- Check prerequisites and report what is missing: Ubuntu 24.04, Python 3.11 or newer, `python3-venv`, `openssh-server`, `git`, `uv`, a root-owned `infisical` (for example `/usr/bin/infisical`) and, for GitHub sync, a root-owned `gh`.
+- Check prerequisites and report what is missing: Ubuntu 24.04 or Debian 12, Python 3.11 or newer, `python3-venv`, `openssh-server`, `git`, `uv`, a root-owned `infisical` (for example `/usr/bin/infisical`) and, for GitHub sync, a root-owned `gh`.
 - Find your account name (`id -un`) and whether it can use `sudo`. The recommended setup runs you as a separate account without sudo; if you run as the human's own account, tell them that the boundary is then a convention, not enforced.
 - Write out the exact commands from INSTALL.md with the values filled in (version, agent account, Infisical URL), for the human to run.
 - After installation, run `secretops-local help`, `secretops-local version` and `secretops-local actions`.
