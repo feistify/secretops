@@ -1,0 +1,101 @@
+name: Release
+
+# Builds the release files from a version tag, attests them, and creates a
+# draft GitHub release with their SHA-256 sums. The owner writes the summary
+# and publishes the draft; publishing starts publish.yml, which uploads the
+# same wheel and sdist to PyPI after approval in the pypi environment.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions: {}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+
+    steps:
+      - name: Check out the tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+
+      - name: Check the tag against the version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          [[ $TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "not a release tag: $TAG"; exit 1; }
+          version=${TAG#v}
+          grep -qx "version = \"$version\"" pyproject.toml || { echo "pyproject.toml is not $version"; exit 1; }
+          grep -q "\"secretops $version\"" src/secretops/cli.py || { echo "secretops version does not print $version"; exit 1; }
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Run tests
+        run: |
+          uv sync --locked --all-extras --dev
+          uv run pytest
+          sh tests/test_broker_wrappers.sh
+
+      - name: Build wheel, sdist and installer bundle
+        run: |
+          export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          uv build --out-dir dist
+          sh scripts/make-installer-bundle.sh "dist/secretops-$VERSION-py3-none-any.whl" dist
+          (cd dist && sha256sum -- * > SHA256SUMS)
+          cat dist/SHA256SUMS
+          [[ $(wc -l < dist/SHA256SUMS) == 3 ]] || { echo "expected wheel, sdist and bundle"; exit 1; }
+
+      - name: Attest the release files
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: dist/SHA256SUMS
+
+      - name: Create a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          bundle="secretops-$VERSION-installer.tar.gz"
+          {
+            echo "<!-- Owner: summarize the changes here, then publish. -->"
+            echo
+            echo "## Install"
+            echo
+            echo "On Ubuntu 24.04, in your own terminal. The installer takes secretops $VERSION from PyPI and checks it against the hash pinned in the bundle, so it works once the PyPI upload for this release, which waits for the maintainer's approval, has succeeded."
+            echo
+            echo '```sh'
+            echo "curl -fsSLO https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$bundle"
+            echo "sha256sum $bundle    # compare with the list below"
+            echo "tar -xzf $bundle"
+            echo "cd secretops-$VERSION-installer"
+            echo "sudo ./install.sh --agent-user AGENT_ACCOUNT --infisical-domain https://app.infisical.com"
+            echo "sudo secretops-configure"
+            echo '```'
+            echo
+            echo "Upgrade an existing broker from the unpacked bundle with \`sudo ./install.sh --upgrade\`. Guide: [INSTALL.md](https://github.com/$GITHUB_REPOSITORY/blob/$TAG/docs/INSTALL.md)."
+            echo
+            echo "## Check the files"
+            echo
+            echo "Built from this tag in GitHub Actions. SHA-256:"
+            echo
+            echo '```'
+            cat dist/SHA256SUMS
+            echo '```'
+            echo
+            echo "Optional proof that a file was built by this repository's release workflow:"
+            echo
+            echo '```sh'
+            echo "gh attestation verify $bundle --repo $GITHUB_REPOSITORY"
+            echo '```'
+          } > notes.md
+          gh release create "$TAG" dist/* --draft --verify-tag --title "secretops $VERSION" --notes-file notes.md
