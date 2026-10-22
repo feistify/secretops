@@ -10,7 +10,7 @@ The Infisical adapter hardening is implemented and verified against the NAS inst
 
 **Short-term goal:** a human can enter an externally created API key through a hidden prompt, the broker stores it in Infisical, and an agent can transfer it to GitHub through a separately approved plan. The workflow must be documented, repeatable from a clean installation, and require no undocumented helpers from `/tmp`.
 
-Plan destination binding is complete and validated (PR #6). The human secret-entry CLI (`secretops add`) is implemented, with direct and agent-prepared entry validated through the real local sudo broker ([results and limits](docs/validation/interactive-secret-entry.md)). GitHub target reliability and the complete local-sudo entry-to-GitHub workflow are now validated ([results and limits](docs/validation/github-target-reliability.md)). Installation and operating guides are merged (PR #10) and a clean installation is validated with a self-hosted Infisical and GitHub ([results and limits](docs/validation/local-broker-installation.md)). Remaining manual checks are tracked below. The public repository and [v0.1.0](https://github.com/feistify/secretops/releases/tag/v0.1.0) are released. Next: first real-project use (section 6), then several vault projects per broker (section 7).
+Plan destination binding is complete and validated (PR #6). The human secret-entry CLI (`secretops add`) is implemented, with direct and agent-prepared entry validated through the real local sudo broker ([results and limits](docs/validation/interactive-secret-entry.md)). GitHub target reliability and the complete local-sudo entry-to-GitHub workflow are now validated ([results and limits](docs/validation/github-target-reliability.md)). Installation and operating guides are merged (PR #10) and a clean installation is validated with a self-hosted Infisical and GitHub ([results and limits](docs/validation/local-broker-installation.md)). Remaining manual checks are tracked below. The public repository and [v0.1.1](https://github.com/feistify/secretops/releases/tag/v0.1.1) are released. Next: human and agent onboarding (section 6), then first real-project use (section 7), then several vault projects per broker (section 8).
 
 ## P1 — Deliver the first complete daily-use workflow
 
@@ -84,7 +84,20 @@ Merged in PR #10: `scripts/install.sh` (install and `--upgrade`), `secretops-con
 - [x] Make README links work on PyPI. PyPI resolves relative links against `pypi.org/project/secretops/`, so the v0.1.0 project page has broken links. README now uses absolute links to `main` on GitHub (`uv_build` cannot rewrite them at build time). [v0.1.1](https://pypi.org/project/secretops/0.1.1/) is on PyPI with the same hashes as the GitHub release; v0.1.0 keeps the broken links, because a PyPI version can never be re-uploaded.
 - [x] Skip CI for documentation-only changes (`paths-ignore`): Markdown, `LICENSE` and `NOTICE`. If CI becomes a required check, docs-only pull requests need a solution first.
 
-### 6. First real-project use — before the next feature
+### 6. Human and agent onboarding
+
+A person should understand from one short page what secretops does, what it can and cannot do, and how one example looks. A coding agent with no earlier context should be able to start from the GitHub repository and learn, without help, how to install secretops (with its human), which commands it may run, how to write recipes, and how to read results. PyPI alone is not enough: the broker boundary comes from `scripts/install.sh` in the repository.
+
+- [ ] Short README for people: what problem it solves, how the flow works (image), what it can do, one example and where to start, in about one screen. Today README is long and mixes overview, configuration, policy details and validation history; move details into `docs/` and link them.
+- [ ] One entry point for agents that use secretops, separate from development rules: today the root `AGENTS.md` is the first file an agent reads, but it describes developing secretops (`uv run`, pytest), not using it. Point agents that install or use secretops to the right guide first.
+- [ ] Installation guided by an agent: the agent checks prerequisites and prepares commands; the human runs the steps that need root, hidden input or a device login. State clearly which steps the agent must never do.
+- [ ] Discoverable from the broker: a `help` (or similar) command through `secretops-local` that lists the allowed commands, the plan lifecycle, exit codes and where to find recipe examples, without values or local configuration.
+- [ ] Recipe reference: every action with a minimal example and its fields, ideally a machine-readable schema checked by tests.
+- [ ] Machine-readable results: decide whether `show-plan`, `preflight-plan` and `execute-plan` need a stable `--json` output for agents.
+- [ ] MCP: evaluate a thin MCP server over `secretops-local` (typed tools, no new authority; approval stays human-only). Decide after the items above, based on whether agents still struggle.
+- [ ] Check with a fresh agent session: from the repository URL alone to a planned, approved and executed demo sync; record where it got stuck.
+
+### 7. First real-project use — before the next feature
 
 The clean-VM validation proved the workflow with synthetic values. Next, use the published version for a real project (for example ExposeGPU in dev/staging) and record where it is hard.
 
@@ -94,9 +107,9 @@ The clean-VM validation proved the workflow with synthetic values. Next, use the
 - [ ] Record where it is hard: installation, finding commands, approval, messages or maintenance. Choose one small UX fix from that record.
 - [ ] Ideally, another person follows the installation guide without help.
 
-If one project per broker blocks this work, named destinations (section 7) come first.
+If one project per broker blocks this work, named destinations (section 8) come first.
 
-### 7. Several vault projects per broker
+### 8. Several vault projects per broker
 
 Today a broker serves one Infisical server, project and folder, set by the human in `broker.env`. With one project per application, that means switching the destination with `secretops-configure`.
 

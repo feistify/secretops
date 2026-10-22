@@ -1,6 +1,6 @@
 # Design: named vault destinations
 
-Status: proposed, for review before implementation. Planned after the first real-project use (TODO section 7).
+Status: proposed, for review before implementation. Planned after the first real-project use (TODO section 8).
 
 ## Problem
 
