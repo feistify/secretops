@@ -4,9 +4,9 @@
 # Run as root from the human's own terminal, inside a repository checkout
 # (it uses the wrappers and broker-requirements.txt next to this script):
 #
-#   sudo bash scripts/install.sh --wheel dist/secretops-0.1.0-py3-none-any.whl \
+#   sudo bash scripts/install.sh --wheel dist/secretops-0.1.1-py3-none-any.whl \
 #       --agent-user USER --infisical-domain https://vault.example.com
-#   sudo bash scripts/install.sh --upgrade --wheel dist/secretops-0.1.0-py3-none-any.whl
+#   sudo bash scripts/install.sh --upgrade --wheel dist/secretops-0.1.1-py3-none-any.whl
 #
 # Fresh install creates the secretops-broker account, /opt/secretops (root-
 # owned application, broker-owned broker.env/plans/audit/recipes), the
