@@ -4,6 +4,8 @@ secretops is a CLI-first broker for developers who want coding agents to manage 
 
 Humans enter credentials and approve writes; agents prepare plans and execute approved operations through a restricted SSH wrapper. Store an API key in Infisical, then let an agent sync it to GitHub through a separately approved plan.
 
+![The human enters a value with secretops add, the agent saves a plan to sync it to a GitHub environment, the human approves it, and the agent executes it and verifies the secret name](https://raw.githubusercontent.com/feistify/secretops/main/docs/images/flow.png)
+
 **v0.1.1, early-stage software.** The supported installation path is a local broker on Ubuntu 24.04. Python 3.11 or newer is required; the clean-VM installation was tested with Python 3.12.3, Infisical CLI 0.44.2 and GitHub CLI 2.102.0. See the [validation record and its limits](https://github.com/feistify/secretops/blob/main/docs/validation/local-broker-installation.md).
 
 | Available now | Current limits |
@@ -79,6 +81,8 @@ Replace `SYNC_PLAN_ID` with the ID returned by `plan`. If preflight fails, stop 
 sudo -u secretops-broker /usr/local/bin/secretops-broker show-plan --id SYNC_PLAN_ID
 sudo -u secretops-broker /usr/local/bin/secretops-broker approve-plan --id SYNC_PLAN_ID
 ```
+
+![show-plan output for the sync plan: action, source environment, GitHub target, secret mapping, vault destination and plan digest, with secret_value_included False](https://raw.githubusercontent.com/feistify/secretops/main/docs/images/plan.png)
 
 **Agent:** after approval, execute the sync and prepare a separate metadata-only verification plan:
 
