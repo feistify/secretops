@@ -89,7 +89,7 @@ Rotation changes only the vault; syncing to GitHub is a separate plan. GitHub ne
 
 ### When something fails
 
-Messages and what to do about them are in [OPERATIONS.md](OPERATIONS.md#when-something-fails). In short: on `replan required` or a changed destination, save a new plan and ask for a new approval; on `vault error`, tell the human to check the token; on `plan already executed`, save a new plan.
+Messages and what to do about them are in [OPERATIONS.md](OPERATIONS.md#when-something-fails). In short: on `FAIL invalid recipe`, fix the field it names and plan again; on `replan required` or a changed destination, save a new plan and ask for a new approval; on `vault error`, tell the human to check the token; on `plan already executed`, save a new plan.
 
 ## Set up the human's project
 

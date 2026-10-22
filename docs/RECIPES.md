@@ -16,6 +16,7 @@ Every example on this page is checked by the tests: it must load and produce a s
 - **Vault location:** the Infisical server, project and folder come from the broker configuration, never from the recipe.
 - **GitHub repository:** `github_owner`, `github_repo` and `github_environment` name the target. `github_host` is optional and defaults to `github.com`. The environment must already exist in the repository.
 - **No values:** a recipe holds names and metadata only. There is no field for a value.
+- **Checked when planning:** an unknown field, a missing field or an unsupported value stops `plan` with one line such as `FAIL invalid recipe: unknown field github_env for github.env_secret.sync_many; did you mean github_environment?`. Nothing is saved; fix the recipe and plan again.
 
 ## Actions at a glance
 
@@ -172,7 +173,7 @@ Copies one secret from the vault to a GitHub environment secret.
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `secret_name` | yes | vault secret to read |
-| `env` | yes | vault environment |
+| `env` | no | vault environment; default: `github_environment` |
 | `github_owner` | yes | user or organization |
 | `github_repo` | yes | repository |
 | `github_environment` | yes | GitHub environment |
@@ -195,7 +196,7 @@ Copies several vault secrets to one GitHub environment. A failed run reports eac
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| `env` | yes | vault environment to read from |
+| `env` | no | vault environment to read from; default: `github_environment` |
 | `github_owner` | yes | user or organization |
 | `github_repo` | yes | repository |
 | `github_environment` | yes | GitHub environment |
