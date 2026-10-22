@@ -120,6 +120,10 @@ The clean-VM validation proved the workflow with synthetic values. Next, use the
 
 If one project per broker blocks this work, named destinations (section 8) come first.
 
+### Debian package — after the installer bundle
+
+- [ ] A `.deb` for Ubuntu and Debian brokers: `sudo apt install ./secretops_VERSION_all.deb`, later an apt repository for `apt upgrade`. The application and its pinned dependencies live in `/opt/secretops` as today; `postinst` creates the broker account and the SSH service from the same steps as `install.sh`; the agent account and port come from debconf or a first-run command; `apt remove` keeps plans, audit and `broker.env`, `apt purge` archives plans and audit and removes the rest. Built and attested in CI with the other release files. Start after the bundle is released; `install.sh` stays for other distributions and checkouts.
+
 ### Remote broker installation — after the first real-project use
 
 - [ ] Installer support for a broker on another machine (level 4 in `docs/SECURITY_MODEL.md`): listen on a chosen network address instead of loopback, accept the agent's public key instead of creating one, and set up the human client on the human's computer (`pipx install secretops` plus broker configuration). Today this is the manual setup in BROKER_HOST.

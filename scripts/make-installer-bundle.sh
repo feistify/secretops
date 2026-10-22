@@ -33,6 +33,7 @@ stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 dir=$stage/secretops-$version-installer
 mkdir "$dir"
+chmod 0755 "$dir"
 for file in install.sh secretops-broker secretops-agent secretops-local; do
     cp -- "$src/$file" "$dir/$file"
     chmod 0755 "$dir/$file"
