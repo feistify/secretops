@@ -112,7 +112,7 @@ Copy the [consumer-project instructions](AGENT_USAGE.md#instructions-for-agents-
 
 ## First workflow
 
-Follow the [README demo](../README.md#demo-enter-once-sync-through-an-approved-plan) with synthetic data in a test Infisical project and a test GitHub repository with a `dev` environment. It covers human entry, agent planning, human review and approval, sync, metadata verification and cleanup. Run human commands in your own terminal and agent commands as the configured agent account.
+Follow the [demo](DEMO.md) with synthetic data in a test Infisical project and a test GitHub repository with a `dev` environment. It covers human entry, agent planning, human review and approval, sync, metadata verification and cleanup. Run human commands in your own terminal and agent commands as the configured agent account.
 
 ## Remove a failed installation
 

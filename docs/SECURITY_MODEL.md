@@ -1,6 +1,6 @@
 # Security model
 
-This document explains how secretops keeps secret values away from agents, which guarantees are enforced, and which ones depend on convention. It ties together the safety invariants in `README.md`, the agent rules in `docs/AGENT_USAGE.md`, and the broker deployment in `docs/BROKER_HOST.md`.
+This document explains how secretops keeps secret values away from agents, which guarantees are enforced, and which ones depend on convention. It ties together the safety invariants below, the agent rules in `docs/AGENT_USAGE.md`, and the broker deployment in `docs/BROKER_HOST.md`.
 
 ## What secretops protects
 
@@ -141,3 +141,23 @@ Use a machine identity token for every deployment, including human-only use. Do 
 3. For agent-driven use, set up the broker host model from `docs/BROKER_HOST.md`, even if the broker is just a second user on the same machine.
 4. Pin `SECRETOPS_PLAN_DIR`, `SECRETOPS_AUDIT_PATH`, and `SECRETOPS_POLICY_PATH` outside any agent-writable path.
 5. Keep production denied in policy until a dedicated production gate exists.
+
+## Safety invariants
+
+These invariants are part of the product contract:
+
+- never print secret values
+- never write secret values into plan artifacts
+- never write secret values into audit logs
+- never pass secret values through command-line arguments
+- use safe transfer paths:
+  - stdin for GitHub target writes
+  - temporary files with restrictive permissions for Infisical writes
+- run the Infisical CLI with an explicit environment, never the broker's own, so local variables, user sessions, and working-directory config cannot affect answers
+- treat a vault error as an error, never as "secret missing"
+- run a saved plan only against the destination it records: the vault destination must match the configuration, GitHub calls use the planned host, and an approved plan must match its approval digest
+- report an Infisical vault write as successful only after a read-back confirms it; an unconfirmed vault write is reported as an unknown outcome and never retried automatically. GitHub target writes still rely on the `gh` exit status
+- planning must not generate secret values
+- preflight must not generate or write secret values
+- secret names may be printed when needed
+- secret values must not be printed in stdout, stderr, audit logs, plan files, docs, test output, or error messages

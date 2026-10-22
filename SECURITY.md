@@ -4,7 +4,7 @@ secretops brokers access to secrets for coding agents, so a flaw in its boundary
 
 ## Supported versions
 
-secretops is early-stage software. Only the latest release and the `main` branch receive security fixes. Production writes are blocked by the default policy; see the limits in [README.md](README.md) and [docs/SECURITY_MODEL.md](docs/SECURITY_MODEL.md).
+secretops is early-stage software. Only the latest release and the `main` branch receive security fixes. Production writes are blocked by the default policy; see the [limitations](docs/LIMITATIONS.md) and [docs/SECURITY_MODEL.md](docs/SECURITY_MODEL.md).
 
 ## Reporting a vulnerability
 
