@@ -6,7 +6,7 @@ Humans enter credentials and approve writes; agents prepare plans and execute ap
 
 ![The human enters a value with secretops add, the agent saves a plan to sync it to a GitHub environment, the human approves it, and the agent executes it and verifies the secret name](https://raw.githubusercontent.com/feistify/secretops/main/docs/images/flow.png)
 
-**v0.1.1, early-stage software.** The supported installation path is a local broker on Ubuntu 24.04. Python 3.11 or newer is required; the clean-VM installation was tested with Python 3.12.3, Infisical CLI 0.44.2 and GitHub CLI 2.102.0. See the [validation record and its limits](https://github.com/feistify/secretops/blob/main/docs/validation/local-broker-installation.md).
+**v0.1.2, early-stage software.** The supported installation path is a local broker on Ubuntu 24.04. Python 3.11 or newer is required; the clean-VM installation was tested with Python 3.12.3, Infisical CLI 0.44.2 and GitHub CLI 2.102.0. See the [validation record and its limits](https://github.com/feistify/secretops/blob/main/docs/validation/local-broker-installation.md).
 
 | Available now | Current limits |
 | --- | --- |
