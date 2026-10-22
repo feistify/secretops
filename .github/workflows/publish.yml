@@ -38,7 +38,9 @@ jobs:
               --pattern "secretops-$version-py3-none-any.whl" --pattern "secretops-$version.tar.gz"
           [[ $(ls dist | wc -l) == 2 ]] || { echo "expected a wheel and a source distribution"; exit 1; }
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" \
-              --jq '.assets[] | select(.name | startswith("secretops-")) | "\(.digest | ltrimstr("sha256:"))  \(.name)"' > SHA256SUMS
+              --jq '.assets[] | select(.name | startswith("secretops-")) | "\(.digest | ltrimstr("sha256:"))  \(.name)"' \
+              | grep -E "  secretops-$version(-py3-none-any\.whl|\.tar\.gz)$" > SHA256SUMS
+          [[ $(wc -l < SHA256SUMS) == 2 ]] || { echo "expected two release digests"; exit 1; }
           (cd dist && sha256sum --check --strict ../SHA256SUMS)
 
       - name: Publish

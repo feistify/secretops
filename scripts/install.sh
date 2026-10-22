@@ -1,12 +1,19 @@
 #!/bin/bash
 # install.sh: install or upgrade a local secretops broker on Linux.
 #
-# Run as root from the human's own terminal, inside a repository checkout
-# (it uses the wrappers and broker-requirements.txt next to this script):
+# Run as root from the human's own terminal. It uses the wrappers and
+# broker-requirements.txt next to this script, so run it from an unpacked
+# installer bundle of a release or from a repository checkout:
+#
+#   sudo ./install.sh --agent-user USER --infisical-domain https://vault.example.com
+#   sudo ./install.sh --upgrade
+#
+# In a bundle, secretops-release.txt pins the release: the program comes
+# from PyPI and pip checks it against the pinned SHA-256. In a checkout, pass
+# a wheel built with `uv build` instead:
 #
 #   sudo bash scripts/install.sh --wheel dist/secretops-0.1.2-py3-none-any.whl \
 #       --agent-user USER --infisical-domain https://vault.example.com
-#   sudo bash scripts/install.sh --upgrade --wheel dist/secretops-0.1.2-py3-none-any.whl
 #
 # Fresh install creates the secretops-broker account, /opt/secretops (root-
 # owned application, broker-owned broker.env/plans/audit/recipes), the
@@ -43,11 +50,12 @@ die() {
 usage() {
     cat <<'EOF'
 Usage:
-  sudo bash scripts/install.sh --wheel WHEEL --agent-user USER --infisical-domain URL
-                               [--infisical-bin PATH] [--gh-bin PATH] [--port PORT] [--no-start]
-  sudo bash scripts/install.sh --upgrade --wheel WHEEL
+  sudo ./install.sh --agent-user USER --infisical-domain URL
+                    [--wheel WHEEL] [--infisical-bin PATH] [--gh-bin PATH] [--port PORT] [--no-start]
+  sudo ./install.sh --upgrade [--wheel WHEEL]
 
-  --wheel PATH            secretops wheel built from this checkout (uv build)
+  --wheel PATH            secretops wheel: required in a repository checkout (uv build);
+                          optional in a release bundle, where it must match the pinned hash
   --agent-user USER       existing account the coding agent runs as
   --infisical-domain URL  vault URL, for example https://app.infisical.com
   --infisical-bin PATH    root-owned infisical CLI (default: /usr/bin/infisical)
@@ -78,12 +86,29 @@ done
 [[ $EUID == 0 ]] || die "run with sudo from your own terminal, not from an agent session"
 src=$(cd -- "$(dirname -- "$0")" && pwd)
 for name in secretops-broker secretops-agent secretops-local broker-requirements.txt; do
-    [[ -f $src/$name ]] || die "missing $src/$name; run from a repository checkout"
+    [[ -f $src/$name ]] || die "missing $src/$name; run from an unpacked installer bundle or a repository checkout"
 done
-[[ -n $wheel ]] || { usage >&2; exit 2; }
-[[ -f $wheel && $(basename -- "$wheel") == secretops-*-py3-none-any.whl ]] \
-    || die "--wheel must be a secretops-*-py3-none-any.whl file"
-wheel=$(readlink -f -- "$wheel")
+if [[ -n $wheel ]]; then
+    [[ -f $wheel && $(basename -- "$wheel") == secretops-*-py3-none-any.whl ]] \
+        || die "--wheel must be a secretops-*-py3-none-any.whl file"
+    wheel=$(readlink -f -- "$wheel")
+    wheel_sha256=$(sha256sum -- "$wheel" | cut -d' ' -f1)
+fi
+# A release bundle pins one version and its wheel hash.
+release_pin=$src/secretops-release.txt
+if [[ -f $release_pin ]]; then
+    pin=$(sed -n 's/^secretops==\([0-9][0-9a-z.]*\) --hash=sha256:\([0-9a-f]\{64\}\)$/\1 \2/p' "$release_pin")
+    [[ -n $pin && $(grep -c . "$release_pin") == 1 ]] || die "malformed $release_pin"
+    read -r pin_version pin_sha256 <<< "$pin"
+    if [[ -n $wheel ]]; then
+        [[ $(basename -- "$wheel") == "secretops-$pin_version-py3-none-any.whl" && $wheel_sha256 == "$pin_sha256" ]] \
+            || die "--wheel does not match the release pinned in this bundle (secretops $pin_version)"
+    fi
+    wheel_sha256=$pin_sha256
+elif [[ -z $wheel ]]; then
+    usage >&2
+    die "--wheel is required outside a release bundle"
+fi
 
 "$PYTHON" -c 'import sys, ensurepip, venv; sys.exit(sys.version_info < (3, 11))' 2>/dev/null \
     || die "$PYTHON 3.11+ with venv is required (Ubuntu: apt install python3-venv)"
@@ -113,8 +138,15 @@ build_venv() {
     "$PYTHON" -m venv "$dest"
     "$dest/bin/python" -I -m pip install --quiet --no-cache-dir --disable-pip-version-check \
         --require-hashes --only-binary=:all: -r "$src/broker-requirements.txt"
-    "$dest/bin/python" -I -m pip install --quiet --no-cache-dir --disable-pip-version-check \
-        --no-deps "$wheel"
+    if [[ -n $wheel ]]; then
+        "$dest/bin/python" -I -m pip install --quiet --no-cache-dir --disable-pip-version-check \
+            --no-deps "$wheel"
+    else
+        echo "Downloading secretops $pin_version from PyPI (checked against the pinned hash)..."
+        "$dest/bin/python" -I -m pip install --quiet --no-cache-dir --disable-pip-version-check \
+            --require-hashes --only-binary=:all: --no-deps -r "$release_pin" \
+            || { rm -rf -- "$dest"; die "could not install secretops $pin_version from PyPI with the pinned hash"; }
+    fi
     chown -R root:root "$dest"
     chmod -R go-w "$dest"
     smoke "$dest" || die "application check failed in $dest"
@@ -145,7 +177,7 @@ write_info() {
     cat > "$INFO" <<EOF
 installer=secretops-install-1
 version=$("$ROOT/venv/bin/python" -I -c 'from importlib.metadata import version; print(version("secretops"))')
-wheel_sha256=$(sha256sum "$wheel" | cut -d' ' -f1)
+wheel_sha256=$wheel_sha256
 agent_user=$agent_user
 port=$port
 installed=$(date -u +%Y-%m-%dT%H:%M:%SZ)
