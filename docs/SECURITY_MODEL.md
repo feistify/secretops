@@ -64,7 +64,7 @@ What this setup enforces:
 
 - vault credentials live only in the broker domain, unreadable by the agent
 - the agent's SSH key is bound to a forced command (`scripts/secretops-agent`) with `restrict`: no shell, no file copy, no port forwarding
-- the wrapper accepts only `version`, `actions`, `plan`, `show-plan`, `preflight-plan`, `execute-plan`, and `write-recipe`, each in an exact argument shape; anything else is rejected before secretops runs
+- the wrapper accepts only `help`, `version`, `actions`, `plan`, `show-plan`, `preflight-plan`, `execute-plan`, and `write-recipe`, each in an exact argument shape; anything else is rejected before secretops runs
 - the agent cannot approve or reject plans; approval needs a human key
 - the agent cannot edit plan artifacts, the audit log, or the policy, because the broker user owns them
 - secret values never cross into the agent domain

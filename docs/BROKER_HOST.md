@@ -164,7 +164,7 @@ ssh secretops-broker@host /usr/local/bin/secretops-broker show-plan --id <plan_i
 ssh secretops-broker@host /usr/local/bin/secretops-broker approve-plan --id <plan_id>
 ```
 
-The agent wrapper allows: `version`, `actions`, `plan`, `show-plan`, `preflight-plan`, `execute-plan`, and `write-recipe`. It does not allow `approve-plan` or `reject-plan`: approval is human-only, enforced at the SSH transport layer rather than by convention.
+The agent wrapper allows: `help` (static usage text, no broker call), `version`, `actions`, `plan`, `show-plan`, `preflight-plan`, `execute-plan`, and `write-recipe`. It does not allow `approve-plan` or `reject-plan`: approval is human-only, enforced at the SSH transport layer rather than by convention.
 
 The human broker endpoints `prepare-add`, `review-add`, and `submit-add` used by `secretops add` are not on this list either; see [Human secret entry](#human-secret-entry).
 

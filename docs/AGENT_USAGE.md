@@ -145,6 +145,7 @@ Use the configured SSH broker; never call vault or target provider CLIs directly
 The broker connection is: ssh BROKER_ALIAS
 
 Start with:
+- ssh BROKER_ALIAS help
 - ssh BROKER_ALIAS version
 - ssh BROKER_ALIAS actions
 
@@ -178,7 +179,7 @@ blocked by policy; human approval does not override that restriction.
 
 `write-recipe` is a wrapper command; the other commands invoke the broker's installed CLI. The wrapper accepts only the exact command shapes documented in [BROKER_HOST.md](BROKER_HOST.md), not an arbitrary remote shell or unrestricted CLI flags. The CLI runs on demand; the agent does not start a persistent secretops service.
 
-The current integration surface is CLI over SSH. There is no HTTP API, MCP server, or machine-readable capability/schema discovery command. Installation-time generation of consumer instructions is not implemented; the template above is copied and configured manually.
+The current integration surface is CLI over SSH. `help` prints the allowed commands, the lifecycle and exit codes as plain text. There is no HTTP API, MCP server, or machine-readable capability/schema discovery command. Installation-time generation of consumer instructions is not implemented; the template above is copied and configured manually.
 
 ## Dummy-first rollout suggestion
 
