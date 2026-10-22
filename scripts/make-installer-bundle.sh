@@ -43,7 +43,7 @@ printf 'secretops==%s --hash=sha256:%s\n' "$version" "$sha256" > "$dir/secretops
 cat > "$dir/README.txt" <<EOF
 secretops $version installer
 
-Installs a local secretops broker on Ubuntu 24.04. Run in your own
+Installs a local secretops broker on Ubuntu 24.04 or Debian 12. Run in your own
 terminal, not in a coding agent session:
 
   sudo ./install.sh --agent-user AGENT_ACCOUNT --infisical-domain https://app.infisical.com

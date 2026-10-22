@@ -71,7 +71,7 @@ jobs:
             echo
             echo "## Install"
             echo
-            echo "On Ubuntu 24.04, in your own terminal. The installer takes secretops $VERSION from PyPI and checks it against the hash pinned in the bundle, so it works once the PyPI upload for this release, which waits for the maintainer's approval, has succeeded."
+            echo "On Ubuntu 24.04 or Debian 12, in your own terminal. The installer takes secretops $VERSION from PyPI and checks it against the hash pinned in the bundle, so it works once the PyPI upload for this release, which waits for the maintainer's approval, has succeeded."
             echo
             echo '```sh'
             echo "curl -fsSLO https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$bundle"

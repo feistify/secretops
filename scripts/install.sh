@@ -51,33 +51,38 @@ die() {
 usage() {
     cat <<'EOF'
 Usage:
-  sudo ./install.sh --agent-user USER --infisical-domain URL
+  sudo ./install.sh (--agent-user USER | --create-agent-user NAME) --infisical-domain URL
                     [--wheel WHEEL] [--infisical-bin PATH] [--gh-bin PATH] [--port PORT] [--no-start]
   sudo ./install.sh --upgrade [--wheel WHEEL]
 
   --wheel PATH            secretops wheel: required in a repository checkout (uv build);
                           optional in a release bundle, where it must match the pinned hash
   --agent-user USER       existing account the coding agent runs as
+  --create-agent-user NAME
+                          create a new account without sudo for the coding agent
   --infisical-domain URL  vault URL, for example https://app.infisical.com
   --infisical-bin PATH    root-owned infisical CLI (default: /usr/bin/infisical)
   --gh-bin PATH           root-owned gh CLI (default: /usr/bin/gh if present)
   --port PORT             loopback SSH port for the agent (default: 22222)
   --no-start              write the SSH service but do not enable or start it
+  --allow-untested-os     install on a distribution other than Ubuntu or Debian
   --upgrade               replace application and wrappers of an existing install
 EOF
 }
 
-wheel="" agent_user="" domain="" infisical_bin=/usr/bin/infisical gh_bin="" port=22222
-upgrade=0 start=1
+wheel="" agent_user="" create_agent="" domain="" infisical_bin=/usr/bin/infisical gh_bin="" port=22222
+upgrade=0 start=1 allow_untested_os=0
 while [[ $# -gt 0 ]]; do
     case $1 in
         --wheel) wheel=${2:?}; shift 2 ;;
         --agent-user) agent_user=${2:?}; shift 2 ;;
+        --create-agent-user) create_agent=${2:?}; shift 2 ;;
         --infisical-domain) domain=${2:?}; shift 2 ;;
         --infisical-bin) infisical_bin=${2:?}; shift 2 ;;
         --gh-bin) gh_bin=${2:?}; shift 2 ;;
         --port) port=${2:?}; shift 2 ;;
         --no-start) start=0; shift ;;
+        --allow-untested-os) allow_untested_os=1; shift ;;
         --upgrade) upgrade=1; shift ;;
         -h | --help) usage; exit 0 ;;
         *) usage >&2; exit 2 ;;
@@ -85,6 +90,27 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ $EUID == 0 ]] || die "run with sudo from your own terminal, not from an agent session"
+
+# --- the system: stop here with a clear message rather than fail midway ---
+[[ $(uname -s) == Linux ]] || die "secretops brokers run on Linux only"
+os_id=$(. /etc/os-release 2>/dev/null && echo "${ID:-unknown}") || os_id=unknown
+os_name=$(. /etc/os-release 2>/dev/null && echo "${PRETTY_NAME:-$os_id}") || os_name=$os_id
+case $os_id in
+    ubuntu | debian) ;;
+    *)
+        [[ $allow_untested_os == 1 ]] \
+            || die "untested system: $os_name. Tested: Ubuntu 24.04 and Debian 12. To try anyway, add --allow-untested-os"
+        echo "WARNING: untested system: $os_name."
+        ;;
+esac
+missing=()
+for command in sshd ssh ssh-keygen ss runuser useradd userdel pgrep stat sha256sum tar; do
+    command -v "$command" >/dev/null || missing+=("$command")
+done
+[[ ${#missing[@]} == 0 ]] || die "missing commands: ${missing[*]} (Ubuntu and Debian: apt install openssh-server openssh-client iproute2 procps)"
+if [[ $upgrade == 0 && $start == 1 && ! -d /run/systemd/system ]]; then
+    die "systemd is not running; it starts the broker's SSH service. Use --no-start to only write the service"
+fi
 src=$(cd -- "$(dirname -- "$0")" && pwd)
 for name in secretops-broker secretops-agent secretops-local secretops-uninstall broker-requirements.txt; do
     [[ -f $src/$name ]] || die "missing $src/$name; run from an unpacked installer bundle or a repository checkout"
@@ -112,7 +138,7 @@ elif [[ -z $wheel ]]; then
 fi
 
 "$PYTHON" -c 'import sys, ensurepip, venv; sys.exit(sys.version_info < (3, 11))' 2>/dev/null \
-    || die "$PYTHON 3.11+ with venv is required (Ubuntu: apt install python3-venv)"
+    || die "$PYTHON 3.11 or newer with venv is required; found: $("$PYTHON" -V 2>&1 || echo none) (Ubuntu and Debian: apt install python3-venv)"
 
 # An executable that runs with the broker's credentials must not be
 # replaceable by an unprivileged user: it and every parent directory must be
@@ -180,6 +206,7 @@ installer=secretops-install-1
 version=$("$ROOT/venv/bin/python" -I -c 'from importlib.metadata import version; print(version("secretops"))')
 wheel_sha256=$wheel_sha256
 agent_user=$agent_user
+agent_created=$agent_created
 port=$port
 installed=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
@@ -203,6 +230,9 @@ if [[ $upgrade == 1 ]]; then
     fi
     agent_user=$(info_value agent_user)
     port=$(info_value port)
+    # Installations from before --create-agent-user did not create the account.
+    agent_created=$(info_value agent_created)
+    [[ $agent_created == yes ]] || agent_created=no
     build_venv "$ROOT/venv.new"
     rm -rf "$ROOT/venv.previous" "$ROOT/previous"
     install -d -o root -g root -m 0755 "$ROOT/previous"
@@ -234,22 +264,33 @@ sys.exit(packaged != open(sys.argv[1]).read())' "$ROOT/policy.yaml"; then
 fi
 
 # --- fresh installation: check everything before changing anything ---
+agent_created=no
+if [[ -n $create_agent ]]; then
+    [[ -z $agent_user ]] || die "use either --agent-user or --create-agent-user"
+    [[ $create_agent =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || die "--create-agent-user: invalid account name"
+    ! getent passwd "$create_agent" >/dev/null || die "account $create_agent already exists; use --agent-user"
+    ! getent group "$create_agent" >/dev/null || die "group $create_agent already exists; choose another name"
+    agent_user=$create_agent
+fi
 [[ -n $agent_user && -n $domain ]] || { usage >&2; exit 2; }
 [[ $port =~ ^[0-9]+$ ]] && (( port >= 1024 && port <= 65535 )) || die "--port must be 1024-65535"
-agent_entry=$(getent passwd "$agent_user") || die "agent user $agent_user does not exist"
-[[ $agent_user != root ]] || die "the agent must not run as root"
-agent_home=$(cut -d: -f6 <<< "$agent_entry")
-[[ -d $agent_home ]] || die "home of $agent_user does not exist"
+[[ $agent_user != root && $agent_user != "$BROKER_USER" ]] || die "the agent must not run as $agent_user"
 human=${SUDO_USER:-}
 [[ -n $human && $human != root ]] || die "run sudo from your normal login, not a root shell"
-if [[ " $(id -nG "$agent_user") " =~ \ (sudo|admin|wheel)\  ]]; then
-    echo "WARNING: $agent_user is in an administrator group; the approval boundary is not enforced."
+agent_files=()
+if [[ -z $create_agent ]]; then
+    agent_entry=$(getent passwd "$agent_user") || die "agent user $agent_user does not exist"
+    agent_home=$(cut -d: -f6 <<< "$agent_entry")
+    [[ -d $agent_home ]] || die "home of $agent_user does not exist"
+    if [[ " $(id -nG "$agent_user") " =~ \ (sudo|admin|wheel)\  ]]; then
+        echo "WARNING: $agent_user is in an administrator group; the approval boundary is not enforced."
+    fi
+    agent_files=("$agent_home/.ssh/$AGENT_KEY" "$agent_home/.ssh/$AGENT_KEY.pub" "$agent_home/.ssh/$AGENT_KNOWN_HOSTS")
 fi
 for path in "$ROOT" "$BROKER_HOME" /usr/local/bin/secretops /usr/local/bin/secretops-broker \
     /usr/local/bin/secretops-agent /usr/local/bin/secretops-local /usr/local/sbin/secretops-configure \
     /usr/local/sbin/secretops-uninstall \
-    "$UNIT_FILE" "$agent_home/.ssh/$AGENT_KEY" "$agent_home/.ssh/$AGENT_KEY.pub" \
-    "$agent_home/.ssh/$AGENT_KNOWN_HOSTS"; do
+    "$UNIT_FILE" ${agent_files[@]+"${agent_files[@]}"}; do
     [[ ! -e $path && ! -L $path ]] || die "refusing to overwrite existing $path"
 done
 ! getent passwd "$BROKER_USER" >/dev/null || die "account $BROKER_USER already exists; inspect it first"
@@ -266,6 +307,14 @@ if [[ -n $gh_bin ]]; then
 fi
 
 trap 'echo "install: failed partway; see docs/INSTALL.md, \"Remove a failed installation\"" >&2' ERR
+
+if [[ -n $create_agent ]]; then
+    # A normal login account, in no administrator group, password locked.
+    useradd --create-home --shell /bin/bash "$agent_user"
+    agent_created=yes
+    agent_home=$(getent passwd "$agent_user" | cut -d: -f6)
+    echo "Created the agent account $agent_user (no sudo, no password)."
+fi
 
 install -d -o root -g root -m 0755 "$ROOT" "$ROOT/bin" "$ROOT/ssh"
 build_venv "$ROOT/venv.new"
@@ -377,5 +426,14 @@ Installed secretops $(info_value version). Vault credentials are not configured 
 Next (human, in this terminal):
   sudo secretops-configure
   sudo -u $BROKER_USER gh auth login --hostname github.com   (from cd /, for GitHub sync)
-Then follow docs/INSTALL.md, 'First workflow'.
 EOF
+if [[ -n $create_agent ]]; then
+    cat <<EOF
+Then set up the agent account $agent_user (docs/INSTALL.md, 'Accounts'):
+  sudo -iu $agent_user
+  # there: install and log in to your coding agent following its vendor's
+  # instructions, and clone your project; start the agent itself from a
+  # separate login of $agent_user, not from your own terminal
+EOF
+fi
+echo "Then follow docs/INSTALL.md, 'First workflow'."

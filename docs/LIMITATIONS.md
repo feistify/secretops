@@ -1,6 +1,6 @@
 # Limitations and tested versions
 
-The supported installation path is a local broker on Ubuntu 24.04. Python 3.11 or newer is required; the clean-VM installation was tested with Python 3.12.3, Infisical CLI 0.44.2 and GitHub CLI 2.102.0 ([validation record and its limits](validation/local-broker-installation.md)).
+The supported installation path is a local broker on Ubuntu 24.04 or Debian 12; Debian 12 is tested in a container only. The installer refuses other distributions unless `--allow-untested-os` is given. Python 3.11 or newer is required; the clean-VM installation was tested with Python 3.12.3, Infisical CLI 0.44.2 and GitHub CLI 2.102.0 ([validation record and its limits](validation/local-broker-installation.md)).
 
 - Infisical create-only checks existence and writes in separate calls. It refuses an existing secret when observed, but cannot guarantee atomic create-only behavior against a concurrent writer. Keep other writers coordinated; plan destination binding does not add conditional writes.
 - GitHub calls have per-call timeouts and explicit acknowledged/unknown write outcomes, with partial-sync reporting. Acknowledgement relies on the CLI exit status; GitHub does not provide secret-value read-back, and name presence cannot resolve an unknown write.
