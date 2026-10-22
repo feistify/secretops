@@ -14,6 +14,8 @@ The rule: **the broker must live in the same privilege domain as the local secre
 
 If secret material lives on several hosts, install one broker per host. Broker installs are cheap and identical.
 
+Which guarantees hold in each setup, from no broker to a broker on its own machine, is compared in [deployment levels](SECURITY_MODEL.md#deployment-levels).
+
 ## Broker host layout
 
 ```

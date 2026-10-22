@@ -39,6 +39,8 @@ Give that account only the Git access its work needs: a public clone, or a separ
 
 **Simpler, weaker:** use your own account as `--agent-user`. The restricted SSH key still limits what the agent can do *through the broker*, but an agent running as you can use your sudo, keys and terminal. The approval boundary is then a convention, not enforced. The installer prints a warning in this case.
 
+What each setup protects is compared in [deployment levels](SECURITY_MODEL.md#deployment-levels).
+
 ## Prerequisites
 
 ```sh

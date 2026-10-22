@@ -27,6 +27,8 @@ agent  ── secretops-local (restricted SSH) ──▶  broker  ──▶  Inf
 - **Agent access:** the agent talks to the broker only through `secretops-local`, an SSH command limited to a fixed list: plan, show, check and run approved plans. It cannot approve, open a shell or read the token.
 - **You:** enter values and approve plans from your own terminal.
 
+The boundary is only as strong as the separation: recommended are three accounts on one machine (you, the agent, the broker); strongest is a broker on another machine. If the agent runs as your own user, it can use your `sudo` and secretops is a workflow gate, not a boundary. See [deployment levels](https://github.com/feistify/secretops/blob/main/docs/SECURITY_MODEL.md#deployment-levels).
+
 **Why not just `pip install secretops`?** The PyPI package is only the program. The separation above (broker account, restricted agent access, your tools) is set up by `scripts/install.sh` from this repository, so installation starts from GitHub.
 
 ## What it can do
