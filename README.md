@@ -73,14 +73,14 @@ The complete walkthrough, with verification and cleanup, is in the [demo](https:
 On Ubuntu 24.04 or Debian 12, with `curl`, `python3-venv`, `openssh-server` and a root-owned `infisical` CLI installed, in your own terminal:
 
 ```sh
-curl -fsSLO https://github.com/feistify/secretops/releases/download/v0.1.3/secretops-0.1.3-installer.tar.gz
-sha256sum secretops-0.1.3-installer.tar.gz      # compare with the release notes
-tar -xzf secretops-0.1.3-installer.tar.gz && cd secretops-0.1.3-installer
+curl -fsSLO https://github.com/feistify/secretops/releases/download/v0.1.4/secretops-0.1.4-installer.tar.gz
+sha256sum secretops-0.1.4-installer.tar.gz      # compare with the release notes
+tar -xzf secretops-0.1.4-installer.tar.gz && cd secretops-0.1.4-installer
 sudo ./install.sh --create-agent-user agent --infisical-domain https://app.infisical.com
 sudo secretops-configure        # Infisical project, folder and token (hidden prompt)
 ```
 
-`--create-agent-user` creates a separate account without sudo for your coding agent; to use an existing account, give `--agent-user NAME` instead. The installer sets up the broker account, the restricted agent access and your tools, and installs secretops 0.1.3 from PyPI, checked against the hash in the bundle. `sudo secretops-uninstall` removes it again.
+`--create-agent-user` creates a separate account without sudo for your coding agent; to use an existing account, give `--agent-user NAME` instead. The installer sets up the broker account, the restricted agent access and your tools, and installs secretops 0.1.4 from PyPI, checked against the hash in the bundle. `sudo secretops-uninstall` removes it again.
 
 1. Follow the [installation guide](https://github.com/feistify/secretops/blob/main/docs/INSTALL.md) for the details: prerequisites, a separate agent account, the GitHub login and checks.
 2. Try the [demo](https://github.com/feistify/secretops/blob/main/docs/DEMO.md) with a test project and made-up values.
@@ -90,7 +90,7 @@ Working with a coding agent? Point it to [docs/AGENT_START.md](https://github.co
 
 ## Status and limits
 
-**v0.1.3, early-stage software.** Try it with test values first.
+**v0.1.4, early-stage software.** Try it with test values first.
 
 | Available now | Current limits |
 | --- | --- |
