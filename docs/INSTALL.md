@@ -104,6 +104,7 @@ The agent uses `secretops-local` as its broker connection: it is `ssh` with the 
 
 ```sh
 # Agent account
+secretops-local help
 secretops-local version
 secretops-local actions
 ```

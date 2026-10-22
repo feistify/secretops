@@ -60,6 +60,11 @@ echo "== secretops-agent: allowed shapes =="
 : > "$CALLLOG"
 agent "secretops version" </dev/null; check "version allowed" 0 $?
 agent "actions" </dev/null; check "actions allowed (bare)" 0 $?
+: > "$CALLLOG"
+agent "help" </dev/null; check "help allowed" 0 $?
+grep -q "execute-plan --id PLAN_ID" "$WORK/out" && check "help lists commands" 0 0 || check "help lists commands" 0 1
+[ -s "$CALLLOG" ] && check "help does not call the broker" 0 1 || check "help does not call the broker" 0 0
+agent "help plan" </dev/null; check "help with args denied" 1 $?
 agent "secretops plan --file import.yaml --save" </dev/null; check "plan by name allowed" 0 $?
 grep -q "plan --file $RECIPE_DIR/import.yaml --save" "$CALLLOG" \
     && check "plan resolved into RECIPE_DIR" 0 0 || check "plan resolved into RECIPE_DIR" 0 1

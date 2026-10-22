@@ -47,16 +47,22 @@ from secretops.recipes import load_recipe
 from secretops.validation import validate_secret_name
 from secretops.vaults import VaultError, configured_vault_destination, get_vault
 
-app = typer.Typer(help="CLI-first SecretOps broker")
+app = typer.Typer(
+    help="Safe secret operations for coding agents: agents plan, humans enter values and approve.",
+)
 console = Console()
 
 
-@app.command()
+@app.command(help="Show the secretops version.", rich_help_panel="Information")
 def version():
     console.print("secretops 0.1.2")
 
 
-@app.command("actions")
+@app.command(
+    "actions",
+    help="List the actions the current policy allows and denies.",
+    rich_help_panel="Information",
+)
 def actions():
     policy = load_policy()
 
@@ -69,7 +75,11 @@ def actions():
         console.print(f"- {action}")
 
 
-@app.command("plan")
+@app.command(
+    "plan",
+    help="Show the plan for a recipe; with --save, store it and print its plan_id.",
+    rich_help_panel="Plans",
+)
 def plan(
     file: str = typer.Option(..., "--file"),
     save: bool = typer.Option(False, "--save"),
@@ -104,73 +114,44 @@ def plan(
         console.print(f"- plan_id: {artifact.plan_id}")
 
 
-@app.command("plan-recipe")
-def plan_recipe(file: str = typer.Option(..., "--file")):
-    recipe = load_recipe(file)
-    require_recipe_allowed(recipe, console)
-    plan_vault_read_recipe(recipe, console)
-
-
-@app.command("plan-github-env-secret")
-def plan_github_env_secret(file: str = typer.Option(..., "--file")):
-    recipe = load_recipe(file)
-    require_recipe_allowed(recipe, console)
-
-    if recipe.action not in {
-        "github.env_secret.plan",
-        "github.env_secret.write",
-        "github.env_secret.sync_many",
-        "github.env_secret.verify_many",
-    }:
-        console.print(f"[red]unsupported recipe action: {recipe.action}[/red]")
-        raise typer.Exit(1)
-
-    plan_github_env_secret_recipe(recipe, console)
-
-
-@app.command("execute")
-def execute(file: str = typer.Option(..., "--file")):
-    recipe = load_recipe(file)
-    execute_recipe_action(recipe, console)
-
-
-@app.command("show-plan")
+@app.command("show-plan", help="Show a saved plan and its status.", rich_help_panel="Plans")
 def show_plan(plan_id: str = typer.Option(..., "--id")):
     show_saved_plan(plan_id, console)
 
 
-@app.command("approve-plan")
+@app.command("approve-plan", help="Approve a saved plan (human only).", rich_help_panel="Plans")
 def approve_plan(plan_id: str = typer.Option(..., "--id")):
     transition_planned_plan(plan_id, "approved", "approved", console)
 
 
-@app.command("reject-plan")
+@app.command("reject-plan", help="Reject a saved plan (human only).", rich_help_panel="Plans")
 def reject_plan(plan_id: str = typer.Option(..., "--id")):
     transition_planned_plan(plan_id, "rejected", "rejected", console)
 
 
-@app.command("preflight-plan")
+@app.command(
+    "preflight-plan",
+    help="Check a saved plan's prerequisites without writing anything.",
+    rich_help_panel="Plans",
+)
 def preflight_plan(plan_id: str = typer.Option(..., "--id")):
     preflight_saved_plan(plan_id, console)
 
 
-@app.command("execute-plan")
+@app.command(
+    "execute-plan",
+    help="Run an approved plan. Exit 0 done, 1 failed, 3 outcome unknown.",
+    rich_help_panel="Plans",
+)
 def execute_plan(plan_id: str = typer.Option(..., "--id")):
     execute_saved_plan(plan_id, console)
 
 
-@app.command("execute-recipe")
-def execute_recipe(file: str = typer.Option(..., "--file")):
-    recipe = load_recipe(file)
-    require_recipe_allowed(recipe, console)
-
-    if recipe.action != "vault.read.check":
-        fail_unsupported_recipe_action(recipe, console)
-
-    execute_vault_read_check_recipe(recipe, console)
-
-
-@app.command("plan-vault-read")
+@app.command(
+    "plan-vault-read",
+    help="Show the plan for a vault name check; nothing is saved.",
+    rich_help_panel="Checks",
+)
 def plan_vault_read(
     name: str = typer.Option(..., "--name"),
     env: str = typer.Option("dev", "--env"),
@@ -196,7 +177,11 @@ def plan_vault_read(
     )
 
 
-@app.command("check-vault-read")
+@app.command(
+    "check-vault-read",
+    help="Check that a secret name exists in the vault, without its value.",
+    rich_help_panel="Checks",
+)
 def check_vault_read(
     name: str = typer.Option(..., "--name"),
     env: str = typer.Option("dev", "--env"),
@@ -244,7 +229,7 @@ def check_vault_read(
         console.print(f"[red]FAIL[/red] secret missing or inaccessible: {name}")
         raise typer.Exit(1)
 
-@app.command("add")
+@app.command("add", rich_help_panel="Secrets")
 def add(
     name: str = typer.Argument(None, help="Secret name; asked for when omitted"),
     env: str = typer.Option(None, "--env", help="Environment; asked for when omitted"),
@@ -318,6 +303,60 @@ def submit_add_endpoint():
             "created",
         )
     _endpoint_exit(submit_add(raw), "created")
+
+
+@app.command(
+    "plan-recipe",
+    help="Show the plan for a vault.read.check recipe without saving it.",
+    rich_help_panel="Single-recipe commands (development)",
+)
+def plan_recipe(file: str = typer.Option(..., "--file")):
+    recipe = load_recipe(file)
+    require_recipe_allowed(recipe, console)
+    plan_vault_read_recipe(recipe, console)
+
+@app.command(
+    "plan-github-env-secret",
+    help="Show the plan for a GitHub recipe without saving it.",
+    rich_help_panel="Single-recipe commands (development)",
+)
+def plan_github_env_secret(file: str = typer.Option(..., "--file")):
+    recipe = load_recipe(file)
+    require_recipe_allowed(recipe, console)
+
+    if recipe.action not in {
+        "github.env_secret.plan",
+        "github.env_secret.write",
+        "github.env_secret.sync_many",
+        "github.env_secret.verify_many",
+    }:
+        console.print(f"[red]unsupported recipe action: {recipe.action}[/red]")
+        raise typer.Exit(1)
+
+    plan_github_env_secret_recipe(recipe, console)
+
+@app.command(
+    "execute",
+    help="Run a vault.read.check recipe directly, without a saved plan.",
+    rich_help_panel="Single-recipe commands (development)",
+)
+def execute(file: str = typer.Option(..., "--file")):
+    recipe = load_recipe(file)
+    execute_recipe_action(recipe, console)
+
+@app.command(
+    "execute-recipe",
+    help="Run a vault.read.check recipe directly, without a saved plan.",
+    rich_help_panel="Single-recipe commands (development)",
+)
+def execute_recipe(file: str = typer.Option(..., "--file")):
+    recipe = load_recipe(file)
+    require_recipe_allowed(recipe, console)
+
+    if recipe.action != "vault.read.check":
+        fail_unsupported_recipe_action(recipe, console)
+
+    execute_vault_read_check_recipe(recipe, console)
 
 
 def main():
