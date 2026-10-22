@@ -84,3 +84,7 @@ sh tests/test_broker_wrappers.sh
 ```
 
 CI does not require repository secrets, provider credentials, real Infisical access, or real GitHub secret access.
+
+## Releases
+
+The release steps are in [RELEASING.md](RELEASING.md).
