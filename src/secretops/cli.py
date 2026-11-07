@@ -66,7 +66,7 @@ def _load_recipe(file: str):
 
 @app.command(help="Show the secretops version.", rich_help_panel="Information")
 def version():
-    console.print("secretops 0.1.4")
+    console.print("secretops 0.1.5")
 
 
 @app.command(

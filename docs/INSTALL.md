@@ -69,9 +69,9 @@ Download the installer bundle of the release, check it, unpack it and run it:
 
 ```sh
 # Human
-curl -fsSLO https://github.com/feistify/secretops/releases/download/v0.1.4/secretops-0.1.4-installer.tar.gz
-sha256sum secretops-0.1.4-installer.tar.gz      # must match the SHA-256 in the release notes
-tar -xzf secretops-0.1.4-installer.tar.gz && cd secretops-0.1.4-installer
+curl -fsSLO https://github.com/feistify/secretops/releases/download/v0.1.5/secretops-0.1.5-installer.tar.gz
+sha256sum secretops-0.1.5-installer.tar.gz      # must match the SHA-256 in the release notes
+tar -xzf secretops-0.1.5-installer.tar.gz && cd secretops-0.1.5-installer
 sudo ./install.sh --create-agent-user agent --infisical-domain https://app.infisical.com
 ```
 
@@ -79,10 +79,10 @@ For an existing agent account use `--agent-user NAME` instead of `--create-agent
 
 ```text
 PASS: agent reaches the broker through the restricted SSH key.
-Installed secretops 0.1.4. Vault credentials are not configured yet.
+Installed secretops 0.1.5. Vault credentials are not configured yet.
 ```
 
-The installer installs secretops 0.1.4 from PyPI, checked against the SHA-256 pinned in the bundle's `secretops-release.txt`, and its dependencies with the hashes pinned in `broker-requirements.txt`. With GitHub CLI you can also check where the bundle was built: `gh attestation verify secretops-0.1.4-installer.tar.gz --repo feistify/secretops`. To install from a repository checkout instead, see [DEVELOPMENT.md](DEVELOPMENT.md#install-a-broker-from-a-checkout).
+The installer installs secretops 0.1.5 from PyPI, checked against the SHA-256 pinned in the bundle's `secretops-release.txt`, and its dependencies with the hashes pinned in `broker-requirements.txt`. With GitHub CLI you can also check where the bundle was built: `gh attestation verify secretops-0.1.5-installer.tar.gz --repo feistify/secretops`. To install from a repository checkout instead, see [DEVELOPMENT.md](DEVELOPMENT.md#install-a-broker-from-a-checkout).
 
 ## Configure the vault
 
