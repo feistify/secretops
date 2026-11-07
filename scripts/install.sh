@@ -52,8 +52,9 @@ usage() {
     cat <<'EOF'
 Usage:
   sudo ./install.sh (--agent-user USER | --create-agent-user NAME) --infisical-domain URL
-                    [--wheel WHEEL] [--infisical-bin PATH] [--gh-bin PATH] [--port PORT] [--no-start]
-  sudo ./install.sh --upgrade [--wheel WHEEL]
+                    [--wheel WHEEL] [--python PATH] [--infisical-bin PATH] [--gh-bin PATH]
+                    [--port PORT] [--no-start]
+  sudo ./install.sh --upgrade [--wheel WHEEL] [--python PATH]
 
   --wheel PATH            secretops wheel: required in a repository checkout (uv build);
                           optional in a release bundle, where it must match the pinned hash
@@ -61,6 +62,8 @@ Usage:
   --create-agent-user NAME
                           create a new account without sudo for the coding agent
   --infisical-domain URL  vault URL, for example https://app.infisical.com
+  --python PATH           root-owned Python 3.11 or newer with venv (default: /usr/bin/python3);
+                          an upgrade keeps the one given at installation
   --infisical-bin PATH    root-owned infisical CLI (default: /usr/bin/infisical)
   --gh-bin PATH           root-owned gh CLI (default: /usr/bin/gh if present)
   --port PORT             loopback SSH port for the agent (default: 22222)
@@ -70,11 +73,12 @@ Usage:
 EOF
 }
 
-wheel="" agent_user="" create_agent="" domain="" infisical_bin=/usr/bin/infisical gh_bin="" port=22222
+wheel="" agent_user="" create_agent="" domain="" infisical_bin=/usr/bin/infisical gh_bin="" port=22222 python=""
 upgrade=0 start=1 allow_untested_os=0
 while [[ $# -gt 0 ]]; do
     case $1 in
         --wheel) wheel=${2:?}; shift 2 ;;
+        --python) python=${2:?}; shift 2 ;;
         --agent-user) agent_user=${2:?}; shift 2 ;;
         --create-agent-user) create_agent=${2:?}; shift 2 ;;
         --infisical-domain) domain=${2:?}; shift 2 ;;
@@ -137,9 +141,6 @@ elif [[ -z $wheel ]]; then
     die "--wheel is required outside a release bundle"
 fi
 
-"$PYTHON" -c 'import sys, ensurepip, venv; sys.exit(sys.version_info < (3, 11))' 2>/dev/null \
-    || die "$PYTHON 3.11 or newer with venv is required; found: $("$PYTHON" -V 2>&1 || echo none) (Ubuntu and Debian: apt install python3-venv)"
-
 # An executable that runs with the broker's credentials must not be
 # replaceable by an unprivileged user: it and every parent directory must be
 # root-owned and not group- or other-writable. It takes only a canonical
@@ -154,6 +155,26 @@ trusted() {
         [[ $path == / ]] && return 0
         path=$(dirname -- "$path")
     done
+}
+
+# Every account that runs secretops (human, broker) runs the venv's base
+# Python, so it must be trusted and executable by all of them.
+use_python() {
+    local path
+    PYTHON=$(readlink -f -- "$1") || die "$1 does not exist"
+    trusted "$PYTHON" || die "$1 must be an executable whose path is root-owned and not writable by others"
+    path=$PYTHON
+    while :; do
+        (( (8#$(stat -c '%a' -- "$path") & 8#001) != 0 )) || die "$1 must be executable by every account: $path is not"
+        [[ $path == / ]] && break
+        path=$(dirname -- "$path")
+    done
+    python=$PYTHON
+}
+
+check_python() {
+    "$PYTHON" -c 'import sys, ensurepip, venv; sys.exit(sys.version_info < (3, 11))' 2>/dev/null \
+        || die "$PYTHON 3.11 or newer with venv is required; found: $("$PYTHON" -V 2>&1 || echo none). Ubuntu and Debian: apt install python3-venv; on older systems install a newer Python as root and pass --python PATH (see docs/INSTALL.md)"
 }
 
 # Build a venv from the hash-pinned dependencies and the wheel, owned by
@@ -221,6 +242,7 @@ write_info() {
 installer=secretops-install-1
 version=$("$ROOT/venv/bin/python" -I -c 'from importlib.metadata import version; print(version("secretops"))')
 wheel_sha256=$wheel_sha256
+python=$python
 agent_user=$agent_user
 agent_created=$agent_created
 port=$port
@@ -249,6 +271,10 @@ if [[ $upgrade == 1 ]]; then
     # Installations from before --create-agent-user did not create the account.
     agent_created=$(info_value agent_created)
     [[ $agent_created == yes ]] || agent_created=no
+    # Installations from before --python have no value: the default.
+    [[ -n $python ]] || python=$(info_value python)
+    [[ -z $python ]] || use_python "$python"
+    check_python
     fetch_packages
     build_venv "$ROOT/venv.new"
     rm -rf "$ROOT/venv.previous" "$ROOT/previous"
@@ -322,6 +348,8 @@ if [[ -n $gh_bin ]]; then
     gh_bin=$(readlink -f -- "$gh_bin") || die "$gh_bin does not exist"
     trusted "$gh_bin" || die "$gh_bin must be an executable whose path is root-owned and not writable by others"
 fi
+[[ -z $python ]] || use_python "$python"
+check_python
 
 fetch_packages
 trap 'echo "install: failed partway; see docs/INSTALL.md, \"Remove a failed installation\"" >&2' ERR

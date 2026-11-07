@@ -4,7 +4,7 @@ This guide installs secretops as a local broker on one Linux machine: the human 
 
 Every command block says who runs it. "Human" means your own terminal, not a terminal or tool session of the agent: never run `sudo` or enter a token through an agent (for example Claude Code's `!` prefix).
 
-Tested: Ubuntu 24.04 with its Python 3.12; installer checks in clean Ubuntu 24.04 and Debian 12 containers (`tests/test_install_container.sh`). A clean-VM run with a self-hosted Infisical and GitHub is recorded in [local-broker-installation.md](validation/local-broker-installation.md). Other distributions are not tested.
+Tested: Ubuntu 24.04 with its Python 3.12; installer checks in clean Ubuntu 24.04, Debian 12 and Ubuntu 22.04 (with Python 3.12 from the deadsnakes PPA) containers (`tests/test_install_container.sh`). A clean-VM run with a self-hosted Infisical and GitHub is recorded in [local-broker-installation.md](validation/local-broker-installation.md). Other distributions are not tested.
 
 ## What gets installed
 
@@ -57,6 +57,7 @@ What each setup protects is compared in [deployment levels](SECURITY_MODEL.md#de
 sudo apt install python3-venv openssh-server curl
 ```
 
+- **Ubuntu 22.04**: its Python is 3.10; secretops needs 3.11 or newer. Install a newer Python as root and pass it with `--python` in [Install](#install), for example from the [deadsnakes PPA](https://launchpad.net/~deadsnakes/+archive/ubuntu/ppa): `sudo add-apt-repository ppa:deadsnakes/ppa && sudo apt install python3.12 python3.12-venv`, then `--python /usr/bin/python3.12`.
 - **OpenSSH server**: on Ubuntu, installing `openssh-server` also starts the normal network-facing `ssh` service. secretops does not use it. If you do not want it: `sudo systemctl disable --now ssh.service ssh.socket`.
 - **Infisical CLI**: install it as root following the [official instructions](https://infisical.com/docs/cli/overview), so that it is `/usr/bin/infisical` or another root-owned path. The installer refuses a CLI that the broker or another user could replace. The tested CLI version is in the validation records.
 - **Infisical project and machine identity**: an Infisical Cloud account or a self-hosted instance ([self-hosting](https://infisical.com/docs/self-hosting/overview)). Installing secretops does not install Infisical. Create a project and a [machine identity](https://infisical.com/docs/documentation/platform/identities/machine-identities) with access only to that project and the environments you use (for example `dev` and `staging`), able to read and write secrets there. Use [token auth](https://infisical.com/docs/documentation/platform/identities/token-auth) or another method that gives you an access token; note when it expires.
@@ -74,7 +75,7 @@ tar -xzf secretops-0.1.4-installer.tar.gz && cd secretops-0.1.4-installer
 sudo ./install.sh --create-agent-user agent --infisical-domain https://app.infisical.com
 ```
 
-For an existing agent account use `--agent-user NAME` instead of `--create-agent-user NAME`. Other options: `--infisical-bin PATH` (default `/usr/bin/infisical`), `--gh-bin PATH` (default `/usr/bin/gh` if present), `--port PORT` (default 22222), `--allow-untested-os` for distributions other than Ubuntu and Debian. The installer checks the system first and refuses to overwrite an existing installation, account, port, or agent key. The last lines check that the agent reaches the broker:
+For an existing agent account use `--agent-user NAME` instead of `--create-agent-user NAME`. Other options: `--python PATH` (default `/usr/bin/python3`; a root-owned Python 3.11 or newer with venv, kept by upgrades), `--infisical-bin PATH` (default `/usr/bin/infisical`), `--gh-bin PATH` (default `/usr/bin/gh` if present), `--port PORT` (default 22222), `--allow-untested-os` for distributions other than Ubuntu and Debian. The installer checks the system first and refuses to overwrite an existing installation, account, port, or agent key. The last lines check that the agent reaches the broker:
 
 ```text
 PASS: agent reaches the broker through the restricted SSH key.
