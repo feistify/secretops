@@ -5,7 +5,10 @@
 #
 #   uv build && sh tests/test_install_container.sh
 #   IMAGE=debian:12 sh tests/test_install_container.sh
+#   IMAGE=ubuntu:22.04 sh tests/test_install_container.sh
 #
+# Ubuntu 22.04's Python is 3.10, so there the test installs Python 3.12 from
+# the deadsnakes PPA and passes it with --python.
 # The container has no systemd, so the installer runs with --no-start and
 # the test starts the dedicated sshd itself. A fake infisical CLI stands in
 # for the vault; no real provider or credential is used.
@@ -24,6 +27,13 @@ useradd -m -s /bin/bash agent
 # Records whether the configured token reached the vault CLI, then fails.
 printf '#!/bin/sh\n[ "$INFISICAL_TOKEN" = synthetic-token-2 ] && : > /tmp/token-seen\necho fake infisical >&2\nexit 1\n' > /usr/bin/infisical
 chmod 0755 /usr/bin/infisical
+PYOPT="" PYINFO=""
+if [ "$(. /etc/os-release && echo "$VERSION_ID")" = 22.04 ]; then
+    apt-get install -y -qq --no-install-recommends software-properties-common gpg-agent >/dev/null
+    add-apt-repository -y ppa:deadsnakes/ppa >/dev/null 2>&1
+    apt-get install -y -qq --no-install-recommends python3.12 python3.12-venv >/dev/null
+    PYOPT="--python /usr/bin/python3.12" PYINFO=/usr/bin/python3.12
+fi
 
 fail=0
 check() { # label, expected (pass|deny), command...
@@ -51,16 +61,24 @@ check "no systemd refused unless --no-start" pass sh -c 'env SUDO_USER=human bas
 check "install refuses without the agent user flag" deny env SUDO_USER=human bash scripts/install.sh --wheel "$WHEEL"
 runuser -u agent -- sh -c 'cp /usr/bin/infisical /home/agent/own-infisical && ln -s own-infisical /home/agent/evil-link'
 check "install refuses a link to an agent-owned binary" deny env SUDO_USER=human bash scripts/install.sh \
-    --wheel "$WHEEL" --agent-user agent --infisical-domain http://127.0.0.1:8086 \
+    --wheel "$WHEEL" --agent-user agent --infisical-domain http://127.0.0.1:8086 $PYOPT \
     --infisical-bin /home/agent/evil-link --no-start
+if [ -n "$PYOPT" ]; then
+    check "Python 3.10 refused with a hint to --python" pass sh -c 'env SUDO_USER=human bash scripts/install.sh --wheel "$WHEEL" --agent-user agent --infisical-domain http://127.0.0.1:8086 --no-start 2>&1 | grep -q -- "--python PATH"'
+fi
+runuser -u agent -- sh -c 'cp "$(readlink -f /usr/bin/python3)" /home/agent/own-python && ln -s own-python /home/agent/python-link'
+check "--python refuses an agent-owned interpreter" pass sh -c 'env SUDO_USER=human bash scripts/install.sh --wheel "$WHEEL" --agent-user agent --infisical-domain http://127.0.0.1:8086 --python /home/agent/python-link --no-start 2>&1 | grep -q "root-owned"'
+mkdir -p /root/private-python && chmod 0700 /root/private-python && cp "$(readlink -f /usr/bin/python3)" /root/private-python/python3
+check "--python refuses an interpreter other accounts cannot run" pass sh -c 'env SUDO_USER=human bash scripts/install.sh --wheel "$WHEEL" --agent-user agent --infisical-domain http://127.0.0.1:8086 --python /root/private-python/python3 --no-start 2>&1 | grep -q "executable by every account"'
+check "refused interpreters changed nothing" pass sh -c '! getent passwd secretops-broker && test ! -e /opt/secretops'
 # The agent controls this link; the installer must store its target.
 runuser -u agent -- ln -s /usr/bin/infisical /home/agent/infisical
 env SUDO_USER=human bash scripts/install.sh --wheel "$WHEEL" --agent-user agent \
-    --infisical-domain http://127.0.0.1:8086 --infisical-bin /home/agent/infisical --no-start
+    --infisical-domain http://127.0.0.1:8086 $PYOPT --infisical-bin /home/agent/infisical --no-start
 /usr/sbin/sshd -f /opt/secretops/ssh/sshd_config
 
 check "second install refuses to overwrite" deny env SUDO_USER=human bash scripts/install.sh \
-    --wheel "$WHEEL" --agent-user agent --infisical-domain http://127.0.0.1:8086 --no-start
+    --wheel "$WHEEL" --agent-user agent --infisical-domain http://127.0.0.1:8086 $PYOPT --no-start
 check "broker.env is broker-owned 0600" pass test "$(stat -c '%U %a' /opt/secretops/broker.env)" = "secretops-broker 600"
 check "application is root-owned and not writable" pass sh -c \
     '! find /opt/secretops/venv /opt/secretops/bin /opt/secretops/policy.yaml ! -type l \( ! -user root -o -perm /022 \) | grep -q .'
@@ -68,6 +86,8 @@ check "state directories are private" pass test "$(stat -c '%U %a' /opt/secretop
 check "trusted binary stored by its resolved path" pass grep -qx "SECRETOPS_INFISICAL_BIN=/usr/bin/infisical" /opt/secretops/broker.env
 check "broker.env has no token yet" pass sh -c '! grep -q INFISICAL_TOKEN /opt/secretops/broker.env'
 check "human client config written" pass test -f /home/human/.config/secretops/client.yaml
+check "install-info records the chosen Python" pass grep -qx "python=$PYINFO" /opt/secretops/install-info
+check "application runs on Python 3.11 or newer" pass /opt/secretops/venv/bin/python -I -c 'import sys; sys.exit(sys.version_info < (3, 11))'
 
 check "agent: version" pass as_agent secretops-local version
 check "agent: actions" pass as_agent secretops-local actions
@@ -146,6 +166,7 @@ check "upgrade replaces the application" pass bash scripts/install.sh --upgrade 
 check "upgrade kept the previous application" pass test -x /opt/secretops/venv.previous/bin/python
 check "upgrade kept broker.env" pass test "$(stat -c '%U %a' /opt/secretops/broker.env)" = "secretops-broker 600"
 check "upgraded broker runs" pass runuser -u secretops-broker -- /usr/local/bin/secretops-broker version
+check "upgrade keeps the chosen Python" pass grep -qx "python=$PYINFO" /opt/secretops/install-info
 
 # Installer bundle: the same installer, pinned to one wheel by its hash.
 bundle=$(sh scripts/make-installer-bundle.sh "$WHEEL" /tmp/bundle)
@@ -199,7 +220,7 @@ check "history archive is root-only" pass test "$(stat -c '%U %a' "$history")" =
 check "history archive has plans and audit" pass sh -c "tar -tzf '$history' | grep -q '^plans/' && tar -tzf '$history' | grep -q '^audit/'"
 check "history archive has no token" pass sh -c "! tar -tzf '$history' | grep -q broker.env"
 check "fresh install after uninstall" pass env SUDO_USER=human bash scripts/install.sh --wheel "$WHEEL" \
-    --agent-user agent --infisical-domain http://127.0.0.1:8086 --no-start
+    --agent-user agent --infisical-domain http://127.0.0.1:8086 $PYOPT --no-start
 /usr/sbin/sshd -f /opt/secretops/ssh/sshd_config
 check "agent reaches the reinstalled broker" pass as_agent secretops-local version
 pkill -f 'sshd -f /opt/secretops' || true
@@ -209,12 +230,12 @@ check "purge leaves no new archive" pass test "$(ls /root/secretops-uninstall-*.
 
 # A new agent account created by the installer.
 check "create-agent-user refuses an existing account" deny env SUDO_USER=human bash scripts/install.sh \
-    --wheel "$WHEEL" --create-agent-user agent --infisical-domain http://127.0.0.1:8086 --no-start
+    --wheel "$WHEEL" --create-agent-user agent --infisical-domain http://127.0.0.1:8086 $PYOPT --no-start
 check "create-agent-user and agent-user together refused" deny env SUDO_USER=human bash scripts/install.sh \
-    --wheel "$WHEEL" --agent-user agent --create-agent-user coder --infisical-domain http://127.0.0.1:8086 --no-start
+    --wheel "$WHEEL" --agent-user agent --create-agent-user coder --infisical-domain http://127.0.0.1:8086 $PYOPT --no-start
 check "refusals created no account" deny getent passwd coder
 check "install with a new agent account" pass env SUDO_USER=human bash scripts/install.sh --wheel "$WHEEL" \
-    --create-agent-user coder --infisical-domain http://127.0.0.1:8086 --no-start
+    --create-agent-user coder --infisical-domain http://127.0.0.1:8086 $PYOPT --no-start
 check "new agent account exists" pass getent passwd coder
 check "new agent account has no administrator group" pass sh -c '! id -nG coder | grep -qwE "sudo|admin|wheel"'
 check "new agent account has no password" pass sh -c 'test "$(getent shadow coder | cut -d: -f2)" = "!"'
@@ -229,7 +250,7 @@ check "uninstall keeps the created account" pass getent passwd coder
 
 # Packages are downloaded and checked before anything changes.
 check "fresh install with a wrong pin refused" deny env SUDO_USER=human bash /tmp/bad-bundle/install.sh \
-    --create-agent-user coder2 --infisical-domain http://127.0.0.1:8086 --no-start
+    --create-agent-user coder2 --infisical-domain http://127.0.0.1:8086 $PYOPT --no-start
 check "refused fresh install changed nothing" pass sh -c \
     '! getent passwd coder2 && ! getent passwd secretops-broker && test ! -e /opt/secretops'
 
