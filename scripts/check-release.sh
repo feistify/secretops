@@ -4,7 +4,7 @@
 #   sh scripts/check-release.sh 0.1.4
 #
 # Needs a logged-in GitHub CLI with `gh attestation verify --source-ref`
-# (tested with 2.102.0; set GH=/path/to/gh to use another binary), curl,
+# (tested with 2.103.3; set GH=/path/to/gh to use another binary), curl,
 # python3, uv and Docker. Waits until PyPI's index lists the version, then
 # checks: the release files against SHA256SUMS; each file's attestation
 # signature, signed by release.yml of this repository for the tag; that the bundle pins the release wheel; that
@@ -70,7 +70,15 @@ echo "PyPI files equal the release, provenance from publish.yml"
 
 echo "== Clean venv"
 uv venv -q "$work/venv"
-VIRTUAL_ENV=$work/venv uv pip install -q --no-cache --refresh --index-url https://pypi.org/simple "secretops==$version"
+# PyPI's CDN nodes update at different times, so the index may still lack the
+# version here although the check above saw it.
+tries=0
+until VIRTUAL_ENV=$work/venv uv pip install -q --no-cache --refresh --index-url https://pypi.org/simple "secretops==$version"; do
+    tries=$((tries + 1))
+    [ "$tries" -lt 8 ] || fail "venv install of $version"
+    echo "retrying in 15 s"
+    sleep 15
+done
 [ "$("$work/venv/bin/secretops" version)" = "secretops $version" ] || fail "venv version"
 echo "pip install prints secretops $version"
 
