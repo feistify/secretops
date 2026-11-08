@@ -60,7 +60,7 @@ sudo apt install python3-venv openssh-server curl
 - **Ubuntu 22.04**: its Python is 3.10; secretops needs 3.11 or newer. Install a newer Python as root and pass it with `--python` in [Install](#install), for example from the [deadsnakes PPA](https://launchpad.net/~deadsnakes/+archive/ubuntu/ppa): `sudo add-apt-repository ppa:deadsnakes/ppa && sudo apt install python3.12 python3.12-venv`, then `--python /usr/bin/python3.12`.
 - **OpenSSH server**: on Ubuntu, installing `openssh-server` also starts the normal network-facing `ssh` service. secretops does not use it. If you do not want it: `sudo systemctl disable --now ssh.service ssh.socket`.
 - **Infisical CLI**: install it as root following the [official instructions](https://infisical.com/docs/cli/overview), so that it is `/usr/bin/infisical` or another root-owned path. The installer refuses a CLI that the broker or another user could replace. The tested CLI version is in the validation records.
-- **Infisical project and machine identity**: an Infisical Cloud account or a self-hosted instance ([self-hosting](https://infisical.com/docs/self-hosting/overview)). Installing secretops does not install Infisical. Create a project and a [machine identity](https://infisical.com/docs/documentation/platform/identities/machine-identities) with access only to that project and the environments you use (for example `dev` and `staging`), able to read and write secrets there. Use [token auth](https://infisical.com/docs/documentation/platform/identities/token-auth) or another method that gives you an access token; note when it expires.
+- **Infisical project and machine identity**: prepared as in [PREPARE.md](PREPARE.md). Installing secretops does not install Infisical.
 - **GitHub CLI** (only for GitHub sync): `gh` installed as root, for example from the [official package](https://github.com/cli/cli/blob/trunk/docs/install_linux.md).
 
 ## Install
@@ -147,6 +147,8 @@ Do not do this for a working installation that has plans or audit you want to ke
 ## Limits
 
 - One broker per machine, one Infisical project and folder per broker.
+- The agent runs on the broker machine. A broker on another machine is a manual setup ([BROKER_HOST.md](BROKER_HOST.md)).
+- An HTTP proxy cannot be configured on an installed broker.
 - Human secret entry over SSH from another machine, tmux, and other distributions are not tested.
 - The token is renewed by hand; see [OPERATIONS.md](OPERATIONS.md#renew-the-vault-token).
 - `broker.env` is read by the broker wrapper as shell. Edit it only through `secretops-configure`, which accepts and writes only plain `KEY='value'` lines.
