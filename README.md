@@ -82,6 +82,8 @@ sudo secretops-configure        # Infisical project, folder and token (hidden pr
 
 `--create-agent-user` creates a separate account without sudo for your coding agent; to use an existing account, give `--agent-user NAME` instead. The installer sets up the broker account, the restricted agent access and your tools, and installs secretops 0.1.5 from PyPI, checked against the hash in the bundle. `sudo secretops-uninstall` removes it again.
 
+Before installing, prepare the vault: [PREPARE](https://github.com/feistify/secretops/blob/main/docs/PREPARE.md).
+
 1. Follow the [installation guide](https://github.com/feistify/secretops/blob/main/docs/INSTALL.md) for the details: prerequisites, a separate agent account, the GitHub login and checks.
 2. Try the [demo](https://github.com/feistify/secretops/blob/main/docs/DEMO.md) with a test project and made-up values.
 3. Add the [agent instructions](https://github.com/feistify/secretops/blob/main/docs/AGENT_USAGE.md#instructions-for-agents-in-consumer-projects) to your project, so your agent uses the broker.
@@ -105,6 +107,7 @@ Details: [limitations and tested versions](https://github.com/feistify/secretops
 
 | Read this | For |
 | --- | --- |
+| [PREPARE](https://github.com/feistify/secretops/blob/main/docs/PREPARE.md) | What the vault needs before installing |
 | [INSTALL](https://github.com/feistify/secretops/blob/main/docs/INSTALL.md) | Installing a local broker |
 | [OPERATIONS](https://github.com/feistify/secretops/blob/main/docs/OPERATIONS.md) | Daily use, failures, token renewal, upgrade, backup |
 | [USAGE](https://github.com/feistify/secretops/blob/main/docs/USAGE.md) | Adding secrets, the plan lifecycle, all actions |
