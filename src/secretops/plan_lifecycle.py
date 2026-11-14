@@ -398,6 +398,11 @@ def _finish_confirmed_write(
     for line in ok_lines:
         console.print(line, soft_wrap=True)
     _warn_unrecorded(console, audited=audited, status_saved=status_saved)
+    if not audited and status_saved:
+        console.print(
+            "the writes above were made; the plan is marked failed only because the audit "
+            "record is incomplete; do not plan the same names again"
+        )
     console.print(not_printed)
     if not (audited and status_saved):
         raise typer.Exit(EXIT_FAILED)

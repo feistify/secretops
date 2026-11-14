@@ -191,7 +191,13 @@ def test_unwritable_audit_after_confirmed_vault_write_marks_failed_and_exits_1(
     )
 
     assert exit_code == 1
-    assert lines == [*ok_lines, *AUDIT_WARNING, not_printed]
+    assert lines == [
+        *ok_lines,
+        *AUDIT_WARNING,
+        "the writes above were made; the plan is marked failed only because the audit "
+        "record is incomplete; do not plan the same names again",
+        not_printed,
+    ]
     assert attempts == ["failed"]
     # A failed plan cannot run again, so a confirmed rotation is not repeated.
     assert read_plan(plan_path)["status"] == "failed"

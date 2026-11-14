@@ -49,9 +49,9 @@ Pinning `SECRETOPS_PLAN_DIR`, `SECRETOPS_AUDIT_PATH`, and `SECRETOPS_POLICY_PATH
 
 ## Exit codes of `execute-plan`
 
-`execute-plan` exits 0 on success, 1 on a failure whose outcomes are known, and 3 when any write outcome is unknown: a vault write without a matching read-back, or a GitHub write that started but was not acknowledged. Exit 3 means stop and let a human investigate; never retry automatically. Earlier versions exited 1 for unknown outcomes too, so scripts that treat every failure as 1 must handle 3. Saved plans and approvals are unaffected by this change.
+`execute-plan` exits 0 on success, 1 on a failure whose outcomes are known or on writes that were made but whose plan status or audit record could not be saved (with a warning), and 3 when any write outcome is unknown: a vault write without a matching read-back, or a GitHub write that started but was not acknowledged. Exit 3 means stop and let a human investigate; never retry automatically. Earlier versions exited 1 for unknown outcomes too, so scripts that treat every failure as 1 must handle 3. Saved plans and approvals are unaffected by this change.
 
-A stopped GitHub sync reports every mapping as acknowledged, unknown, not written, or not attempted, in output and in the audit log; acknowledged writes are not rolled back. If the audit log cannot be written, the run stops further writes, prints what it knows, and says that the audit record is incomplete.
+A stopped GitHub sync reports every mapping as acknowledged, unknown, not written, or not attempted, in output and in the audit log; acknowledged writes are not rolled back. If the audit log cannot be written, the run stops further writes, prints what it knows, and says that the audit record is incomplete. Vault writes (generate, rotate, import, copy) do the same: the plan is marked `failed` so it cannot run again, even when every write was confirmed, and the output says so.
 
 ## Upgrading to destination-bound plans
 

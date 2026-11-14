@@ -25,7 +25,7 @@ Before approving, read the whole `show-plan` output: action, environment, vault 
 
 ## When something fails
 
-`execute-plan` exits 0 on success, 1 when it failed or finished with a warning but no outcome is unknown, and 3 when a write outcome is unknown. `secretops add` exits 0 saved, 1 not written, 2 cancelled, 3 unknown.
+`execute-plan` exits 0 on success, 1 when it failed, or finished with a warning (status or audit not recorded), and no outcome is unknown, and 3 when a write outcome is unknown. `secretops add` exits 0 saved, 1 not written, 2 cancelled, 3 unknown.
 
 | Message or exit | Meaning | What to do |
 | --- | --- | --- |
