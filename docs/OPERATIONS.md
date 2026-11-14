@@ -97,7 +97,7 @@ done
 sudo -u secretops-broker /usr/local/bin/secretops-broker version
 ```
 
-Rollback does not change plans or audit: plans executed after the upgrade stay executed. Before rolling back past the version that added approval times, remove `approval_valid_hours` and `production_environments` from the policy file (the older version refuses unknown keys), and plan again anything saved after the upgrade: the older version refuses those plans as not matching its schema.
+Rollback does not change plans or audit: plans executed after the upgrade stay executed. Before rolling back past v0.1.10, remove `approval_valid_hours` and `production_environments` from the policy file (the older version refuses unknown keys), and plan again anything saved after the upgrade: the older version refuses those plans as not matching its schema.
 
 ## Back up
 
