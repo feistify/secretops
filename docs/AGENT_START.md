@@ -65,7 +65,7 @@ Anything else is refused. Recipe names use lowercase letters, digits, `.`, `-` a
    sudo -u secretops-broker /usr/local/bin/secretops-broker approve-plan --id PLAN_ID
    ```
    Then wait. When they say it is done, in any words, run `show-plan` with the plan ID you already have; do not ask them to repeat it. `status: approved`: continue, without waiting for another instruction. `status: planned`: say it is not approved yet and wait; executing it now would mark it failed. `status: rejected`: stop. Any other status: stop and tell the human. Under the default policy, metadata checks (`vault.read.check`, `vault.secret.diff_envs`, `github.env_secret.verify_many`) need no approval.
-4. Run `execute-plan`. Exit 0: done. Exit 1: failed, nothing uncertain; tell the human. Exit 3: a write outcome is unknown; stop and tell the human, do not retry and do not plan the same names again.
+4. Run `execute-plan`. Exit 0: done. Exit 1: failed or finished with a warning; tell the human; never run the same plan again. Exit 3: a write outcome is unknown; stop and tell the human, do not retry and do not plan the same names again.
 
 A plan runs once. To repeat an operation, save a new plan. Production writes are refused by policy, even with approval.
 

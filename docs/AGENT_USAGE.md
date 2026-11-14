@@ -141,6 +141,8 @@ Stop on preflight failure. If preflight or execution reports a changed vault
 destination, changed plan content, or "replan required", tell the human. A new
 plan needs a new human approval. Never approve or reject plans yourself, inspect broker
 credentials, request secret values, or retry an unknown write outcome automatically.
+If execute-plan exits 1, it failed or finished with a warning; tell the human and
+never run the same plan again.
 If execute-plan exits 3 or reports an unknown outcome, stop and tell the human.
 Do not prepare a new sync plan for those names until the human has resolved the
 state; a later name check does not show that the intended value was stored.

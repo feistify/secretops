@@ -4790,3 +4790,25 @@ def test_decision_stands_when_the_audit_event_cannot_be_written(tmp_path, comman
     assert "Traceback" not in result.stdout + result.stderr
     assert read_plan(plan_path)["status"] == status
     assert_no_secret_leak(result, plan_path)
+
+
+@pytest.mark.parametrize("command,status", DECISIONS)
+def test_decision_whose_status_cannot_be_saved_writes_no_audit_event(
+    tmp_path, monkeypatch, command, status
+):
+    import secretops.plan_lifecycle
+
+    plan_path = write_plan(tmp_path / "plans", rotate_plan("unsaved-decision"))
+    plan_bytes = plan_path.read_bytes()
+
+    def failing_status_save(*args, **kwargs):
+        raise OSError("read-only plan store")
+
+    monkeypatch.setattr(secretops.plan_lifecycle, "set_plan_status", failing_status_save)
+
+    with pytest.raises(OSError):
+        decide_in_process(monkeypatch, tmp_path, command, "unsaved-decision")
+
+    assert plan_path.read_bytes() == plan_bytes
+    assert audit_lines(tmp_path / "audit.jsonl") == []
+    assert_plan_lock_free("unsaved-decision")

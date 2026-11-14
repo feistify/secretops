@@ -269,3 +269,76 @@ def test_check_vault_read_follows_a_custom_environment_policy(tmp_path, monkeypa
     assert all(result.returncode == 1 for result in denied.values())
     assert not marker.exists()
 
+
+
+def test_check_vault_read_refuses_a_denied_action(tmp_path, monkeypatch):
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text("allowed_actions: []\ndenied_actions: [vault.read.check]\n", encoding="utf-8")
+    monkeypatch.setenv("SECRETOPS_POLICY_PATH", str(policy_path))
+    bin_dir, marker = recording_infisical_bin(tmp_path)
+
+    result = run_secretops(
+        "check-vault-read", "--name", DUMMY_SECRET_NAME, "--env", "dev",
+        audit_path=tmp_path / "audit.jsonl", path_prefix=bin_dir,
+    )
+
+    assert result.returncode == 1
+    assert result.stdout.strip().splitlines() == [
+        "FAIL Action denied by policy: vault.read.check",
+        "no provider call was made",
+    ]
+    assert "Traceback" not in combined_output(result)
+    assert not marker.exists()
+
+
+def test_policy_refusal_with_an_unwritable_audit_log_does_not_traceback(tmp_path):
+    audit_path = tmp_path / "audit-is-a-directory"
+    audit_path.mkdir()
+    bin_dir, marker = recording_infisical_bin(tmp_path)
+
+    result = run_secretops(
+        "check-vault-read", "--name", DUMMY_SECRET_NAME, "--env", "qa",
+        audit_path=audit_path, path_prefix=bin_dir,
+    )
+
+    assert result.returncode == 1
+    assert result.stdout.strip().splitlines() == [
+        "WARNING the audit record could not be written",
+        "FAIL environment denied by policy for vault.read.check: qa",
+        "no provider call was made",
+    ]
+    assert "Traceback" not in combined_output(result)
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize("command", ["execute-recipe", "execute"])
+def test_vault_read_check_recipe_applies_the_environment_policy(tmp_path, command):
+    audit_path = tmp_path / "audit.jsonl"
+    bin_dir, marker = recording_infisical_bin(tmp_path)
+    recipe = tmp_path / "check.yaml"
+    recipe.write_text(
+        f"action: vault.read.check\nsecret_name: {DUMMY_SECRET_NAME}\nenv: qa\n", encoding="utf-8"
+    )
+
+    refused = run_secretops(command, "--file", str(recipe), audit_path=audit_path, path_prefix=bin_dir)
+
+    assert refused.returncode == 1
+    assert refused.stdout.strip().splitlines() == [
+        "FAIL environment denied by policy for vault.read.check: qa",
+        "no provider call was made",
+    ]
+    assert not marker.exists()
+    event = read_audit_events(audit_path)[-1]
+    assert (event["action"], event["env"], event["status"], event["failure"]) == (
+        "vault.read.check", "qa", "failure", "policy",
+    )
+
+    recipe.write_text(
+        f"action: vault.read.check\nsecret_name: {DUMMY_SECRET_NAME}\nenv: production\n",
+        encoding="utf-8",
+    )
+    allowed = run_secretops(command, "--file", str(recipe), audit_path=audit_path, path_prefix=bin_dir)
+
+    assert allowed.returncode == 0, combined_output(allowed)
+    assert marker.exists()
+    assert_no_secret_leak(allowed, audit_path)

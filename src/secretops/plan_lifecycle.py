@@ -9,7 +9,6 @@ from secretops.generators import generate_secret_value
 from secretops.import_file import (
     ImportFileError,
     parse_dotenv_file,
-    parse_import_source_file,
     planned_import_names,
     source_file_permissions_restricted,
 )

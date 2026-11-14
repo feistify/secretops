@@ -18,6 +18,7 @@ from secretops.handlers import (
     plan_github_env_secret_recipe,
     plan_recipe_action,
     plan_vault_read_recipe,
+    require_read_check_environment,
     require_recipe_allowed,
 )
 from secretops.human_entry import (
@@ -47,7 +48,6 @@ from secretops.policy import (
     PolicyError,
     load_policy,
     require_allowed,
-    require_environment_allowed,
 )
 from secretops.recipes import load_recipe
 from secretops.validation import validate_secret_name
@@ -227,20 +227,10 @@ def check_vault_read(
         console.print(f"[red]{error}[/red]")
         raise typer.Exit(1) from error
 
-    try:
-        # The same action and environment policy as a vault.read.check plan.
-        require_environment_allowed("vault.read.check", env)
-    except PermissionError as error:
-        write_audit_event(
-            action="check-vault-read",
-            secret_name=name,
-            env=env,
-            status="fail",
-            details={"failure": "policy"},
-        )
-        console.print(f"[red]FAIL[/red] {error}")
-        console.print("no provider call was made")
-        raise typer.Exit(1) from error
+    # The same action and environment policy as a vault.read.check plan.
+    require_read_check_environment(
+        console, audit_action="check-vault-read", secret_name=name, env=env, audit_status="fail"
+    )
 
     vault = get_vault()
 
