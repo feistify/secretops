@@ -37,7 +37,6 @@ jobs:
           [[ $TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "not a release tag: $TAG"; exit 1; }
           version=${TAG#v}
           grep -qx "version = \"$version\"" pyproject.toml || { echo "pyproject.toml is not $version"; exit 1; }
-          grep -q "\"secretops $version\"" src/secretops/cli.py || { echo "secretops version does not print $version"; exit 1; }
           echo "VERSION=$version" >> "$GITHUB_ENV"
 
       - name: Run tests
@@ -45,6 +44,7 @@ jobs:
           uv sync --locked --all-extras --dev
           uv run pytest
           sh tests/test_broker_wrappers.sh
+          [[ $(uv run secretops version) == "secretops $VERSION" ]] || { echo "secretops version does not print $VERSION"; exit 1; }
 
       - name: Build wheel, sdist and installer bundle
         run: |
