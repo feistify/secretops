@@ -59,19 +59,19 @@ Anything else is refused. Recipe names use lowercase letters, digits, `.`, `-` a
 
 1. Write a recipe, upload it, and save a plan.
 2. Run `show-plan` and `preflight-plan`. If preflight fails, stop and tell the human why.
-3. If the action needs approval, ask the human to review and approve it, and give them the commands:
+3. If the action needs approval, hand over to the human. In one message, with the real plan ID filled in, tell them to run these in a separate terminal under their own account, not through you: first the review, checking the action, environment, vault destination, every secret name and any GitHub repository and environment; then, if it is right, the approval (or `reject-plan` if not); then to tell you when it is done. Never run these yourself or ask the human to run them through your shell tool.
    ```sh
    sudo -u secretops-broker /usr/local/bin/secretops-broker show-plan --id PLAN_ID
    sudo -u secretops-broker /usr/local/bin/secretops-broker approve-plan --id PLAN_ID
    ```
-   Wait until they say it is approved. Under the default policy, metadata checks (`vault.read.check`, `vault.secret.diff_envs`, `github.env_secret.verify_many`) need no approval.
+   Then wait. When they say it is done, in any words, run `show-plan` with the plan ID you already have; do not ask them to repeat it. `status: approved`: continue, without waiting for another instruction. `status: planned`: say it is not approved yet and wait; executing it now would mark it failed. `status: rejected`: stop. Under the default policy, metadata checks (`vault.read.check`, `vault.secret.diff_envs`, `github.env_secret.verify_many`) need no approval.
 4. Run `execute-plan`. Exit 0: done. Exit 1: failed, nothing uncertain; tell the human. Exit 3: a write outcome is unknown; stop and tell the human, do not retry and do not plan the same names again.
 
 A plan runs once. To repeat an operation, save a new plan. Production writes are refused by policy, even with approval.
 
 ### When the value only exists with the human
 
-For a new secret such as an API key from a provider console, plan a `vault.secret.add` recipe and ask the human to run `secretops add --plan PLAN_ID` in their own terminal. They see the destination, type the value at a hidden prompt and confirm; that confirmation is the approval. Do not run `execute-plan` for this plan; check the result with `show-plan` (`executed`, or `failed` with a reason).
+For a new secret such as an API key from a provider console, plan a `vault.secret.add` recipe and hand over the same way with one command, `secretops add --plan PLAN_ID` with the real plan ID, run in a separate terminal under the human's own account. They see the destination, type the value at a hidden prompt and confirm; that confirmation is the approval. Do not run `execute-plan` for this plan; when they say it is done, check the result with `show-plan` (`executed`, `failed` with a reason, or still `planned` if they have not finished).
 
 ```yaml
 action: vault.secret.add
@@ -93,7 +93,7 @@ Messages and what to do about them are in [OPERATIONS.md](OPERATIONS.md#when-som
 
 ## Set up the human's project
 
-So that later sessions use the broker too, add the [project instructions](AGENT_USAGE.md#instructions-for-agents-in-consumer-projects) to the project's `AGENTS.md` (or `CLAUDE.md`), with `ssh BROKER_ALIAS` replaced by `secretops-local`. Show the human the change before you commit it.
+So that later sessions use the broker too, add the [project instructions](AGENT_USAGE.md#instructions-for-agents-in-consumer-projects) to the project's `AGENTS.md` (or `CLAUDE.md`), with `ssh BROKER_ALIAS` replaced by `secretops-local` and `HUMAN_BROKER` by `sudo -u secretops-broker /usr/local/bin/secretops-broker`. Show the human the change before you commit it.
 
 ## Try it first
 

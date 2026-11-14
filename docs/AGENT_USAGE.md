@@ -79,13 +79,14 @@ The wrapper and separate Unix user are implemented by the broker host model: see
 
 Agents need both operating instructions and a human-provisioned broker connection. The repository's own `AGENTS.md` governs development of secretops; it does not automatically configure agents working in other repositories.
 
-With a local broker installed by `scripts/install.sh`, the connection is `secretops-local`: replace `ssh BROKER_ALIAS` with it below. Otherwise, the human configuring the deployment should configure an SSH alias with the broker host, port, restricted agent identity, and verified host key. Before copying the following section into the consumer project's `AGENTS.md`, replace `BROKER_ALIAS` with that alias. Supply reviewed metadata-only recipe examples from `examples/recipes/`, adapted to the deployment's permitted names and targets. Do not include credentials or private-key contents in agent instructions.
+With a local broker installed by `scripts/install.sh`, the connection is `secretops-local`: replace `ssh BROKER_ALIAS` with it below. Otherwise, the human configuring the deployment should configure an SSH alias with the broker host, port, restricted agent identity, and verified host key. Before copying the following section into the consumer project's `AGENTS.md`, replace `BROKER_ALIAS` with that alias. Also replace `HUMAN_BROKER` with the command the human uses for approval: `sudo -u secretops-broker /usr/local/bin/secretops-broker` on a local broker, or the human's own SSH access on a remote one, for example `ssh secretops-broker@host /usr/local/bin/secretops-broker` ([BROKER_HOST.md](BROKER_HOST.md)). Supply reviewed metadata-only recipe examples from `examples/recipes/`, adapted to the deployment's permitted names and targets. Do not include credentials or private-key contents in agent instructions.
 
 ```markdown
 ## Secret operations
 
 Use the configured SSH broker; never call vault or target provider CLIs directly.
 The broker connection is: ssh BROKER_ALIAS
+The human's own broker command is: HUMAN_BROKER
 
 Start with:
 - ssh BROKER_ALIAS help
@@ -100,14 +101,35 @@ Run the lifecycle:
 1. ssh BROKER_ALIAS plan --file task.yaml --save
 2. ssh BROKER_ALIAS show-plan --id PLAN_ID
 3. ssh BROKER_ALIAS preflight-plan --id PLAN_ID
-4. For operations requiring approval, ask the human to review and approve the plan
-   through their separate access. Wait for approval before attempting execution.
-5. ssh BROKER_ALIAS execute-plan --id PLAN_ID
+4. Metadata checks (vault.read.check, vault.secret.diff_envs,
+   github.env_secret.verify_many) need no approval under the default policy:
+   go to step 6. For any other action, hand over to the human (below) and wait.
+5. When the human says it is done, in any words, run show-plan with the plan ID
+   you already have; never ask them to repeat it.
+   - status: approved: go to step 6; the human already asked for this task.
+   - status: planned: say it is not approved yet and wait; executing it now
+     would mark it failed.
+   - status: rejected: stop and tell the human.
+6. ssh BROKER_ALIAS execute-plan --id PLAN_ID
+
+Human handoff: in one message, with the real plan ID filled in, tell the human:
+- Run these in a separate terminal under your own account, not through me.
+- Step 1, review: HUMAN_BROKER show-plan --id PLAN_ID
+  Check the action, environment, vault destination, every secret name, and any
+  GitHub repository and environment.
+- Step 2, if it is right: HUMAN_BROKER approve-plan --id PLAN_ID
+  If not: HUMAN_BROKER reject-plan --id PLAN_ID
+- Step 3: tell me when it is done.
+Then wait. Never run approve-plan or reject-plan yourself, and never ask the
+human to run them through your shell tool.
 
 For a new secret whose value only the human has, plan a vault.secret.add recipe
-and ask the human to run `secretops add --plan PLAN_ID` on their own computer.
-Do not run execute-plan for it; check the result with show-plan. Never ask for
-the value.
+and hand over the same way with one command instead of steps 1 and 2:
+secretops add --plan PLAN_ID
+It shows the destination, asks for the value at a hidden prompt, and the
+human's confirmation is the approval. Do not run execute-plan for it; when the
+human says it is done, run show-plan: executed means stored, failed gives the
+reason, planned means not done yet. Never ask for the value.
 
 Stop on preflight failure. If preflight or execution reports a changed vault
 destination, changed plan content, or "replan required", tell the human. A new

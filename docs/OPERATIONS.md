@@ -29,12 +29,16 @@ Before approving, read the whole `show-plan` output: action, environment, vault 
 
 | Message or exit | Meaning | What to do |
 | --- | --- | --- |
+| installer: `3.11 or newer with venv is required` | the system Python is older, for example 3.10 on Ubuntu 22.04 | install a newer Python as root and pass it with `--python PATH` ([prerequisites](INSTALL.md#prerequisites)); the system default stays as it is |
+| installer: `must be an executable whose path is root-owned` for the Infisical CLI | the CLI is missing from `/usr/bin` or installed under a user's home | install the system package as root so that it is `/usr/bin/infisical` |
+| Infisical repository setup ends with an `apt-get update` failure | another, unrelated APT source can fail the update after the Infisical source was added | check that the package is available: `apt-cache policy infisical` or `apt-cache madison infisical`, then install it. Never bypass signature checks; fix the other source separately |
 | preflight fails | a check failed before anything was written | fix the cause (name, policy, connection), plan again |
 | `plan already executed` | the plan ran before; its status is kept | to run it again, save a new plan (and approve it, for a write) |
 | `plan is in use by another command` | another command (execute, approve, reject or `secretops add`) is working on this plan; nothing was done | wait for it to finish, check the plan with `show-plan`, then try again if still needed |
 | `plan lock could not be taken` | the lock file beside the plan cannot be opened (plan directory permissions); nothing was done | fix ownership and permissions of the plan directory, then try again |
 | `replan required`, changed destination | the vault configuration changed since planning | plan again and approve the new plan |
 | `vault error: ...` | token, URL or connection problem | check the token; see [renew](#renew-the-vault-token) |
+| first operation after `secretops-configure` fails with `infisical CLI failed with exit status 1` | the vault refused or could not serve the call; the provider's output is suppressed | check the vault URL, project ID and environment slug; create a new token and enter it with `sudo secretops-configure --token-only`. A clearer connection check is planned |
 | `secret missing or inaccessible` | name absent, or no permission for it | check the name, environment, folder and identity permissions |
 | GitHub `not written` / `not attempted` | the sync stopped before these writes | fix the cause; a new plan writes them |
 | exit 3, `outcome unknown` | a write may or may not have happened | see below |
@@ -124,6 +128,8 @@ sudo mv /root/secretops-restore/plans /root/secretops-restored-plans
 The restored audit log gets its own name, so it never overwrites newer records. Restored plans are kept as history only, not put back into `/opt/secretops/plans`: the backup can be older than writes that happened later, so an old approval must not be executed again. Plan every pending operation again and approve it. Then run `sudo secretops-configure` and the GitHub login. Vault data lives in Infisical and is not part of this backup.
 
 ## Uninstall
+
+First write down the vault URL, project ID and folder (not the token); you need them to configure a new installation.
 
 ```sh
 # Human

@@ -20,7 +20,7 @@ Tested: Ubuntu 24.04 with its Python 3.12; installer checks in clean Ubuntu 24.0
 | agent's `~/.ssh/secretops_local_*` | agent | agent key and the pinned broker host key |
 | human's `~/.config/secretops/client.yaml` | human | how `secretops add` reaches the broker (local sudo) |
 
-The installer never asks for, reads or writes a credential, and never calls Infisical or GitHub.
+The installer also creates the `secretops-broker` account (home `/var/lib/secretops-broker`) and, with `--create-agent-user`, the agent account, then enables and starts the service. It never asks for, reads or writes a credential, and never calls Infisical or GitHub. It installs no system packages and does not change the system Python or which Python is the default, the system `ssh` service or its configuration, sudo rules, or any account's shell configuration.
 
 ## Accounts
 
@@ -44,7 +44,11 @@ Then, as that account, clone your project:
 sudo -iu agent git clone https://github.com/OWNER/PROJECT.git
 ```
 
-Give that account only the Git access its work needs: a public clone, or a separately scoped credential that cannot write the repository's environment secrets. Install and log in to the coding agent CLI as that account, following the vendor's instructions. Start the agent with a separate login, for example `ssh agent@localhost` or a second console. Approve and enter secrets from your own terminal.
+Give that account only the Git access its work needs: a public clone, or a credential of its own for that repository, such as a deploy key or an HTTPS token created for the agent account only, that cannot write the repository's environment secrets. Never give it your own keys or tokens.
+
+Start the coding agent from a shell of that account, in a terminal window you keep for the agent: open it with `sudo -iu agent`, install the coding agent there without sudo (the vendor's per-user installation), log it in, `cd` into the project and start it. Approve and enter secrets from your own terminal, not from that one. Do this only if `sudo -l` lists `use_pty` (Ubuntu's default): it gives that shell its own pseudo-terminal, so a program in it cannot type into your terminal. If it is not listed, start the agent from a separate login of that account instead, for example a second console (the account then needs a password).
+
+Do not give the agent account access to your graphical session (do not run `xhost` for it): under X11 that would let it read your keystrokes, including secret values you type. A message such as `Authorization required, but no authorization protocol specified` in the agent's shell comes from this refused access and is harmless. For the same reason copy and paste between the two accounts may not work; the agent keeps the plan ID, so you do not need to copy it.
 
 **Simpler, weaker:** use your own account as `--agent-user`. The restricted SSH key still limits what the agent can do *through the broker*, but an agent running as you can use your sudo, keys and terminal. The approval boundary is then a convention, not enforced. The installer prints a warning in this case.
 
@@ -167,7 +171,7 @@ secretops-local version
 secretops-local actions
 ```
 
-Copy the [consumer-project instructions](AGENT_USAGE.md#instructions-for-agents-in-consumer-projects) into the agent's project `AGENTS.md` (or `CLAUDE.md`) and replace `ssh BROKER_ALIAS` with `secretops-local`.
+Copy the [consumer-project instructions](AGENT_USAGE.md#instructions-for-agents-in-consumer-projects) into the agent's project `AGENTS.md` (or `CLAUDE.md`) and replace `ssh BROKER_ALIAS` with `secretops-local` and `HUMAN_BROKER` with `sudo -u secretops-broker /usr/local/bin/secretops-broker`.
 
 ## First workflow
 
@@ -175,7 +179,7 @@ If you have not done them yet, first do [Configure the vault](#configure-the-vau
 
 ## Remove a failed installation
 
-If the installer stops partway, it changed only these paths. Inspect them, then remove them before retrying:
+If the installer stops partway, it changed only these paths. If you configured the vault, first write down the vault URL, project ID and folder (not the token). Inspect the paths, then remove them before retrying:
 
 ```sh
 # Human

@@ -477,9 +477,10 @@ if [[ -n $create_agent ]]; then
     cat <<EOF
 Then set up the agent account $agent_user (docs/INSTALL.md, 'Accounts'):
   sudo -iu $agent_user
-  # there: install and log in to your coding agent following its vendor's
-  # instructions, and clone your project; start the agent itself from a
-  # separate login of $agent_user, not from your own terminal
+  # there: install your coding agent without sudo (per-user installation),
+  # log it in, clone your project and start the agent from this shell
+  # (only if 'sudo -l' lists use_pty; see 'Accounts'); do not give
+  # $agent_user access to your graphical session (no xhost)
 EOF
 fi
-echo "Then follow docs/INSTALL.md, 'First workflow'."
+echo "Then follow docs/INSTALL.md from 'Configure the vault' through 'First check: vault only'."
