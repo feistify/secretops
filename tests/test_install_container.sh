@@ -175,8 +175,11 @@ check "upgrade keeps the chosen Python" pass grep -qx "python=$PYINFO" /opt/secr
 cp -p /opt/secretops/policy.yaml /root/policy.good
 printf 'stray_key: true\n' >> /opt/secretops/policy.yaml
 before=$(stat -c %i /opt/secretops/venv /opt/secretops/venv.previous; sha256sum /opt/secretops/install-info)
-check "upgrade with a stray policy key refused" pass sh -c \
-    "bash scripts/install.sh --upgrade --wheel '$WHEEL' 2>&1 | grep -q 'refuses /opt/secretops/policy.yaml.*nothing was changed'"
+check "upgrade with a stray policy key refused" deny sh -c \
+    "bash scripts/install.sh --upgrade --wheel '$WHEEL' > /tmp/policy-upgrade.out 2>&1"
+check "refused policy upgrade names the reason" pass grep -q "unknown key 'stray_key'" /tmp/policy-upgrade.out
+check "refused policy upgrade says nothing changed" pass \
+    grep -q 'refuses the configured policy.*nothing was changed' /tmp/policy-upgrade.out
 check "refused policy upgrade changed nothing" pass test "$before" = \
     "$(stat -c %i /opt/secretops/venv /opt/secretops/venv.previous; sha256sum /opt/secretops/install-info)"
 check "refused policy upgrade left no new environment" pass test ! -e /opt/secretops/venv.new

@@ -75,7 +75,7 @@ The GitHub login is renewed the same way it was created: `cd / && sudo -u secret
    ```sh
    sudo ./install.sh --upgrade
    ```
-   It refuses while broker processes are running. It builds and checks the new application before switching, then replaces the wrappers. `broker.env`, policy, plans, audit, the SSH service and keys are not changed. It keeps a Python given with `--python` at installation; pass `--python PATH` to change it. If the new version ships a different default policy, it says so and leaves yours unchanged. If the new version refuses your policy (for example a key it does not know or a quoted `"false"`; earlier versions accepted both), the upgrade stops before switching with `the new version refuses /opt/secretops/policy.yaml` below the reason; nothing was changed. Correct what it names and run the upgrade again.
+   It refuses while broker processes are running. It builds and checks the new application before switching, then replaces the wrappers. `broker.env`, policy, plans, audit, the SSH service and keys are not changed. It keeps a Python given with `--python` at installation; pass `--python PATH` to change it. If the new version ships a different default policy, it says so and leaves yours unchanged. If the new version refuses the policy the broker uses (the one `broker.env` names; for example a key it does not know or a quoted `"false"`; earlier versions accepted both), the upgrade stops before switching with `the new version refuses the configured policy` below the reason; nothing was changed. Correct what it names and run the upgrade again.
 3. Read the release notes: a new plan contract version means open plans must be planned and approved again.
 4. **Agent:** `secretops-local version`.
 
