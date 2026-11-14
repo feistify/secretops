@@ -277,6 +277,15 @@ if [[ $upgrade == 1 ]]; then
     check_python
     fetch_packages
     build_venv "$ROOT/venv.new"
+    # The new version must accept this installation's policy before anything
+    # is switched. Run as the broker, which reads the policy in daily use;
+    # `version` writes no files, and from / nothing lands in broker directories.
+    if ! (cd / && runuser -u "$BROKER_USER" -- env -i PATH=/usr/bin:/bin \
+            SECRETOPS_POLICY_PATH="$ROOT/policy.yaml" \
+            "$ROOT/venv.new/bin/python" -I -m secretops.cli version >/dev/null); then
+        rm -rf "$ROOT/venv.new"
+        die "the new version refuses $ROOT/policy.yaml (see the message above); fix it and run the upgrade again; nothing was changed"
+    fi
     rm -rf "$ROOT/venv.previous" "$ROOT/previous"
     install -d -o root -g root -m 0755 "$ROOT/previous"
     while IFS=: read -r target source; do
