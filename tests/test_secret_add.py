@@ -458,6 +458,98 @@ def test_reject_waits_for_no_one_while_a_submission_holds_the_lock(broker):
     assert read_plan(broker.plan_path("add-plan"))["status"] == "planned"
 
 
+def test_approve_plan_refuses_a_human_entry_plan_without_taking_the_lock(broker):
+    write_plan(broker.plan_dir, add_plan())
+    unlocked = broker.run("approve-plan", "--id", "add-plan")
+    holder = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; from secretops.plans import plan_lock\n"
+                "with plan_lock('add-plan'):\n"
+                "    print('locked', flush=True); sys.stdin.read()"
+            ),
+        ],
+        env=broker.env(), stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+    )
+    try:
+        assert holder.stdout.readline().strip() == "locked"
+        result = broker.run("approve-plan", "--id", "add-plan")
+    finally:
+        holder.kill()
+        holder.communicate()
+
+    assert result.returncode == 1
+    assert result.stdout == unlocked.stdout
+    assert result.stdout.decode().splitlines() == [
+        "FAIL vault.secret.add is approved while entering the value",
+        "use: secretops add --plan add-plan",
+    ]
+    assert read_plan(broker.plan_path("add-plan"))["status"] == "planned"
+
+
+def make_plan_dir_unlockable(broker):
+    """No lock file exists and none can be created; returns a restore function."""
+    assert not list(broker.plan_dir.glob(".*.lock"))
+    broker.plan_dir.chmod(0o500)
+    return lambda: broker.plan_dir.chmod(0o700)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permissions")
+def test_unopenable_plan_lock_is_a_clean_refusal_for_decisions(broker):
+    broker.fake_vault()
+    plan_path = write_plan(broker.plan_dir, add_plan())
+    plan_bytes = plan_path.read_bytes()
+    restore = make_plan_dir_unlockable(broker)
+    try:
+        rejected = broker.run("reject-plan", "--id", "add-plan")
+        approved = broker.run("approve-plan", "--id", "add-plan")
+    finally:
+        restore()
+
+    assert rejected.returncode == 1
+    assert rejected.stdout.decode().splitlines() == ["FAIL plan lock could not be taken"]
+    # Approval of a human-entry plan is refused as always, without the lock.
+    assert approved.returncode == 1
+    assert "is approved while entering the value" in approved.stdout.decode()
+    for result in (rejected, approved):
+        assert b"Traceback" not in result.stdout + result.stderr
+    assert plan_path.read_bytes() == plan_bytes
+    assert read_record(broker.record_path)["calls"] == []
+    broker.assert_no_value(rejected, approved)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permissions")
+def test_unopenable_plan_lock_refuses_submission_before_the_vault(broker):
+    broker.fake_vault()
+    plan_path = write_plan(broker.plan_dir, add_plan())
+    plan_bytes = plan_path.read_bytes()
+    _, review, _ = broker.endpoint("review-add", "--id", "add-plan")
+    calls_after_review = list(read_record(broker.record_path)["calls"])
+    restore = make_plan_dir_unlockable(broker)
+    try:
+        code, response, submitted = broker.submit("add-plan", review["digest"])
+    finally:
+        restore()
+
+    assert code == 1
+    assert response == {
+        "protocol": 1,
+        "outcome": "refused",
+        "message": "plan lock could not be taken",
+        "plan_id": "add-plan",
+    }
+    assert b"Traceback" not in submitted.stdout + submitted.stderr
+    assert plan_path.read_bytes() == plan_bytes
+    assert read_record(broker.record_path)["calls"] == calls_after_review
+    broker.assert_no_value(submitted)
+    # The plan is still usable, and the lock was not left held.
+    code, response, completed = broker.submit("add-plan", review["digest"])
+    assert code == 0 and response["outcome"] == "created"
+    broker.assert_no_value(completed)
+
+
 # Final checks at submission
 
 

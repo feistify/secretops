@@ -282,6 +282,8 @@ All `vault.secret.add` audit events from the human endpoints carry `channel: hum
 
 Lock: `submit-add` and `reject-plan` (for this action) take an exclusive, non-blocking `flock` on `.<plan_id>.lock` in the plan directory, for the whole check-approve-write-record sequence. Contention is refused ("plan is in use"), never waited for. The lock ends with the process, including when it dies. The plan is read again under the lock, so a rejected or completed plan cannot then be submitted. Review and prepare do not lock; they do not change status.
 
+> Note (later): since v0.1.6 `execute-plan` also takes this lock, and `approve-plan` and `reject-plan` now take it for every plan (`approve-plan` still refuses this action without it). Current behaviour: [SECURITY_MODEL.md](../SECURITY_MODEL.md#residual-risks-and-limits).
+
 ### Still to verify by hand
 
 - Remaining manual acceptance checks: full broker cancellation/decline, changed destination, live denial of human endpoints through agent access, and independent audit validation. These were not established by successful entry alone.

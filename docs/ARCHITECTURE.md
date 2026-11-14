@@ -91,7 +91,7 @@ planned -> failed
 approved -> failed
 ```
 
-These are illustrative transitions. `execute-plan` holds a per-plan lock and refuses an executed plan, but `approve-plan` and `reject-plan` take no lock and can overwrite an outcome, so one-time execution is not guaranteed (see [SECURITY_MODEL.md](SECURITY_MODEL.md#residual-risks-and-limits)). Preflight never changes plan status. Invalid JSON, schema violations, and missing or unsupported contract versions leave the plan file untouched; no new status is written. A valid supported plan with a digest or destination mismatch is marked `failed` by execution.
+These are illustrative transitions. `execute-plan`, `approve-plan`, and `reject-plan` hold a per-plan lock and decide from the plan read under it, so a decision cannot overwrite an outcome and `execute-plan` refuses an executed plan; a plan whose `executed` status could not be recorded after a write stays `approved` and could run again, and the lock does not cover hand edits of the plan store (see [SECURITY_MODEL.md](SECURITY_MODEL.md#residual-risks-and-limits)). Preflight never changes plan status. Invalid JSON, schema violations, and missing or unsupported contract versions leave the plan file untouched; no new status is written. A valid supported plan with a digest or destination mismatch is marked `failed` by execution.
 
 ### Vault adapter
 
