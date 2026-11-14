@@ -38,6 +38,10 @@ The boundary is only as strong as the separation: recommended are three accounts
 - Keep an audit log without values
 - Refuse production writes by default, even with approval
 
+## How it differs
+
+Runtime credential proxies let an agent *use* a secret without seeing it: the agent sends a placeholder and the proxy inserts the real value. secretops covers the other half: it lets an agent *manage* secrets (prepare and run generation, rotation, copying and sync to a target) through saved plans that a human approves, with an audit log. The two fit together; secretops replaces neither a proxy nor a vault.
+
 ## Example
 
 ```sh
