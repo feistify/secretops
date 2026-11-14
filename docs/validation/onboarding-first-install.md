@@ -5,6 +5,7 @@ Release: v0.1.7 installer bundle, checked against the SHA-256 in the release not
 System: Ubuntu 22.04, Python 3.12 passed with `--python`, Infisical CLI 0.44.2 from the system package
 Vault: an existing self-hosted Infisical
 Agent: a coding agent running under a separate account created with `--create-agent-user` (no sudo, no password)
+Launch: `sudo -iu` shell of the agent account; `dev.tty.legacy_tiocsti` was 0; effective sudo `use_pty` was not recorded
 
 ## Setup
 

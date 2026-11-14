@@ -64,14 +64,14 @@ Anything else is refused. Recipe names use lowercase letters, digits, `.`, `-` a
    sudo -u secretops-broker /usr/local/bin/secretops-broker show-plan --id PLAN_ID
    sudo -u secretops-broker /usr/local/bin/secretops-broker approve-plan --id PLAN_ID
    ```
-   Then wait. When they say it is done, in any words, run `show-plan` with the plan ID you already have; do not ask them to repeat it. `status: approved`: continue, without waiting for another instruction. `status: planned`: say it is not approved yet and wait; executing it now would mark it failed. `status: rejected`: stop. Under the default policy, metadata checks (`vault.read.check`, `vault.secret.diff_envs`, `github.env_secret.verify_many`) need no approval.
+   Then wait. When they say it is done, in any words, run `show-plan` with the plan ID you already have; do not ask them to repeat it. `status: approved`: continue, without waiting for another instruction. `status: planned`: say it is not approved yet and wait; executing it now would mark it failed. `status: rejected`: stop. Any other status: stop and tell the human. Under the default policy, metadata checks (`vault.read.check`, `vault.secret.diff_envs`, `github.env_secret.verify_many`) need no approval.
 4. Run `execute-plan`. Exit 0: done. Exit 1: failed, nothing uncertain; tell the human. Exit 3: a write outcome is unknown; stop and tell the human, do not retry and do not plan the same names again.
 
 A plan runs once. To repeat an operation, save a new plan. Production writes are refused by policy, even with approval.
 
 ### When the value only exists with the human
 
-For a new secret such as an API key from a provider console, plan a `vault.secret.add` recipe and hand over the same way with one command, `secretops add --plan PLAN_ID` with the real plan ID, run in a separate terminal under the human's own account. They see the destination, type the value at a hidden prompt and confirm; that confirmation is the approval. Do not run `execute-plan` for this plan; when they say it is done, check the result with `show-plan` (`executed`, `failed` with a reason, or still `planned` if they have not finished).
+For a new secret such as an API key from a provider console, plan a `vault.secret.add` recipe and hand over the same way with one command, `secretops add --plan PLAN_ID` with the real plan ID, run in a separate terminal under the human's own account. They see the destination, type the value at a hidden prompt and confirm; that confirmation is the approval. Do not run `execute-plan` for this plan; when they say it is done, check the result with `show-plan` (`executed`; still `planned` if they have not finished; `failed`: ask what their terminal showed, and if the outcome was unknown, do not plan that name again).
 
 ```yaml
 action: vault.secret.add

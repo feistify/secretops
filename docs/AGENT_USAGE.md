@@ -45,7 +45,7 @@ Agents must also not run provider CLIs for secrets, commands that read `.env` fi
 
 Human approval remains outside the agent permission set. An agent can prepare, show, preflight, and execute an already approved plan when policy allows it, but the approval action itself belongs to a human or a separate trusted approval workflow.
 
-When a secret's value exists only with the human (for example a key created in a provider console), the agent prepares a `vault.secret.add` plan (`action`, `secret_name`, `env`; optional `create_mode: create_only` and `value_source: human_prompt`) and asks the human to run `secretops add --plan <plan_id>` on their own computer. The human reviews the destination, enters the value in a hidden prompt, and confirms; that confirmation is the approval. The agent then follows the result with `show-plan` (`executed`, or `failed` with a reason) and prepares any target sync as a separate plan. `approve-plan` and `execute-plan` refuse this action. The agent never asks for the value, and the human never pastes it into the agent's session.
+When a secret's value exists only with the human (for example a key created in a provider console), the agent prepares a `vault.secret.add` plan (`action`, `secret_name`, `env`; optional `create_mode: create_only` and `value_source: human_prompt`) and asks the human to run `secretops add --plan <plan_id>` on their own computer. The human reviews the destination, enters the value in a hidden prompt, and confirms; that confirmation is the approval. The agent then follows the result with `show-plan` (`executed`; still `planned` if the human has not finished; on `failed` the agent asks what the human's terminal showed) and prepares any target sync as a separate plan. `approve-plan` and `execute-plan` refuse this action. The agent never asks for the value, and the human never pastes it into the agent's session.
 
 ## Deployment environment pinning
 
@@ -103,14 +103,18 @@ Run the lifecycle:
 3. ssh BROKER_ALIAS preflight-plan --id PLAN_ID
 4. Metadata checks (vault.read.check, vault.secret.diff_envs,
    github.env_secret.verify_many) need no approval under the default policy:
-   go to step 6. For any other action, hand over to the human (below) and wait.
+   go to step 6. For vault.secret.add use the add handoff further below. For
+   any other action, hand over to the human (below) and wait.
 5. When the human says it is done, in any words, run show-plan with the plan ID
    you already have; never ask them to repeat it.
    - status: approved: go to step 6; the human already asked for this task.
    - status: planned: say it is not approved yet and wait; executing it now
      would mark it failed.
    - status: rejected: stop and tell the human.
+   - any other status: stop and tell the human; do not execute.
 6. ssh BROKER_ALIAS execute-plan --id PLAN_ID
+   If it says the plan requires approval, that plan is now failed: save a new
+   plan and hand it over.
 
 Human handoff: in one message, with the real plan ID filled in, tell the human:
 - Run these in a separate terminal under your own account, not through me.
@@ -128,8 +132,10 @@ and hand over the same way with one command instead of steps 1 and 2:
 secretops add --plan PLAN_ID
 It shows the destination, asks for the value at a hidden prompt, and the
 human's confirmation is the approval. Do not run execute-plan for it; when the
-human says it is done, run show-plan: executed means stored, failed gives the
-reason, planned means not done yet. Never ask for the value.
+human says it is done, run show-plan: executed means stored; planned means not
+done yet; failed means ask the human what their terminal showed, and if it said
+the outcome is unknown, do not plan that name again until they resolve it.
+Never ask for the value.
 
 Stop on preflight failure. If preflight or execution reports a changed vault
 destination, changed plan content, or "replan required", tell the human. A new
