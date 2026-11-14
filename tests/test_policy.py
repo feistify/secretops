@@ -235,25 +235,56 @@ def test_packaged_default_policy_passes_strict_validation():
     validate_policy_data(yaml.safe_load(text), "default")
 
 
+FIX_KEY = "correct or remove it"
+FIX_VALUE = "correct its value"
+FIX_LAYOUT = "correct its layout"
+ENTRY = "actions entry 'vault.read.check'"
+
+
 @pytest.mark.parametrize(
-    "text,expected",
+    "text,expected,fix",
     [
         (
             VALID_ACTION + "deny_actions: [x]\n",
             "unknown key 'deny_actions' in the top level "
             "(allowed: allowed_actions, denied_actions, actions)",
+            FIX_KEY,
         ),
         (
             VALID_ACTION + "    requires_aproval: true\n",
-            "unknown key 'requires_aproval' in actions entry 'vault.read.check' "
+            f"unknown key 'requires_aproval' in {ENTRY} "
             "(allowed: requires_approval, allowed_environments, production_allowed)",
+            FIX_KEY,
         ),
-        ("actions: [vault.read.check]\n", "actions must be a mapping"),
-        ("actions:\n  vault.read.check: [dev]\n", "actions entry 'vault.read.check' must be a mapping"),
+        ("actions: [vault.read.check]\n", "actions must be a mapping of action names to settings", FIX_LAYOUT),
+        ("actions:\n  vault.read.check: [dev]\n", f"{ENTRY} must be a mapping of keys to values", FIX_LAYOUT),
+        (
+            "actions:\n  vault.read.check:\n    production_allowed: \"false\"\n",
+            f"production_allowed in {ENTRY} must be true or false",
+            FIX_VALUE,
+        ),
+        (
+            "actions:\n  vault.read.check:\n    requires_approval: 0\n",
+            f"requires_approval in {ENTRY} must be true or false",
+            FIX_VALUE,
+        ),
+        (
+            "actions:\n  vault.read.check:\n    allowed_environments: dev\n",
+            f"allowed_environments in {ENTRY} must be a list of names",
+            FIX_VALUE,
+        ),
+        (
+            "actions:\n  vault.read.check:\n    allowed_environments: [dev, 1]\n",
+            f"allowed_environments in {ENTRY} must be a list of names",
+            FIX_VALUE,
+        ),
     ],
-    ids=["top_level", "nested", "actions_list", "entry_list"],
+    ids=[
+        "top_level", "nested", "actions_list", "entry_list",
+        "quoted_boolean", "number_boolean", "string_list", "non_string_item",
+    ],
 )
-def test_unknown_or_misplaced_policy_keys_are_refused(tmp_path, text, expected):
+def test_unknown_or_mistyped_policy_keys_are_refused(tmp_path, text, expected, fix):
     from secretops.policy import PolicyError
 
     path = write_policy(tmp_path, text)
@@ -262,9 +293,47 @@ def test_unknown_or_misplaced_policy_keys_are_refused(tmp_path, text, expected):
         load_policy(path)
 
     message = str(raised.value)
-    assert message.startswith(f"policy file {path}: {expected}")
-    assert message.endswith("correct or remove it; see docs/CONFIGURATION.md#policy-file")
+    assert message == f"policy file {path}: {expected}; {fix}; see docs/CONFIGURATION.md#policy-file"
     assert MARKER not in message
+
+
+@pytest.mark.parametrize(
+    "text,key",
+    [
+        ("allowed_actions: vault.read.check\n", "allowed_actions"),
+        ("denied_actions: secret.reveal\n", "denied_actions"),
+        ("allowed_actions:\n", "allowed_actions"),
+    ],
+    ids=["allowed_string", "denied_string", "allowed_null"],
+)
+def test_top_level_action_lists_must_be_lists_of_names(tmp_path, text, key):
+    from secretops.policy import PolicyError
+
+    path = tmp_path / "policy.yaml"
+    path.write_text(text, encoding="utf-8")
+
+    with pytest.raises(PolicyError, match=f": {key} in the top level must be a list of names; "):
+        load_policy(path)
+
+
+@pytest.mark.parametrize("kind", ["missing", "unreadable"])
+def test_missing_or_unreadable_policy_file_is_a_clean_error(tmp_path, kind):
+    from secretops.policy import PolicyError
+
+    path = tmp_path / "policy.yaml"
+    if kind == "unreadable":
+        if os.geteuid() == 0:
+            pytest.skip("root ignores file permissions")
+        path.write_text(f"allowed_actions: [{MARKER}]\n", encoding="utf-8")
+        path.chmod(0)
+
+    with pytest.raises(PolicyError) as raised:
+        load_policy(path)
+
+    assert str(raised.value) == (
+        f"policy file {path} is missing or not readable by this account; "
+        "see docs/CONFIGURATION.md#policy-file"
+    )
 
 
 def test_empty_action_entry_and_valid_custom_policy_still_load(tmp_path):

@@ -27,7 +27,9 @@ class Policy:
 
 POLICY_KEYS = ("allowed_actions", "denied_actions", "actions")
 ACTION_POLICY_KEYS = ("requires_approval", "allowed_environments", "production_allowed")
-FIX_HINT = "correct or remove it; see docs/CONFIGURATION.md#policy-file"
+DOC_HINT = "see docs/CONFIGURATION.md#policy-file"
+LIST_KEYS = {"allowed_actions", "denied_actions", "allowed_environments"}
+BOOLEAN_KEYS = {"requires_approval", "production_allowed"}
 
 
 class PolicyError(Exception):
@@ -40,32 +42,47 @@ def _key_name(key) -> str:
     return text if len(text) <= 80 else text[:77] + "..."
 
 
-def _check_keys(mapping, allowed: tuple[str, ...], location: str, source: str) -> None:
+def _fail(source: str, problem: str, fix: str) -> None:
+    raise PolicyError(f"policy file {source}: {problem}; {fix}; {DOC_HINT}")
+
+
+def _check_mapping(mapping, allowed: tuple[str, ...], location: str, source: str) -> None:
+    """Keys must be known; list and boolean values must have their type."""
     if not isinstance(mapping, dict):
-        raise PolicyError(f"policy file {source}: {location} must be a mapping; {FIX_HINT}")
-    for key in mapping:
+        _fail(source, f"{location} must be a mapping of keys to values", "correct its layout")
+    for key, value in mapping.items():
         if key not in allowed:
-            raise PolicyError(
-                f"policy file {source}: unknown key {_key_name(key)} in {location} "
-                f"(allowed: {', '.join(allowed)}); {FIX_HINT}"
+            _fail(
+                source,
+                f"unknown key {_key_name(key)} in {location} (allowed: {', '.join(allowed)})",
+                "correct or remove it",
             )
+        # A quoted "false" or a plain string must not turn into True or
+        # into a list of characters.
+        if key in BOOLEAN_KEYS and not isinstance(value, bool):
+            _fail(source, f"{key} in {location} must be true or false", "correct its value")
+        if key in LIST_KEYS and not (
+            isinstance(value, list) and all(isinstance(item, str) for item in value)
+        ):
+            _fail(source, f"{key} in {location} must be a list of names", "correct its value")
 
 
 def validate_policy_data(data, source: str) -> None:
-    """Refuse unknown keys at the top level and in each `actions` entry.
+    """Refuse unknown keys and wrongly typed values at the top level and in
+    each `actions` entry.
 
     Action names under `actions` are not checked: any name is accepted and
     an entry for an action that is not allowed has no effect.
     """
-    _check_keys(data, POLICY_KEYS, "the top level", source)
+    _check_mapping(data, POLICY_KEYS, "the top level", source)
     actions = data.get("actions")
     if actions is None:
         return
     if not isinstance(actions, dict):
-        raise PolicyError(f"policy file {source}: actions must be a mapping; {FIX_HINT}")
+        _fail(source, "actions must be a mapping of action names to settings", "correct its layout")
     for action, metadata in actions.items():
         if metadata is not None:
-            _check_keys(
+            _check_mapping(
                 metadata, ACTION_POLICY_KEYS, f"actions entry {_key_name(action)}", source
             )
 
@@ -102,7 +119,9 @@ def _load_policy_text(path: str | Path | None = None) -> tuple[str, str]:
         try:
             return Path(explicit_path).read_text(encoding="utf-8"), str(explicit_path)
         except (OSError, UnicodeDecodeError) as error:
-            raise PolicyError(f"policy file {explicit_path} cannot be read") from error
+            raise PolicyError(
+                f"policy file {explicit_path} is missing or not readable by this account; {DOC_HINT}"
+            ) from error
     return _load_default_policy_text(), "(packaged default)"
 
 

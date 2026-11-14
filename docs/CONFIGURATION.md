@@ -36,9 +36,9 @@ The executable is resolved through `/usr/local/bin:/usr/bin:/bin`, never the cal
 - top level: only `allowed_actions`, `denied_actions`, `actions`
 - each entry under `actions`: only `requires_approval`, `allowed_environments`, `production_allowed`
 
-Any other key stops the command with `FAIL policy file PATH: unknown key 'KEY' in LOCATION ...`; correct or remove that key. Action names under `actions` are not checked.
+`requires_approval` and `production_allowed` are `true` or `false` without quotes; `allowed_actions`, `denied_actions` and `allowed_environments` are lists of names. Any other key, another value type, or a missing or unreadable file stops the command with `FAIL policy file PATH: ...`, naming the key and its location; correct what it names. Action names under `actions` are not checked.
 
-**Breaking change:** unknown keys were ignored before. A custom policy with a stray or misspelled key now stops every broker command until it is fixed.
+**Breaking change:** unknown keys and wrong value types were accepted before (a quoted `"false"` counted as true, a single name instead of a list was read letter by letter). A custom policy with such a key now stops every broker command until it is fixed.
 
 ## Adapters
 
