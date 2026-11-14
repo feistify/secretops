@@ -51,7 +51,7 @@ The normal lifecycle is:
 plan --save -> show-plan -> preflight-plan -> approve-plan -> execute-plan
 ```
 
-`show-plan` prints curated safe metadata, not raw JSON, including the vault destination, the GitHub host, and `plan_digest`. Approval covers the content loaded at approval time: `approve-plan` records its digest, and later content changes or a different configured vault destination stop the plan before any provider call. There is currently no `--digest` confirmation tying approval to an earlier `show-plan` view; the human must review the current plan and keep the plan store protected.
+`show-plan` prints curated safe metadata, not raw JSON, including the vault destination, the GitHub host, `plan_digest`, `planned_at`, and for an approved plan `approved_at`, `approval_expires_at` and whether the approval is still valid (24 hours by default, `approval_valid_hours` in the [policy file](CONFIGURATION.md#policy-file)). Approval covers the content loaded at approval time: `approve-plan` records its digest, and later content changes or a different configured vault destination stop the plan before any provider call. There is currently no `--digest` confirmation tying approval to an earlier `show-plan` view; the human must review the current plan and keep the plan store protected.
 
 `preflight-plan` checks safe prerequisites before execution. For example:
 

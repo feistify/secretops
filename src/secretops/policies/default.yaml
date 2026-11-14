@@ -1,3 +1,6 @@
+# Hours an approval made with approve-plan stays executable (1 to 168).
+approval_valid_hours: 24
+
 allowed_actions:
   - vault.read.plan
   - vault.read.check

@@ -9,6 +9,9 @@ POLICY_PATH_ENV = "SECRETOPS_POLICY_PATH"
 DEFAULT_POLICY_RESOURCE_PACKAGE = "secretops.policies"
 DEFAULT_POLICY_RESOURCE_NAME = "default.yaml"
 DEFAULT_ALLOWED_ENVIRONMENTS = ["dev", "staging", "production"]
+# How long an approval made with approve-plan stays executable.
+DEFAULT_APPROVAL_VALID_HOURS = 24
+APPROVAL_VALID_HOURS_RANGE = (1, 168)
 
 
 @dataclass(frozen=True)
@@ -23,9 +26,10 @@ class Policy:
     allowed_actions: list[str]
     denied_actions: list[str]
     actions: dict[str, ActionPolicy]
+    approval_valid_hours: int = DEFAULT_APPROVAL_VALID_HOURS
 
 
-POLICY_KEYS = ("allowed_actions", "denied_actions", "actions")
+POLICY_KEYS = ("allowed_actions", "denied_actions", "actions", "approval_valid_hours")
 ACTION_POLICY_KEYS = ("requires_approval", "allowed_environments", "production_allowed")
 DOC_HINT = "see docs/CONFIGURATION.md#policy-file"
 LIST_KEYS = {"allowed_actions", "denied_actions", "allowed_environments"}
@@ -65,6 +69,15 @@ def _check_mapping(mapping, allowed: tuple[str, ...], location: str, source: str
             isinstance(value, list) and all(isinstance(item, str) for item in value)
         ):
             _fail(source, f"{key} in {location} must be a list of names", "correct its value")
+        if key == "approval_valid_hours":
+            low, high = APPROVAL_VALID_HOURS_RANGE
+            # bool is an int in Python; `true` must not mean one hour.
+            if type(value) is not int or not low <= value <= high:
+                _fail(
+                    source,
+                    f"{key} in {location} must be a whole number of hours from {low} to {high}",
+                    "correct its value",
+                )
 
 
 def validate_policy_data(data, source: str) -> None:
@@ -178,6 +191,7 @@ def load_policy(path: str | Path | None = None) -> Policy:
         allowed_actions=list(data.get("allowed_actions", [])),
         denied_actions=list(data.get("denied_actions", [])),
         actions=_load_action_policies(data),
+        approval_valid_hours=data.get("approval_valid_hours", DEFAULT_APPROVAL_VALID_HOURS),
     )
 
 

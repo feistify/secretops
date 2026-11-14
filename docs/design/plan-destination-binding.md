@@ -106,7 +106,7 @@ Plans without `contract_version` are parsed with the existing lenient loader, bu
 
 `approve-plan` computes a digest of the operation content and stores it in the plan as `approval_digest`.
 
-- Content: the parsed plan object without `status` and `approval_digest`. That includes `plan_id`, `contract_version`, the action, names, environments, mappings, generator, modes, `vault_destination`, and the GitHub target.
+- Content: the parsed plan object without `status`, `approval_digest` and `approved_at` (added later with approval expiry; no earlier plan has it). That includes `plan_id`, `contract_version`, the action, names, environments, mappings, generator, modes, `vault_destination`, and the GitHub target.
 - Canonical form: `json.dumps(content, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)`, encoded as UTF-8. With the schema rules above, this form has only one serialisation per object.
 - Format: `sha256-v1:<hex>`. A future change of the canonical form uses a new prefix, and plans with an unknown prefix are refused, not silently accepted.
 - A fixed example plan with its expected digest is kept in the tests (`tests/fixtures/`). It pins the canonical form, and a reimplementation in another language must produce the same digest.

@@ -30,12 +30,14 @@ from secretops.plans import (
     PlanFileError,
     PlanLockError,
     build_plan_artifact,
+    format_timestamp,
     load_plan,
     parse_plan_json,
     plan_digest,
     plan_lock,
     save_plan_artifact,
     set_plan_status,
+    utc_now,
 )
 from secretops.policy import require_environment_allowed
 from secretops.recipes import Recipe
@@ -339,7 +341,14 @@ def _submit_locked(plan_id: str, reviewed_digest: str, value: str) -> dict[str, 
 
     # The human confirmed this digest; approval is recorded with it here,
     # on the authenticated human path, and executed with the same object.
-    plan_artifact = set_plan_status(plan_artifact, "approved", approval_digest=reviewed_digest)
+    # The approval time is recorded as for approve-plan; no expiry applies,
+    # because execution follows at once.
+    plan_artifact = set_plan_status(
+        plan_artifact,
+        "approved",
+        approval_digest=reviewed_digest,
+        approved_at=format_timestamp(utc_now()),
+    )
     _audit(
         plan_artifact, "success", "approve", "approved",
         reviewed_digest=reviewed_digest, approval_digest=reviewed_digest,

@@ -115,6 +115,8 @@ Run the lifecycle:
 6. ssh BROKER_ALIAS execute-plan --id PLAN_ID
    If it says the plan is not approved yet, nothing was done and the plan is
    still planned: hand it over (or keep waiting) as in steps 4 and 5.
+   If it says the approval expired (approvals last 24 hours by default), the
+   plan is now failed: save a new plan and hand it over.
 
 Human handoff: in one message, with the real plan ID filled in, tell the human:
 - Run these in a separate terminal under your own account, not through me.

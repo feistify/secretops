@@ -247,7 +247,7 @@ ENTRY = "actions entry 'vault.read.check'"
         (
             VALID_ACTION + "deny_actions: [x]\n",
             "unknown key 'deny_actions' in the top level "
-            "(allowed: allowed_actions, denied_actions, actions)",
+            "(allowed: allowed_actions, denied_actions, actions, approval_valid_hours)",
             FIX_KEY,
         ),
         (
@@ -402,3 +402,42 @@ def test_duplicate_policy_keys_are_refused(tmp_path, text, key, line):
         "see docs/CONFIGURATION.md#policy-file"
     )
     assert MARKER not in str(raised.value)
+
+
+# approval_valid_hours: whole hours from 1 to 168, default 24
+
+
+def test_approval_period_defaults_to_24_hours(tmp_path):
+    assert load_policy().approval_valid_hours == 24
+    assert load_policy(write_policy(tmp_path, VALID_ACTION)).approval_valid_hours == 24
+
+
+@pytest.mark.parametrize("value", ["1", "168", "48"])
+def test_approval_period_accepts_whole_hours_in_range(tmp_path, value):
+    policy = load_policy(write_policy(tmp_path, f"approval_valid_hours: {value}\n"))
+
+    assert policy.approval_valid_hours == int(value)
+
+
+@pytest.mark.parametrize(
+    "value", ["0", "-1", "169", "24.5", '"24"', "true", "false", "", "[24]", "1e3"]
+)
+def test_approval_period_refuses_other_values(tmp_path, value):
+    from secretops.policy import PolicyError
+
+    path = write_policy(tmp_path, f"approval_valid_hours: {value}\n")
+
+    with pytest.raises(PolicyError) as raised:
+        load_policy(path)
+
+    assert str(raised.value) == (
+        f"policy file {path}: approval_valid_hours in the top level must be a whole number "
+        "of hours from 1 to 168; correct its value; see docs/CONFIGURATION.md#policy-file"
+    )
+
+
+def test_approval_period_is_a_top_level_key_only(tmp_path):
+    from secretops.policy import PolicyError
+
+    with pytest.raises(PolicyError, match="unknown key 'approval_valid_hours' in actions entry"):
+        load_policy(write_policy(tmp_path, VALID_ACTION + "    approval_valid_hours: 2\n"))

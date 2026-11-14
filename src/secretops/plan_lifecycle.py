@@ -1,4 +1,5 @@
 import contextlib
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import typer
@@ -20,13 +21,16 @@ from secretops.plans import (
     PlanBusyError,
     PlanFileError,
     PlanLockError,
+    format_timestamp,
     load_legacy_plan_for_display,
     load_plan,
+    parse_timestamp,
     plan_digest,
     plan_lock,
     set_plan_status,
+    utc_now,
 )
-from secretops.policy import require_environment_allowed, requires_approval
+from secretops.policy import load_policy, require_environment_allowed, requires_approval
 from secretops.targets import (
     GitHubCliEnvSecretTarget,
     GitHubConfigurationError,
@@ -649,6 +653,47 @@ def show_saved_plan(plan_id: str, console: Console) -> None:
     console.print(f"plan_digest: {plan_digest(plan_artifact.loaded_content)}", soft_wrap=True)
     if plan_artifact.approval_digest is not None:
         console.print(f"approval_digest: {plan_artifact.approval_digest}", soft_wrap=True)
+    for line in _plan_time_lines(plan_artifact):
+        console.print(line)
+
+
+def _plan_time_lines(plan_artifact) -> list[str]:
+    lines = [f"planned_at: {plan_artifact.planned_at or 'not recorded (older version)'}"]
+    if plan_artifact.approved_at is not None:
+        lines.append(f"approved_at: {plan_artifact.approved_at}")
+    elif plan_artifact.status == "approved":
+        lines.append("approved_at: not recorded (older version)")
+    if plan_artifact.status == "approved" and plan_artifact.action not in HUMAN_ENTRY_ACTIONS:
+        hours = load_policy().approval_valid_hours
+        refusal = approval_expiry_refusal(plan_artifact, hours, utc_now())
+        if plan_artifact.approved_at is not None:
+            expires = _approval_expires_at(plan_artifact.approved_at, hours)
+            lines.append(f"approval_expires_at: {format_timestamp(expires)}")
+        lines.append(f"approval_valid: {'no; ' + refusal if refusal else 'yes'}")
+    return lines
+
+
+def _approval_expires_at(approved_at: str, hours: int) -> datetime:
+    return parse_timestamp(approved_at) + timedelta(hours=hours)
+
+
+def approval_expiry_refusal(plan_artifact, hours: int, now: datetime) -> str | None:
+    """Why an approved plan may no longer execute, or None.
+
+    Fails closed: no recorded approval time (approved by an older version),
+    an approval time in the future (the clock moved back), and the moment
+    the period ends all count as expired.
+    """
+    if plan_artifact.status != "approved":
+        return None
+    if plan_artifact.approved_at is None:
+        return "plan was approved by an older secretops version without an approval time"
+    approved = parse_timestamp(plan_artifact.approved_at)
+    if approved > now:
+        return "approval time is in the future (the clock may have changed)"
+    if now >= approved + timedelta(hours=hours):
+        return f"approval expired: approved more than {hours} hours ago"
+    return None
 
 
 def transition_planned_plan(
@@ -702,7 +747,8 @@ def _transition_loaded_plan(plan_artifact, status: str, label: str, console: Con
     # Status and digest are written from the content that was just checked;
     # the file is not read again in between.
     digest = plan_digest(plan_artifact.loaded_content) if status == "approved" else None
-    set_plan_status(plan_artifact, status, approval_digest=digest)
+    approved_at = format_timestamp(utc_now()) if status == "approved" else None
+    set_plan_status(plan_artifact, status, approval_digest=digest, approved_at=approved_at)
     # Recorded after the status is saved, still under the plan lock, so the
     # audit log holds only decisions that took effect. Same step and outcome
     # names as the approval recorded by `secretops add`.
@@ -721,6 +767,11 @@ def _transition_loaded_plan(plan_artifact, status: str, label: str, console: Con
     console.print(f"OK plan {label}: {plan_id}")
     if digest is not None:
         console.print(f"approval_digest: {digest}", soft_wrap=True)
+        hours = load_policy().approval_valid_hours
+        console.print(f"approved_at: {approved_at}")
+        console.print(
+            f"approval_expires_at: {format_timestamp(_approval_expires_at(approved_at, hours))}"
+        )
     if not audit_written:
         console.print("[red]WARNING[/red] the audit record could not be written")
         console.print(f"the decision was saved and stands; the plan is {status}")
@@ -1171,6 +1222,33 @@ def _require_plan_execution_allowed(plan_artifact, console: Console) -> None:
         raise typer.Exit(1) from error
     if requires_approval(plan_artifact.action) and plan_artifact.status != "approved":
         _refuse_unapproved(plan_artifact, console)
+    _refuse_expired_approval(plan_artifact, console)
+
+
+def _refuse_expired_approval(plan_artifact, console: Console) -> None:
+    """Refuse an approved plan whose approval is no longer valid, before any
+    provider call. The plan is marked failed: approve-plan accepts only
+    planned plans, so the way on is a new plan and a new approval."""
+    refusal = approval_expiry_refusal(
+        plan_artifact, load_policy().approval_valid_hours, utc_now()
+    )
+    if refusal is None:
+        return
+    write_audit_event(
+        action=plan_artifact.action,
+        secret_name=_secret_name_for_policy_audit(plan_artifact),
+        env=plan_artifact.source_env or plan_artifact.env,
+        status="failure",
+        plan_id=plan_artifact.plan_id,
+        details={"failure": "approval_expired"},
+    )
+    set_plan_status(plan_artifact, "failed")
+    console.print(f"[red]FAIL[/red] {refusal}")
+    console.print("no provider call was made; the plan is now failed")
+    console.print("save a new plan and ask the human to review and approve it")
+    for line in _not_printed_lines(plan_artifact.action):
+        console.print(line)
+    raise typer.Exit(1)
 
 
 def execute_saved_plan(plan_id: str, console: Console) -> None:

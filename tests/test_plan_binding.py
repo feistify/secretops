@@ -375,7 +375,7 @@ def test_approval_stores_digest_of_the_operation_content(tmp_path, vault_cli):
     assert f"approval_digest: {after['approval_digest']}" in result.stdout
     assert f"plan_digest: {after['approval_digest']}" in show.stdout
     assert "vault_project_id: dummy-project" in show.stdout
-    assert {key: value for key, value in after.items() if key not in ("status", "approval_digest")} == {
+    assert {key: value for key, value in after.items() if key not in ("status", "approval_digest", "approved_at")} == {
         key: value for key, value in before.items() if key != "status"
     }
 

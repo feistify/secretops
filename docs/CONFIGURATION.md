@@ -33,14 +33,16 @@ The executable is resolved through `/usr/local/bin:/usr/bin:/bin`, never the cal
 
 `SECRETOPS_POLICY_PATH` names the policy file; without it the packaged default (`src/secretops/policies/default.yaml`) applies. The file is checked strictly before every command:
 
-- top level: only `allowed_actions`, `denied_actions`, `actions`
+- top level: only `allowed_actions`, `denied_actions`, `actions`, `approval_valid_hours`
 - each entry under `actions`: only `requires_approval`, `allowed_environments`, `production_allowed`
 
-`requires_approval` and `production_allowed` are `true` or `false` without quotes; `allowed_actions`, `denied_actions` and `allowed_environments` are lists of names. A key may appear only once in each mapping. Action names under `actions` are not checked. Anything else stops every command:
+`requires_approval` and `production_allowed` are `true` or `false` without quotes; `allowed_actions`, `denied_actions` and `allowed_environments` are lists of names. `approval_valid_hours` is a whole number from 1 to 168 (default 24, also when the key is absent): how long an `approve-plan` approval stays executable. `execute-plan` refuses an older approval, an approval time in the future, and a plan approved by a version before approval times were recorded; the plan is then `failed` and needs a new plan and approval. Expiry cannot be turned off. `secretops add` approves and writes in one step, so no expiry applies there. A key may appear only once in each mapping. Action names under `actions` are not checked. Anything else stops every command:
 
 - an unknown or repeated key, or a value of another type: `FAIL policy file PATH: ...`, naming the key and its location or line, and what to correct
 - a missing or unreadable file: `FAIL policy file PATH is missing or not readable by this account`
 - invalid YAML: `FAIL policy file PATH is not valid YAML at line N`
+
+**Breaking change (approval expiry):** plans approved before the upgrade have no approval time; `execute-plan` refuses them. Plan and approve them again. Plans still `planned` keep working.
 
 **Breaking change:** unknown keys and wrong value types were accepted before (a quoted `"false"` counted as true, a single name instead of a list was read letter by letter). A custom policy with such a key or value, or a repeated key, now stops every broker command until it is fixed.
 

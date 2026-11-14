@@ -181,7 +181,7 @@ def test_prepare_saves_metadata_only_plan_and_reviews_it(broker):
     assert "approval_digest" not in saved
     assert set(saved) == {
         "plan_id", "action", "secret_name", "env", "status", "secret_value_included",
-        "create_mode", "value_source", "contract_version", "vault_destination",
+        "create_mode", "value_source", "contract_version", "vault_destination", "planned_at",
     }
     assert review["digest"].startswith("sha256-v1:")
 
@@ -203,6 +203,8 @@ def test_submit_creates_and_verifies_the_secret(broker):
     saved = read_plan(broker.plan_path(plan_id))
     assert saved["status"] == "executed"
     assert saved["approval_digest"] == review["digest"]
+    # The confirmation is the approval: its time is recorded, no expiry applies.
+    assert saved["planned_at"] <= saved["approved_at"]
     broker.assert_no_value(prepared, submitted)
 
 

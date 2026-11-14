@@ -109,7 +109,14 @@ TEST_VAULT_DESTINATION = {
 def bind_plan(plan):
     """Turn a hand-written plan into a contract version 1 plan for the test
     vault configuration, approved with a digest when its status says so."""
-    from secretops.plans import CONTRACT_VERSION, GITHUB_ACTIONS, VAULT_ACTIONS, plan_digest
+    from secretops.plans import (
+        CONTRACT_VERSION,
+        GITHUB_ACTIONS,
+        VAULT_ACTIONS,
+        format_timestamp,
+        plan_digest,
+        utc_now,
+    )
 
     plan = json.loads(json.dumps(plan))
     plan.setdefault("contract_version", CONTRACT_VERSION)
@@ -121,6 +128,12 @@ def bind_plan(plan):
         plan["target"].setdefault("secret_value_printed", False)
     if plan.get("status") == "approved" and "approval_digest" not in plan:
         plan["approval_digest"] = plan_digest(plan)
+    # Approved now unless the test sets a time; None leaves it out, as in a
+    # plan approved by an older version.
+    if plan.get("status") == "approved":
+        plan.setdefault("approved_at", format_timestamp(utc_now()))
+    if plan.get("approved_at", "") is None:
+        del plan["approved_at"]
     return plan
 
 

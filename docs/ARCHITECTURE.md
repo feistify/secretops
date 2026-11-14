@@ -51,6 +51,7 @@ Plan artifacts include safe metadata such as:
 - `vault_destination` for actions that use the vault
 - `target.target_host` for GitHub actions
 - `approval_digest` when a human approves the plan
+- `planned_at` and, once approved, `approved_at` (UTC, `YYYY-MM-DDTHH:MM:SSZ`); an approval expires after the policy's `approval_valid_hours`
 - `secret_value_included: false`
 
 Plan artifacts must never include raw secret values.
@@ -75,7 +76,7 @@ Production execution is currently allowed only for metadata-only checks `vault.r
 
 Write, rotation, and sync operations are expected to run from saved approved plans. Approval is a workflow gate for the local SecretOps lifecycle; it is not cryptographic proof of human intent and is not a strong security boundary by itself.
 
-An approval covers one operation on one destination. A saved plan records its `contract_version`, its vault destination (backend, canonical domain, project, path), and for GitHub actions the GitHub host. `approve-plan` stores `approval_digest`, a versioned SHA-256 digest of the plan content excluding `status` and `approval_digest`. Each of `approve-plan`, `preflight-plan`, and `execute-plan` reads the plan file once and checks it against a strict schema; preflight and execution then verify the digest and compare the recorded vault destination with the configuration before any provider call, and the vault adapter is bound to the recorded destination for the whole operation. See [design/plan-destination-binding.md](design/plan-destination-binding.md).
+An approval covers one operation on one destination. A saved plan records its `contract_version`, its vault destination (backend, canonical domain, project, path), and for GitHub actions the GitHub host. `approve-plan` stores `approval_digest`, a versioned SHA-256 digest of the plan content excluding `status`, `approval_digest` and `approved_at`. Each of `approve-plan`, `preflight-plan`, and `execute-plan` reads the plan file once and checks it against a strict schema; preflight and execution then verify the digest and compare the recorded vault destination with the configuration before any provider call, and the vault adapter is bound to the recorded destination for the whole operation. See [design/plan-destination-binding.md](design/plan-destination-binding.md).
 
 `vault.secret.add` is the exception to `approve-plan`: its value is entered by a human, so approval and execution happen together in `secretops add`. The broker's human endpoints record the approval with the digest the human reviewed, under a per-plan lock; `approve-plan` and `execute-plan` refuse the action. See [design/interactive-secret-entry.md](design/interactive-secret-entry.md).
 
