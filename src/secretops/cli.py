@@ -18,6 +18,7 @@ from secretops.handlers import (
     plan_github_env_secret_recipe,
     plan_recipe_action,
     plan_vault_read_recipe,
+    require_read_check_environment,
     require_recipe_allowed,
 )
 from secretops.human_entry import (
@@ -43,7 +44,11 @@ from secretops.plans import (
     build_plan_artifact,
     save_plan_artifact,
 )
-from secretops.policy import load_policy, require_allowed
+from secretops.policy import (
+    PolicyError,
+    load_policy,
+    require_allowed,
+)
 from secretops.recipes import load_recipe
 from secretops.validation import validate_secret_name
 from secretops.vault_check import (
@@ -58,6 +63,18 @@ app = typer.Typer(
     help="Safe secret operations for coding agents: agents plan, humans enter values and approve.",
 )
 console = Console()
+
+
+@app.callback()
+def _require_valid_policy() -> None:
+    # Every command runs only with a policy file that passes strict
+    # validation, so a misspelled key stops the broker instead of being
+    # ignored. stderr keeps the JSON stdout of the human endpoints intact.
+    try:
+        load_policy()
+    except PolicyError as error:
+        typer.echo(f"FAIL {error}", err=True)
+        raise typer.Exit(1) from error
 
 
 def _load_recipe(file: str):
@@ -210,7 +227,10 @@ def check_vault_read(
         console.print(f"[red]{error}[/red]")
         raise typer.Exit(1) from error
 
-    require_allowed("vault.read.check")
+    # The same action and environment policy as a vault.read.check plan.
+    require_read_check_environment(
+        console, audit_action="check-vault-read", secret_name=name, env=env, audit_status="fail"
+    )
 
     vault = get_vault()
 

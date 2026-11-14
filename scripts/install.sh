@@ -277,6 +277,18 @@ if [[ $upgrade == 1 ]]; then
     check_python
     fetch_packages
     build_venv "$ROOT/venv.new"
+    # The new version must accept the policy the broker uses before anything
+    # is switched: as the broker, with broker.env loaded as secretops-broker
+    # loads it (so its SECRETOPS_POLICY_PATH, or none for the packaged
+    # default). `version` writes no files, and from / nothing lands in broker
+    # directories. stdout is dropped; the reason stays on stderr.
+    # shellcheck disable=SC2016
+    if ! (cd / && runuser -u "$BROKER_USER" -- env -i PATH=/usr/bin:/bin \
+            sh -c 'set -eu; set -a; . "$1"; set +a; exec "$2" -I -m secretops.cli version' \
+            sh "$ROOT/broker.env" "$ROOT/venv.new/bin/python" >/dev/null); then
+        rm -rf "$ROOT/venv.new"
+        die "the new version refuses the configured policy (see the message above); fix it and run the upgrade again; nothing was changed"
+    fi
     rm -rf "$ROOT/venv.previous" "$ROOT/previous"
     install -d -o root -g root -m 0755 "$ROOT/previous"
     while IFS=: read -r target source; do

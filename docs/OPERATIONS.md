@@ -25,17 +25,19 @@ Before approving, read the whole `show-plan` output: action, environment, vault 
 
 ## When something fails
 
-`execute-plan` exits 0 on success, 1 when nothing uncertain happened, and 3 when a write outcome is unknown. `secretops add` exits 0 saved, 1 not written, 2 cancelled, 3 unknown.
+`execute-plan` exits 0 on success, 1 when it failed, or finished with a warning (status or audit not recorded), and no outcome is unknown, and 3 when a write outcome is unknown. `secretops add` exits 0 saved, 1 not written, 2 cancelled, 3 unknown.
 
 | Message or exit | Meaning | What to do |
 | --- | --- | --- |
 | installer: `3.11 or newer with venv is required` | the system Python is older, for example 3.10 on Ubuntu 22.04 | install a newer Python as root and pass it with `--python PATH` ([prerequisites](INSTALL.md#prerequisites)); the system default stays as it is |
 | installer: `must be an executable whose path is root-owned` for the Infisical CLI | the CLI is missing from `/usr/bin` or installed under a user's home | install the system package as root so that it is `/usr/bin/infisical` |
 | Infisical repository setup ends with an `apt-get update` failure | another, unrelated APT source can fail the update after the Infisical source was added | check that the package is available: `apt-cache policy infisical` or `apt-cache madison infisical`, then install it. Never bypass signature checks; fix the other source separately |
+| any command: `FAIL policy file ...` | `/opt/secretops/policy.yaml` has an unknown key (often a typo) or a wrongly typed value, or cannot be read; nothing was done | correct what the message names ([policy file](CONFIGURATION.md#policy-file)), then run the command again |
 | preflight fails | a check failed before anything was written | fix the cause (name, policy, connection), plan again |
 | `plan already executed` | the plan ran before; its status is kept | to run it again, save a new plan (and approve it, for a write) |
 | `plan is in use by another command` | another command (execute, approve, reject or `secretops add`) is working on this plan; nothing was done | wait for it to finish, check the plan with `show-plan`, then try again if still needed |
 | `plan lock could not be taken` | the lock file beside the plan cannot be opened (plan directory permissions); nothing was done | fix ownership and permissions of the plan directory, then try again |
+| `approve-plan` / `reject-plan`: `the audit record could not be written` (exit 1) | the decision was saved and stands; only its audit event is missing | fix the audit directory permissions or disk space; do not decide again, the plan is no longer `planned` |
 | `replan required`, changed destination | the vault configuration changed since planning | plan again and approve the new plan |
 | `vault error: ...` | the message names the cause: vault not reachable, token refused, or project, environment or folder not found or not permitted; `infisical CLI failed` means it could not tell | run `sudo secretops-configure --check` (add `--env NAME` for another environment) and follow its next step; for a refused token see [renew](#renew-the-vault-token) |
 | `secret missing or inaccessible` | name absent, or no permission for it | check the name, environment, folder and identity permissions |
@@ -44,7 +46,7 @@ Before approving, read the whole `show-plan` output: action, environment, vault 
 
 **Exit 3.** The agent stops and tells you; it never retries. For a vault write, check the secret in Infisical. For GitHub, `verify_many` only shows whether the name exists: GitHub never returns values, so nothing can prove which value was stored. If you need certainty, approve a new sync plan for those names: it writes the current vault value again and overwrites whatever is there. Do that deliberately, after considering who uses the secret. A partial sync is not rolled back: acknowledged writes stay.
 
-If `execute-plan` says the plan status could not be saved, do not run the plan again; inspect it with `broker show-plan` first.
+If `execute-plan` says the plan status could not be saved, do not run the plan again; inspect it with `broker show-plan` first. If it says the audit record could not be completed, the printed results are what happened; the plan is marked `failed` even after confirmed writes, so it cannot run again. Fix the audit log location before the next operation.
 
 ## Renew the vault token
 
@@ -73,7 +75,7 @@ The GitHub login is renewed the same way it was created: `cd / && sudo -u secret
    ```sh
    sudo ./install.sh --upgrade
    ```
-   It refuses while broker processes are running. It builds and checks the new application before switching, then replaces the wrappers. `broker.env`, policy, plans, audit, the SSH service and keys are not changed. It keeps a Python given with `--python` at installation; pass `--python PATH` to change it. If the new version ships a different default policy, it says so and leaves yours unchanged.
+   It refuses while broker processes are running. It builds and checks the new application before switching, then replaces the wrappers. `broker.env`, policy, plans, audit, the SSH service and keys are not changed. It keeps a Python given with `--python` at installation; pass `--python PATH` to change it. If the new version ships a different default policy, it says so and leaves yours unchanged. If the new version refuses the policy the broker uses (the one `broker.env` names; for example a key it does not know or a quoted `"false"`; earlier versions accepted both), the upgrade stops before switching with `the new version refuses the configured policy` below the reason; nothing was changed. Correct what it names and run the upgrade again.
 3. Read the release notes: a new plan contract version means open plans must be planned and approved again.
 4. **Agent:** `secretops-local version`.
 

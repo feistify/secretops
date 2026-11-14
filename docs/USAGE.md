@@ -111,3 +111,4 @@ The BACKUP_* staging smoke proof used dummy/test values and these secret names o
 The basic read-only check action is also supported:
 
 - `vault.read.check`
+  - the human command `check-vault-read --name NAME --env ENV` applies the same action and environment policy as a `vault.read.check` plan, so an environment the policy denies is refused before any vault call

@@ -2,6 +2,7 @@ import typer
 from rich.console import Console
 
 from secretops.audit import write_audit_event
+from secretops.policy import require_environment_allowed
 from secretops.targets import GitHubEnvSecretTarget
 from secretops.vaults import VaultError, get_vault
 
@@ -219,7 +220,38 @@ def plan_vault_secret_add_recipe(recipe, console: Console) -> None:
     )
 
 
+def require_read_check_environment(
+    console: Console, *, audit_action: str, secret_name: str, env: str, audit_status: str
+) -> None:
+    """Apply the action and environment policy of a vault.read.check plan,
+    before any vault adapter is built. A refusal exits 1; an audit log that
+    cannot be written is reported, not raised."""
+    try:
+        require_environment_allowed("vault.read.check", env)
+    except PermissionError as error:
+        try:
+            write_audit_event(
+                action=audit_action,
+                secret_name=secret_name,
+                env=env,
+                status=audit_status,
+                details={"failure": "policy"},
+            )
+        except OSError:
+            console.print("[red]WARNING[/red] the audit record could not be written")
+        console.print(f"[red]FAIL[/red] {error}")
+        console.print("no provider call was made")
+        raise typer.Exit(1) from error
+
+
 def execute_vault_read_check_recipe(recipe, console: Console) -> None:
+    require_read_check_environment(
+        console,
+        audit_action=recipe.action,
+        secret_name=_audit_secret_name(recipe),
+        env=recipe.env,
+        audit_status="failure",
+    )
     vault = get_vault()
     try:
         exists = vault.secret_exists(recipe.secret_name, recipe.env)

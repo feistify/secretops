@@ -29,6 +29,21 @@ GitHub workflows require `gh` and a stored CLI login for the executing broker us
 
 The executable is resolved through `/usr/local/bin:/usr/bin:/bin`, never the caller's `PATH`. For another location, set `SECRETOPS_GH_BIN` to an absolute executable path in trusted `broker.env`. Upgrade both the application and `/usr/local/bin/secretops-broker` from the same version; the wrapper clears inherited executable overrides. Keep the executable and its directory outside agent/broker-user write access.
 
+## Policy file
+
+`SECRETOPS_POLICY_PATH` names the policy file; without it the packaged default (`src/secretops/policies/default.yaml`) applies. The file is checked strictly before every command:
+
+- top level: only `allowed_actions`, `denied_actions`, `actions`
+- each entry under `actions`: only `requires_approval`, `allowed_environments`, `production_allowed`
+
+`requires_approval` and `production_allowed` are `true` or `false` without quotes; `allowed_actions`, `denied_actions` and `allowed_environments` are lists of names. A key may appear only once in each mapping. Action names under `actions` are not checked. Anything else stops every command:
+
+- an unknown or repeated key, or a value of another type: `FAIL policy file PATH: ...`, naming the key and its location or line, and what to correct
+- a missing or unreadable file: `FAIL policy file PATH is missing or not readable by this account`
+- invalid YAML: `FAIL policy file PATH is not valid YAML at line N`
+
+**Breaking change:** unknown keys and wrong value types were accepted before (a quoted `"false"` counted as true, a single name instead of a list was read letter by letter). A custom policy with such a key or value, or a repeated key, now stops every broker command until it is fixed.
+
 ## Adapters
 
 - Infisical CLI vault adapter

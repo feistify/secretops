@@ -135,7 +135,7 @@ Current safety behavior:
 
 ### Audit
 
-Audit events record safe operation metadata and status.
+Audit events record safe operation metadata and status. Approvals and rejections appear as events with the plan's action, `step` `approve` or `reject`, and `outcome` (`approved` or `rejected`); an approval also carries `approval_digest`.
 
 Audit logs may include:
 
