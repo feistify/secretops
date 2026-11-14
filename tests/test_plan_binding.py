@@ -619,7 +619,7 @@ def test_execution_uses_the_checked_plan_even_if_the_file_changes(tmp_path, monk
     run("approve-plan", "--id", plan_id, tmp_path=tmp_path, plan_dir=plan_dir)
     monkeypatch.setenv("SECRETOPS_PLAN_DIR", str(plan_dir))
     monkeypatch.setenv("SECRETOPS_AUDIT_PATH", str(tmp_path / "audit.jsonl"))
-    real_check = plan_lifecycle._require_plan_execution_allowed
+    real_check = plan_lifecycle._refuse_expired_approval
 
     def check_then_tamper(plan_artifact, console):
         real_check(plan_artifact, console)
@@ -628,7 +628,7 @@ def test_execution_uses_the_checked_plan_even_if_the_file_changes(tmp_path, monk
         tampered["env"] = "staging"
         plan_path.write_text(json.dumps(tampered), encoding="utf-8")
 
-    monkeypatch.setattr(plan_lifecycle, "_require_plan_execution_allowed", check_then_tamper)
+    monkeypatch.setattr(plan_lifecycle, "_refuse_expired_approval", check_then_tamper)
     plan_lifecycle.execute_saved_plan(plan_id, Console())
 
     stored = json.loads(state.read_text(encoding="utf-8"))

@@ -38,7 +38,7 @@ DIGEST_PREFIX = "sha256-v1:"
 DIGEST_EXCLUDED_FIELDS = ("status", "approval_digest", "approved_at")
 # Planning and approval times: UTC, whole seconds, one fixed form.
 TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
-TIMESTAMP_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
+TIMESTAMP_PATTERN = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
 
 # Actions that read or write the vault and therefore record its destination.
 VAULT_ACTIONS = frozenset(

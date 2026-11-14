@@ -108,6 +108,8 @@ Run the lifecycle:
 5. When the human says it is done, in any words, run show-plan with the plan ID
    you already have; never ask them to repeat it.
    - status: approved: go to step 6; the human already asked for this task.
+     If show-plan also says approval_valid: no, the approval expired: save a
+     new plan and hand it over.
    - status: planned: say it is not approved yet and wait; do not execute it
      to check (execute-plan refuses it and changes nothing).
    - status: rejected: stop and tell the human.

@@ -783,11 +783,38 @@ def preflight_saved_plan(plan_id: str, console: Console) -> None:
     plan_artifact = _load_plan_or_exit(plan_id, "preflight-plan", console)
     # Preflight must not mutate plan status.
     _require_plan_binding(plan_artifact, console, mark_failed=False)
+    _preflight_approval_validity(plan_artifact, console)
     try:
         _preflight_plan(plan_artifact, console)
     except VaultError as error:
         # Preflight must not mutate plan status.
         _fail_vault_error(plan_artifact, console, error, mark_failed=False)
+
+
+def _preflight_approval_validity(plan_artifact, console: Console) -> None:
+    """Fail preflight for an approved plan that execute-plan would refuse as
+    expired. A plan that is not approved yet passes as before."""
+    if plan_artifact.action in HUMAN_ENTRY_ACTIONS:
+        return
+    refusal = approval_expiry_refusal(
+        plan_artifact, load_policy().approval_valid_hours, utc_now()
+    )
+    if refusal is None:
+        return
+    write_audit_event(
+        action=plan_artifact.action,
+        secret_name=_secret_name_for_policy_audit(plan_artifact),
+        env=plan_artifact.source_env or plan_artifact.env,
+        status="failure",
+        plan_id=plan_artifact.plan_id,
+        details={"failure": "approval_expired"},
+    )
+    console.print(f"[red]FAIL[/red] preflight failed: {plan_artifact.action}")
+    console.print(f"approval_valid: no; {refusal}")
+    console.print("no provider call was made")
+    console.print("save a new plan and ask the human to review and approve it")
+    console.print("secret value was not printed")
+    raise typer.Exit(1)
 
 
 def _preflight_plan(plan_artifact, console: Console) -> None:
@@ -1201,9 +1228,30 @@ def _refuse_unapproved(plan_artifact, console: Console, *, secret_name: str | No
     raise typer.Exit(1)
 
 
-def _require_plan_execution_allowed(plan_artifact, console: Console) -> None:
-    # Environment policy first: a plan the policy refuses can never run and
-    # is marked failed, also while it still waits for approval.
+# Write actions that need an approved plan even when a custom policy sets
+# requires_approval: false; each also checks this again on its own path.
+APPROVAL_ALWAYS_REQUIRED = frozenset(
+    {
+        "vault.secret.generate",
+        "vault.secret.rotate",
+        "vault.secret.import_file",
+        "vault.secret.copy_many",
+        "github.env_secret.write",
+        "github.env_secret.sync_many",
+    }
+)
+
+
+def _needs_approval(plan_artifact) -> bool:
+    return (
+        plan_artifact.action in APPROVAL_ALWAYS_REQUIRED
+        or requires_approval(plan_artifact.action)
+    )
+
+
+def _require_environment_policy(plan_artifact, console: Console) -> None:
+    # A plan the environment policy refuses can never run: it is marked
+    # failed, also while it still waits for approval.
     try:
         for environment in _execution_policy_environments(plan_artifact):
             require_environment_allowed(plan_artifact.action, environment)
@@ -1220,9 +1268,6 @@ def _require_plan_execution_allowed(plan_artifact, console: Console) -> None:
         for line in _not_printed_lines(plan_artifact.action):
             console.print(line)
         raise typer.Exit(1) from error
-    if requires_approval(plan_artifact.action) and plan_artifact.status != "approved":
-        _refuse_unapproved(plan_artifact, console)
-    _refuse_expired_approval(plan_artifact, console)
 
 
 def _refuse_expired_approval(plan_artifact, console: Console) -> None:
@@ -1305,9 +1350,19 @@ def _execute_loaded_plan(plan_artifact, console: Console) -> None:
         console.print("secret value was not printed")
         raise typer.Exit(1)
 
-    # Repeated even after a passing preflight: configuration can change.
+    # Order of checks, all before any provider call:
+    # 1. environment policy (refused: marked failed);
+    # 2. approval (a planned plan stays planned; a failed one stays failed),
+    #    before the binding check, so a vault error or a changed destination
+    #    cannot fail a plan that still waits for the human;
+    # 3. binding: approval digest and vault destination (marked failed),
+    #    repeated even after a passing preflight, as configuration can change;
+    # 4. approval validity (expired: marked failed).
+    _require_environment_policy(plan_artifact, console)
+    if _needs_approval(plan_artifact) and plan_artifact.status != "approved":
+        _refuse_unapproved(plan_artifact, console)
     _require_plan_binding(plan_artifact, console, mark_failed=True)
-    _require_plan_execution_allowed(plan_artifact, console)
+    _refuse_expired_approval(plan_artifact, console)
 
     try:
         _execute_plan(plan_artifact, console)
@@ -1354,6 +1409,8 @@ def _execute_plan(plan_artifact, console: Console) -> None:
         return
 
     if plan_artifact.action == "vault.secret.import_file":
+        if plan_artifact.status != "approved":
+            _refuse_unapproved(plan_artifact, console)
         vault = _bound_vault(plan_artifact)
         create_mode = plan_artifact.create_mode or "create_only"
         source_file = plan_artifact.source_file or ""

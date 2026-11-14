@@ -152,16 +152,32 @@ def test_planned_plan_is_refused_and_left_planned(broker, kind):
     assert event["plan_id"] == f"pending-{kind}"
 
 
-@pytest.mark.parametrize(
-    "kind", ["generate", "rotate", "copy", "github_write", "github_sync"]
-)
-def test_per_action_approval_check_also_leaves_the_plan_planned(broker, kind):
-    # With requires_approval switched off in the policy, the action's own
-    # check still demands approval, with the same behaviour.
+WRITE_KINDS = ["generate", "rotate", "import", "copy", "github_write", "github_sync"]
+
+
+@pytest.mark.parametrize("kind", WRITE_KINDS)
+def test_write_actions_need_approval_even_if_the_policy_says_not(broker, kind):
     make_plan, message = APPROVAL_PLANS[kind]
-    plan = make_plan(f"inner-{kind}")
+    plan = make_plan(f"policy-off-{kind}")
     broker.policy(lambda data: data["actions"][plan["action"]].update(requires_approval=False))
     plan_path = broker.write(plan)
+
+    code, lines = broker.execute(f"policy-off-{kind}")
+
+    assert code == 1
+    assert f"FAIL {message}" in lines
+    assert PENDING in lines
+    assert read_plan(plan_path)["status"] == "planned"
+    assert broker.calls == []
+
+
+@pytest.mark.parametrize("kind", WRITE_KINDS)
+def test_per_action_approval_check_also_leaves_the_plan_planned(broker, monkeypatch, kind):
+    # Defence in depth: with the early check switched off, each write
+    # action's own check refuses the same way, before any write.
+    monkeypatch.setattr(secretops.plan_lifecycle, "_needs_approval", lambda plan: False)
+    make_plan, message = APPROVAL_PLANS[kind]
+    plan_path = broker.write(make_plan(f"inner-{kind}"))
 
     code, lines = broker.execute(f"inner-{kind}")
 
@@ -169,6 +185,46 @@ def test_per_action_approval_check_also_leaves_the_plan_planned(broker, kind):
     assert f"FAIL {message}" in lines
     assert PENDING in lines
     assert read_plan(plan_path)["status"] == "planned"
+    assert broker.calls == []
+
+
+def test_waiting_plan_is_not_failed_by_a_changed_destination(broker, monkeypatch):
+    plan_path = broker.write(generate_plan("pending-moved"))
+    monkeypatch.setenv("SECRETOPS_INFISICAL_PROJECT_ID", "another-project")
+
+    code, lines = broker.execute("pending-moved")
+
+    assert code == 1
+    assert PENDING in lines
+    assert read_plan(plan_path)["status"] == "planned"
+    assert broker.calls == []
+
+
+def test_waiting_plan_is_not_failed_by_a_vault_configuration_error(broker, monkeypatch):
+    from secretops.vaults import VaultError
+
+    def broken():
+        raise VaultError("vault destination is not configured")
+
+    monkeypatch.setattr(secretops.plan_lifecycle, "configured_vault_destination", broken)
+    plan_path = broker.write(copy_many_plan("pending-broken"))
+
+    code, lines = broker.execute("pending-broken")
+
+    assert code == 1
+    assert PENDING in lines
+    assert read_plan(plan_path)["status"] == "planned"
+
+
+def test_approved_plan_with_a_changed_destination_still_fails(broker, monkeypatch):
+    plan_path = broker.write(generate_plan("approved-moved", status="approved"))
+    monkeypatch.setenv("SECRETOPS_INFISICAL_PROJECT_ID", "another-project")
+
+    code, lines = broker.execute("approved-moved")
+
+    assert code == 1
+    assert lines[0] == "FAIL vault destination differs from configuration: project_id"
+    assert read_plan(plan_path)["status"] == "failed"
     assert broker.calls == []
 
 
@@ -412,6 +468,7 @@ def test_new_plans_record_the_planning_time(monkeypatch):
 @pytest.mark.parametrize("value", [
     "2026-11-14 12:00:00", "2026-11-14T12:00:00+00:00", "2026-11-14T12:00:00.5Z",
     "2026-13-01T00:00:00Z", "",
+    "\u0662\u0660\u0662\u0666-11-14T12:00:00Z", "\uff12026-11-14T12:00:00Z",
 ])
 def test_plan_times_must_have_the_fixed_form(broker, value):
     plan = approved(generate_plan, "bad-time", value)
@@ -519,3 +576,71 @@ def test_metadata_check_runs_in_prod(broker):
     assert code == 0
     assert lines[0] == f"OK secret exists: {plan['secret_name']}"
     assert DUMMY_SECRET_VALUE not in "\n".join(lines)
+
+
+def test_never_approved_metadata_check_with_an_old_planning_time_executes(broker, clock):
+    plan = vault_plan("old-read-check")
+    plan["planned_at"] = at(days=-365)
+    broker.write(plan)
+    broker.vault.values[(plan["secret_name"], "dev")] = DUMMY_SECRET_VALUE
+
+    code, lines = broker.execute("old-read-check")
+
+    assert code == 0
+    assert lines[0] == f"OK secret exists: {plan['secret_name']}"
+
+
+def test_planning_time_changed_after_approval_is_refused(broker, clock):
+    plan = approved(generate_plan, "moved-planned-at", at(hours=-1))
+    plan["planned_at"] = at(hours=-2)
+    plan_path = broker.write(plan)
+    saved = read_plan(plan_path)
+    saved["planned_at"] = at(hours=-1)
+    plan_path.write_text(json.dumps(saved), encoding="utf-8")
+
+    code, lines = broker.execute("moved-planned-at")
+
+    assert code == 1
+    assert lines[0] == "FAIL plan content changed after approval"
+    assert read_plan(plan_path)["status"] == "failed"
+    assert broker.calls == []
+
+
+def preflight(broker, plan_id):
+    return broker.run(secretops.plan_lifecycle.preflight_saved_plan, plan_id)
+
+
+@pytest.mark.parametrize("approved_at,reason", [
+    (at(hours=-25), "approval expired: approved more than 24 hours ago"),
+    (None, "plan was approved by an older secretops version without an approval time"),
+    (at(minutes=5), "approval time is in the future (the clock may have changed)"),
+])
+def test_preflight_fails_an_approval_that_is_no_longer_valid(broker, clock, approved_at, reason):
+    plan_path = broker.write(approved(generate_plan, "preflight-expired", approved_at))
+    before = plan_path.read_bytes()
+
+    code, lines = preflight(broker, "preflight-expired")
+
+    assert code == 1
+    assert lines[:4] == [
+        "FAIL preflight failed: vault.secret.generate",
+        f"approval_valid: no; {reason}",
+        "no provider call was made",
+        EXPIRED_HINT,
+    ]
+    assert plan_path.read_bytes() == before
+    assert broker.calls == []
+    assert broker.audit_events()[-1]["failure"] == "approval_expired"
+
+
+@pytest.mark.parametrize("status", ["planned", "approved"])
+def test_preflight_passes_a_waiting_or_freshly_approved_plan(broker, clock, status):
+    plan = generate_plan(f"preflight-{status}", status=status)
+    if status == "approved":
+        plan["approved_at"] = at(hours=-1)
+    broker.write(plan)
+
+    code, lines = preflight(broker, f"preflight-{status}")
+
+    assert code == 0
+    assert lines[0] == "OK preflight passed: vault.secret.generate"
