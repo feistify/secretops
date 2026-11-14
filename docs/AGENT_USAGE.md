@@ -12,27 +12,28 @@ A human installs the broker as described in [INSTALL.md](INSTALL.md); an agent c
 
 ## Agent operating model
 
-Agents may run saved-plan and safe metadata commands such as:
+Agents reach the broker through `secretops-local COMMAND` on a local broker, or `ssh BROKER_ALIAS COMMAND` on a remote one. They may run saved-plan and safe metadata commands such as:
 
 ```bash
-secretops version
-secretops actions
-secretops plan --file <recipe.yaml> --save
-secretops show-plan --id <plan_id>
-secretops preflight-plan --id <plan_id>
-secretops execute-plan --id <plan_id>
+secretops-local version
+secretops-local actions
+secretops-local plan --file <recipe.yaml> --save
+secretops-local show-plan --id <plan_id>
+secretops-local preflight-plan --id <plan_id>
+secretops-local execute-plan --id <plan_id>
 ```
 
-`secretops actions` lists the current policy's allowed and denied actions so agents can self-orient without touching provider CLIs. It does not describe recipe schemas or guarantee that a particular operation will pass environment, approval, or preflight checks.
+`actions` lists the current policy's allowed and denied actions so agents can self-orient without touching provider CLIs. It does not describe recipe schemas or guarantee that a particular operation will pass environment, approval, or preflight checks.
 
-Under the broker host model (`BROKER_HOST.md`), the agent also uploads recipe YAML through the wrapper's `write-recipe <name>.yaml` verb (stdin), because the restricted SSH key disables scp. Recipes are then referenced by bare name: `secretops plan --file <name>.yaml --save`. Recipes carry secret names and metadata only, never values.
+The agent also uploads recipe YAML through the wrapper's `write-recipe <name>.yaml` verb (stdin), because the restricted SSH key disables scp. Recipes are then referenced by bare name: `secretops-local plan --file <name>.yaml --save`. Recipes carry secret names and metadata only, never values.
 
 Agents may also run safe read, diff, or verify commands when those commands are available and explicitly approved for the deployment. These commands must report only safe metadata such as names, environments, presence/missing status, policy decisions, and plan status. They must not reveal secret values.
 
 Agents must not run:
 
 ```bash
-secretops approve-plan
+approve-plan
+reject-plan
 infisical
 infisical secrets
 gh secret

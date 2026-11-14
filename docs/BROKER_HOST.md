@@ -102,7 +102,7 @@ GitHub workflows also require `gh` on the broker and authentication available to
 For a human-operated setup using a CLI login, run from a directory the broker user can access:
 
 ```sh
-cd /tmp
+cd /
 sudo -u secretops-broker gh auth login --hostname github.com
 ```
 
@@ -111,7 +111,7 @@ Choose HTTPS and browser login. If automatic browser launch fails, open `https:/
 A human can check the broker user's CLI login without displaying provider output or loading `broker.env`. This checks the login configured above, not a token supplied only through broker configuration:
 
 ```sh
-cd /tmp
+cd /
 sudo -u secretops-broker sh -c '
   unset INFISICAL_TOKEN GH_HOST GH_REPO GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN
   if gh auth status --hostname github.com >/dev/null 2>&1; then
