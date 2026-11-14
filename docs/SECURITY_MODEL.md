@@ -27,6 +27,7 @@ secretops itself is designed so that values never reach a place the agent can re
 - the Infisical CLI runs with an explicit environment (machine token, fixed `PATH`, empty temporary `HOME`), so broker variables, user sessions, and working-directory config cannot change what secretops reads
 - vault answers are checked against a strict response protocol; an error, a malformed answer, or a timeout stops the operation and is never treated as "secret missing"
 - an Infisical vault write counts as done only when a read-back returns the written value; otherwise the outcome is reported as unknown, recorded as `outcome_unknown` in the audit log with the partial result for multi-secret operations, and never retried automatically. GitHub target writes are not read back and still rely on the `gh` exit status
+- every `approve-plan` and `reject-plan` that takes effect writes one audit event with the plan id, action, environment, decision and, for an approval, the approval digest; a refused decision changes nothing and writes none. A `vault.secret.add` plan is approved only through `secretops add`, which records its own approval event
 - there is no reveal command; `secret.reveal`, `secret.print_value`, and `secret.export_all` are explicitly denied in the default policy
 - tests assert that dummy values never appear in CLI output, audit logs, plan artifacts, or command-line arguments
 

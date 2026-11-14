@@ -428,6 +428,30 @@ def test_rejected_plan_cannot_be_submitted(broker):
     assert "status is rejected" in response["message"]
     assert read_plan(broker.plan_path(plan_id))["status"] == "rejected"
     assert "set" not in read_record(broker.record_path)["calls"]
+    # One event for the rejection; the refused submission is not recorded
+    # as a decision, and no approval event exists.
+    decisions = [
+        event for event in broker.audit_events()
+        if event.get("step") in {"approve", "reject"}
+    ]
+    assert [(event["step"], event["outcome"]) for event in decisions] == [("reject", "rejected")]
+    assert "channel" not in decisions[0] and "approval_digest" not in decisions[0]
+
+
+def test_human_entry_approval_is_audited_once(broker):
+    broker.fake_vault()
+    _, review, _ = broker.prepare()
+    plan_id = review["plan"]["plan_id"]
+
+    _, response, _ = broker.submit(plan_id, review["digest"])
+    refused = broker.run("approve-plan", "--id", plan_id)
+
+    assert response["outcome"] == "created"
+    assert refused.returncode == 1
+    approvals = [event for event in broker.audit_events() if event.get("step") == "approve"]
+    assert len(approvals) == 1
+    assert approvals[0]["channel"] == "human"
+    assert approvals[0]["approval_digest"] == review["digest"]
 
 
 def test_reject_waits_for_no_one_while_a_submission_holds_the_lock(broker):

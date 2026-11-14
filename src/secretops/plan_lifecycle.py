@@ -646,9 +646,29 @@ def _transition_loaded_plan(plan_artifact, status: str, label: str, console: Con
     # the file is not read again in between.
     digest = plan_digest(plan_artifact.loaded_content) if status == "approved" else None
     set_plan_status(plan_artifact, status, approval_digest=digest)
+    # Recorded after the status is saved, still under the plan lock, so the
+    # audit log holds only decisions that took effect. Same step and outcome
+    # names as the approval recorded by `secretops add`.
+    audit_written = _try_audit(
+        action=plan_artifact.action,
+        secret_name=_secret_name_for_policy_audit(plan_artifact),
+        env=plan_artifact.source_env or plan_artifact.env,
+        status="success",
+        plan_id=plan_id,
+        details={
+            "step": "approve" if status == "approved" else "reject",
+            "outcome": status,
+            **({"approval_digest": digest} if digest is not None else {}),
+        },
+    )
     console.print(f"OK plan {label}: {plan_id}")
     if digest is not None:
         console.print(f"approval_digest: {digest}", soft_wrap=True)
+    if not audit_written:
+        console.print("[red]WARNING[/red] the audit record could not be written")
+        console.print(f"the decision was saved and stands; the plan is {status}")
+        console.print("ask the operator to check the audit log")
+        raise typer.Exit(EXIT_FAILED)
 
 
 def preflight_saved_plan(plan_id: str, console: Console) -> None:

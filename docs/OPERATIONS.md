@@ -36,6 +36,7 @@ Before approving, read the whole `show-plan` output: action, environment, vault 
 | `plan already executed` | the plan ran before; its status is kept | to run it again, save a new plan (and approve it, for a write) |
 | `plan is in use by another command` | another command (execute, approve, reject or `secretops add`) is working on this plan; nothing was done | wait for it to finish, check the plan with `show-plan`, then try again if still needed |
 | `plan lock could not be taken` | the lock file beside the plan cannot be opened (plan directory permissions); nothing was done | fix ownership and permissions of the plan directory, then try again |
+| `approve-plan` / `reject-plan`: `the audit record could not be written` (exit 1) | the decision was saved and stands; only its audit event is missing | fix the audit directory permissions or disk space; do not decide again, the plan is no longer `planned` |
 | `replan required`, changed destination | the vault configuration changed since planning | plan again and approve the new plan |
 | `vault error: ...` | the message names the cause: vault not reachable, token refused, or project, environment or folder not found or not permitted; `infisical CLI failed` means it could not tell | run `sudo secretops-configure --check` (add `--env NAME` for another environment) and follow its next step; for a refused token see [renew](#renew-the-vault-token) |
 | `secret missing or inaccessible` | name absent, or no permission for it | check the name, environment, folder and identity permissions |
