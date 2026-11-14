@@ -9,3 +9,13 @@ updates:
     # release is usually found within days.
     cooldown:
       default-days: 14
+
+  # Python dependencies in uv.lock. A pull request that changes them must also
+  # regenerate scripts/broker-requirements.txt (CI fails until it does):
+  #   uv export --no-dev --no-emit-project --format requirements-txt --output-file scripts/broker-requirements.txt
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 14

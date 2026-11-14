@@ -28,6 +28,21 @@ sudo bash scripts/install.sh --upgrade --wheel dist/secretops-VERSION-py3-none-a
 
 `tests/test_install_container.sh` runs the installer in throwaway Ubuntu and Debian containers.
 
+## Lint
+
+CI runs ruff (lint only, default rules, version pinned in the dev group) and shellcheck on the shell scripts:
+
+```sh
+uv run ruff check
+shellcheck --severity=warning scripts/*.sh scripts/secretops-* tests/*.sh
+```
+
+When Dependabot changes `uv.lock`, regenerate the broker requirements; CI fails until they match:
+
+```sh
+uv export --no-dev --no-emit-project --format requirements-txt --output-file scripts/broker-requirements.txt
+```
+
 ## Dummy/dev examples
 
 These are human-operated development-checkout examples using the [configuration](CONFIGURATION.md). Installed deployments use the installed CLI; agents use the [broker flow](USAGE.md#plan-lifecycle).

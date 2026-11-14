@@ -1,4 +1,5 @@
 import sys
+from importlib.metadata import version as package_version
 
 import typer
 from rich.console import Console
@@ -72,7 +73,7 @@ def _load_recipe(file: str):
 
 @app.command(help="Show the secretops version.", rich_help_panel="Information")
 def version():
-    console.print("secretops 0.1.8")
+    console.print(f"secretops {package_version('secretops')}")
 
 
 @app.command(

@@ -23,6 +23,10 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12']
 
     steps:
       - name: Check out repository
@@ -33,7 +37,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: '3.11'
+          python-version: ${{ matrix.python-version }}
 
       - name: Set up uv
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
@@ -41,10 +45,25 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --all-extras --dev
+        run: uv sync --locked --all-extras --dev
+
+      - name: Lint Python
+        run: uv run ruff check
+
+      - name: Check broker requirements match the lock file
+        # Fails a Dependabot pull request that changes uv.lock without
+        # regenerating the file. Nothing is committed from CI.
+        run: |
+          uv export --no-dev --no-emit-project --format requirements-txt --output-file scripts/broker-requirements.txt
+          git diff --exit-code -- scripts/broker-requirements.txt
 
       - name: Run tests
         run: uv run pytest
 
       - name: Run broker wrapper tests
         run: sh tests/test_broker_wrappers.sh
+
+      - name: Lint shell scripts
+        # shellcheck is preinstalled on ubuntu-latest. Warnings and errors fail;
+        # style and info notes do not.
+        run: shellcheck --severity=warning scripts/*.sh scripts/secretops-* tests/*.sh

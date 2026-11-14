@@ -187,12 +187,12 @@ Found by reading the code; none is reproduced with a test yet. The execution loc
 
 ### 10. CI and maintenance — one small pull request, no behaviour change
 
-- [ ] Run the tests on Python 3.11 and 3.12. CI uses only 3.11, while Ubuntu 24.04, the main supported system, ships 3.12.
-- [ ] Use `uv sync --locked` in `ci.yml`, as `release.yml` does.
-- [ ] Let Dependabot also watch the Python dependencies (`uv.lock`), and regenerate `scripts/broker-requirements.txt` with its documented `uv export` command when they change. Today only GitHub Actions are watched.
-- [ ] Add `shellcheck` for `scripts/` and the shell tests, and `ruff` for the Python code, to CI. The wrappers and `install.sh` are part of the security boundary.
-- [ ] Run `tests/test_install_container.sh` in CI on a schedule or on release tags; today it is run by hand.
-- [ ] Read the version in `secretops version` from the package metadata (`importlib.metadata`) instead of a second literal in `cli.py`, and adjust the version check in `release.yml`.
+- [x] Run the tests on Python 3.11 and 3.12. CI uses only 3.11, while Ubuntu 24.04, the main supported system, ships 3.12.
+- [x] Use `uv sync --locked` in `ci.yml`, as `release.yml` does.
+- [x] Let Dependabot also watch the Python dependencies (`uv.lock`), and regenerate `scripts/broker-requirements.txt` with its documented `uv export` command when they change. Today only GitHub Actions are watched.
+- [x] Add `shellcheck` for `scripts/` and the shell tests, and `ruff` for the Python code, to CI. The wrappers and `install.sh` are part of the security boundary.
+- [x] Run `tests/test_install_container.sh` in CI on a schedule or on release tags; today it is run by hand.
+- [x] Read the version in `secretops version` from the package metadata (`importlib.metadata`) instead of a second literal in `cli.py`, and adjust the version check in `release.yml`.
 
 ### 11. Launch — after section 7 and the execution lock
 

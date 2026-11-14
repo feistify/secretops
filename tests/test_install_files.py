@@ -33,3 +33,15 @@ def test_shipped_requirements_are_hash_pinned():
 def test_install_scripts_parse(script):
     shell = "bash" if script.endswith(".sh") else "sh"
     subprocess.run([shell, "-n", str(SCRIPTS / script)], check=True)
+
+
+def test_version_command_prints_the_pyproject_version():
+    import tomllib
+
+    from typer.testing import CliRunner
+
+    from secretops.cli import app
+
+    expected = tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["version"]
+    result = CliRunner().invoke(app, ["version"])
+    assert result.output == f"secretops {expected}\n"

@@ -11,6 +11,7 @@
 # asserted individually; the final exit reflects the aggregate.
 set -u
 
+# shellcheck disable=SC1007  # deliberate: empty CDPATH for this cd only
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/../scripts" && pwd)
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
