@@ -2,6 +2,8 @@ import json
 import os
 import subprocess
 
+import pytest
+
 
 DUMMY_SECRET_NAME = "DUMMY_SECRET"
 DUMMY_SECRET_VALUE = "not-a-real-secret"
@@ -163,4 +165,107 @@ def test_check_vault_read_writes_safe_audit_event(tmp_path):
     assert events[0]["secret_value_logged"] is False
     assert "timestamp" in events[0]
     assert_no_secret_leak(result, audit_path)
+
+
+# check-vault-read applies the environment policy of a vault.read.check plan
+
+
+def recording_infisical_bin(tmp_path):
+    bin_dir = fake_infisical_bin(tmp_path)
+    fake = bin_dir / "infisical"
+    marker = tmp_path / "infisical-called"
+    fake.write_text(
+        fake.read_text(encoding="utf-8").replace(
+            "args = sys.argv[1:]\n",
+            f"open({str(marker)!r}, 'a').close()\nargs = sys.argv[1:]\n",
+        ),
+        encoding="utf-8",
+    )
+    return bin_dir, marker
+
+
+def test_check_vault_read_refuses_an_environment_the_policy_denies(tmp_path, monkeypatch):
+    # The default policy allows the check in dev, staging and production only.
+    from secretops.policy import require_environment_allowed
+
+    audit_path = tmp_path / "audit.jsonl"
+    bin_dir, marker = recording_infisical_bin(tmp_path)
+    for env in ("qa", "prod"):
+        with pytest.raises(PermissionError):
+            require_environment_allowed("vault.read.check", env)
+
+        result = run_secretops(
+            "check-vault-read", "--name", DUMMY_SECRET_NAME, "--env", env,
+            audit_path=audit_path, path_prefix=bin_dir,
+        )
+
+        assert result.returncode == 1
+        assert result.stdout.strip().splitlines() == [
+            f"FAIL environment denied by policy for vault.read.check: {env}",
+            "no provider call was made",
+        ]
+        assert "Traceback" not in combined_output(result)
+    assert not marker.exists()
+    events = read_audit_events(audit_path)
+    assert [(event["env"], event["status"], event["failure"]) for event in events] == [
+        ("qa", "fail", "policy"),
+        ("prod", "fail", "policy"),
+    ]
+    assert_no_secret_leak(result, audit_path)
+
+
+def test_check_vault_read_allows_production_as_the_default_policy_does(tmp_path):
+    audit_path = tmp_path / "audit.jsonl"
+    bin_dir, marker = recording_infisical_bin(tmp_path)
+
+    result = run_secretops(
+        "check-vault-read", "--name", DUMMY_SECRET_NAME, "--env", "production",
+        audit_path=audit_path, path_prefix=bin_dir,
+    )
+
+    assert result.returncode == 0, combined_output(result)
+    assert f"OK secret exists: {DUMMY_SECRET_NAME}" in result.stdout
+    assert marker.exists()
+    assert_no_secret_leak(result, audit_path)
+
+
+def test_check_vault_read_follows_a_custom_environment_policy(tmp_path, monkeypatch):
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        "allowed_actions: [vault.read.check]\n"
+        "denied_actions: []\n"
+        "actions:\n"
+        "  vault.read.check:\n"
+        "    requires_approval: false\n"
+        "    allowed_environments: [dev]\n"
+        "    production_allowed: false\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SECRETOPS_POLICY_PATH", str(policy_path))
+    bin_dir, marker = recording_infisical_bin(tmp_path)
+
+    audit_path = tmp_path / "audit.jsonl"
+    allowed = run_secretops(
+        "check-vault-read", "--name", DUMMY_SECRET_NAME, "--env", "dev",
+        audit_path=audit_path, path_prefix=bin_dir,
+    )
+    assert allowed.returncode == 0, combined_output(allowed)
+    assert marker.exists()
+    marker.unlink()
+    denied = {
+        env: run_secretops(
+            "check-vault-read", "--name", DUMMY_SECRET_NAME, "--env", env,
+            audit_path=audit_path, path_prefix=bin_dir,
+        )
+        for env in ("staging", "production")
+    }
+
+    assert denied["staging"].stdout.splitlines()[0] == (
+        "FAIL environment denied by policy for vault.read.check: staging"
+    )
+    assert denied["production"].stdout.splitlines()[0] == (
+        "FAIL production execution denied by policy: vault.read.check"
+    )
+    assert all(result.returncode == 1 for result in denied.values())
+    assert not marker.exists()
 

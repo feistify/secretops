@@ -43,7 +43,7 @@ from secretops.plans import (
     build_plan_artifact,
     save_plan_artifact,
 )
-from secretops.policy import load_policy, require_allowed
+from secretops.policy import load_policy, require_allowed, require_environment_allowed
 from secretops.recipes import load_recipe
 from secretops.validation import validate_secret_name
 from secretops.vault_check import (
@@ -210,7 +210,20 @@ def check_vault_read(
         console.print(f"[red]{error}[/red]")
         raise typer.Exit(1) from error
 
-    require_allowed("vault.read.check")
+    try:
+        # The same action and environment policy as a vault.read.check plan.
+        require_environment_allowed("vault.read.check", env)
+    except PermissionError as error:
+        write_audit_event(
+            action="check-vault-read",
+            secret_name=name,
+            env=env,
+            status="fail",
+            details={"failure": "policy"},
+        )
+        console.print(f"[red]FAIL[/red] {error}")
+        console.print("no provider call was made")
+        raise typer.Exit(1) from error
 
     vault = get_vault()
 
