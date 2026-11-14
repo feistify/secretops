@@ -74,19 +74,20 @@ The complete walkthrough, with verification and cleanup, is in the [demo](https:
 
 ## Get started
 
-On Ubuntu 24.04 or Debian 12, with `curl`, `python3-venv`, `openssh-server` and a root-owned `infisical` CLI installed, in your own terminal:
+First prepare the vault: an Infisical project, a machine identity and its token ([PREPARE](https://github.com/feistify/secretops/blob/main/docs/PREPARE.md)).
+
+Then, on Ubuntu 24.04 or Debian 12, with `curl`, `python3-venv`, `openssh-server` and a root-owned `infisical` CLI installed (the GitHub CLI `gh` is needed only for syncing to GitHub), in your own terminal:
 
 ```sh
 curl -fsSLO https://github.com/feistify/secretops/releases/download/v0.1.6/secretops-0.1.6-installer.tar.gz
 sha256sum secretops-0.1.6-installer.tar.gz      # compare with the release notes
 tar -xzf secretops-0.1.6-installer.tar.gz && cd secretops-0.1.6-installer
 sudo ./install.sh --create-agent-user agent --infisical-domain https://app.infisical.com
+# use the address of your own Infisical: EU Cloud https://eu.infisical.com or your self-hosted URL (see PREPARE)
 sudo secretops-configure        # Infisical project, folder and token (hidden prompt)
 ```
 
 `--create-agent-user` creates a separate account without sudo for your coding agent; to use an existing account, give `--agent-user NAME` instead. The installer sets up the broker account, the restricted agent access and your tools, and installs secretops 0.1.6 from PyPI, checked against the hash in the bundle. `sudo secretops-uninstall` removes it again.
-
-Before installing, prepare the vault: [PREPARE](https://github.com/feistify/secretops/blob/main/docs/PREPARE.md).
 
 1. Follow the [installation guide](https://github.com/feistify/secretops/blob/main/docs/INSTALL.md) for the details: prerequisites, a separate agent account, the GitHub login and checks.
 2. Try the [demo](https://github.com/feistify/secretops/blob/main/docs/DEMO.md) with a test project and made-up values.

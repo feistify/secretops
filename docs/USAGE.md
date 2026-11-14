@@ -6,7 +6,7 @@ How a human adds secrets, how an agent runs the plan lifecycle through the broke
 
 `secretops add` stores one new secret whose value a human has, for example an API key created in a provider console. Direct and agent-prepared entry have passed live validation through the local sudo broker. Human submission over SSH and use inside tmux remain untested; see the [validation record](validation/interactive-secret-entry.md).
 
-After [one-time client and broker setup](BROKER_HOST.md#human-secret-entry), choose either interactive metadata entry, a named secret, or an agent-prepared plan:
+With the local installer ([INSTALL.md](INSTALL.md)) nothing more is needed: the installer, run with `sudo` from your own login, wrote your `~/.config/secretops/client.yaml` with a broker named `local` that uses your sudo. It writes nothing if that file already existed or if it was not run through `sudo` from your account. The [one-time client and broker setup](BROKER_HOST.md#human-secret-entry) applies in those cases and when the broker runs on another machine. Then choose either interactive metadata entry, a named secret, or an agent-prepared plan:
 
 ```bash
 secretops add

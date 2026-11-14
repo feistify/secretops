@@ -1,5 +1,7 @@
 # Demo: enter once, sync through an approved plan
 
+Do the [vault-only first check](INSTALL.md#first-check-vault-only) first. The demo uses `dev` as both the Infisical and the GitHub environment; you can use your own names instead, as long as the policy allows them (default: `dev` and `staging`, exact spelling; see [environment names](PREPARE.md#environment-names)).
+
 After completing [installation and authentication](INSTALL.md), use a test Infisical project and a test GitHub repository with a `dev` environment. The commands below are for the installed local broker. Enter a made-up, single-line value for this demo; never give it to the agent. Run commands one at a time and stop on any failure; exit 3 means the agent must ask the human to resolve an unknown write outcome before continuing.
 
 **Human, in your own terminal:**
