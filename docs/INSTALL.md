@@ -61,7 +61,17 @@ sudo apt install python3-venv openssh-server curl
 - **OpenSSH server**: on Ubuntu, installing `openssh-server` also starts the normal network-facing `ssh` service. secretops does not use it. If you do not want it: `sudo systemctl disable --now ssh.service ssh.socket`.
 - **Infisical CLI**: install it as root following the [official instructions](https://infisical.com/docs/cli/overview), so that it is `/usr/bin/infisical` or another root-owned path. The installer refuses a CLI that the broker or another user could replace. The tested CLI version is in the validation records.
 - **Infisical project and machine identity**: prepared as in [PREPARE.md](PREPARE.md). Installing secretops does not install Infisical.
-- **GitHub CLI** (only for GitHub sync): `gh` installed as root, for example from the [official package](https://github.com/cli/cli/blob/trunk/docs/install_linux.md).
+- **GitHub CLI** (only for GitHub sync): `gh` installed as root, for example from the [official package](https://github.com/cli/cli/blob/trunk/docs/install_linux.md). That page recommends the official packages and warns that the community-distributed 2.45.x / 2.46.x versions are broken. Tested versions are in [LIMITATIONS.md](LIMITATIONS.md).
+
+Check that each CLI is where the installer accepts it:
+
+```sh
+# Human
+namei -l "$(readlink -f /usr/bin/infisical)"
+namei -l "$(readlink -f /usr/bin/gh)"            # only for GitHub sync
+```
+
+The installer follows symlinks to the real file and requires that file to be executable, and the file and every directory above it to be owned by `root` and not writable by group or others. In the output, every line after `f:` must show owner `root` and no `w` in the group and other columns (for example `drwxr-xr-x root root usr`), and the last line must contain `x`. `/usr/bin/infisical` is required; `/usr/bin/gh` is used if it exists, otherwise the installer configures no GitHub CLI; if it exists but fails these checks, the installer stops. If a CLI is elsewhere, check that path instead and pass it with `--infisical-bin PATH` or `--gh-bin PATH` in [Install](#install).
 
 ## Install
 
@@ -73,6 +83,7 @@ curl -fsSLO https://github.com/feistify/secretops/releases/download/v0.1.6/secre
 sha256sum secretops-0.1.6-installer.tar.gz      # must match the SHA-256 in the release notes
 tar -xzf secretops-0.1.6-installer.tar.gz && cd secretops-0.1.6-installer
 sudo ./install.sh --create-agent-user agent --infisical-domain https://app.infisical.com
+# use the address of your own Infisical: EU Cloud https://eu.infisical.com or your self-hosted URL (PREPARE.md)
 ```
 
 For an existing agent account use `--agent-user NAME` instead of `--create-agent-user NAME`. Other options: `--python PATH` (default `/usr/bin/python3`; a root-owned Python 3.11 or newer with venv, kept by upgrades), `--infisical-bin PATH` (default `/usr/bin/infisical`), `--gh-bin PATH` (default `/usr/bin/gh` if present), `--port PORT` (default 22222), `--allow-untested-os` for distributions other than Ubuntu and Debian. The installer checks the system first and refuses to overwrite an existing installation, account, port, or agent key. The last lines check that the agent reaches the broker:
@@ -91,14 +102,49 @@ The installer installs secretops 0.1.6 from PyPI, checked against the SHA-256 pi
 sudo secretops-configure
 ```
 
-It asks for the vault URL, project ID and folder path, then for the access token at a hidden prompt. The token is not shown, not put in an argument or shell history, and written only to `broker.env`. Then check the connection with a secret that already exists in the project, for example one you created in the Infisical UI:
+It asks for the vault URL (Enter keeps the `--infisical-domain` address), project ID and folder path (Enter keeps `/`, the project root; see [PREPARE.md](PREPARE.md#infisical-steps)), then for the access token at a hidden prompt. The token is not shown, not put in an argument or shell history, and written only to `broker.env`. Its last line suggests a `check-vault-read` command; the first check below creates the secret it needs.
 
-```sh
-# Human
-sudo -u secretops-broker /usr/local/bin/secretops-broker check-vault-read --name EXISTING_TEST_SECRET --env dev
-```
+## First check: vault only
 
-Names starting with `SECRETOPS_`, `INFISICAL_`, `LC_`, `XDG_`, `LD_` or `PYTHON`, and a few environment names such as `HOME` and `PATH`, are reserved and refused before any vault call; use an ordinary name such as `VM_CHECK_KEY`. `OK secret exists: ...` means the token, project and folder work. `secret missing or inaccessible` for a name that exists means the folder, environment or permissions are wrong. `vault error: ...` means the token or URL is wrong. Only an existing name proves that the setup works.
+This needs no GitHub. Use a made-up name and value in `dev`, an environment the default policy allows ([environment names](PREPARE.md#environment-names)).
+
+1. Store a throwaway test secret. Type any made-up single-line value at the hidden prompt:
+
+   ```sh
+   # Human
+   secretops add FIRST_CHECK_KEY --env dev
+   # Your sudo password may be asked first, then the hidden value and Save? [y/N]
+   # Saved and verified.
+   ```
+
+2. Let the agent check it by name. `vault.read.check` needs no approval under the default policy. These commands run as the agent account; to open a shell as it, use `sudo -iu NAME` (with `--create-agent-user`, the installer's final message shows this line):
+
+   ```sh
+   # Agent account
+   cat > first-check.yaml <<'YAML'
+   action: vault.read.check
+   secret_name: FIRST_CHECK_KEY
+   env: dev
+   YAML
+   secretops-local write-recipe first-check.yaml < first-check.yaml
+   secretops-local plan --file first-check.yaml --save      # prints plan_id
+   secretops-local execute-plan --id PLAN_ID
+   # OK secret exists: FIRST_CHECK_KEY
+   ```
+
+   Replace `PLAN_ID` with the printed `plan_id`. You can run the same check yourself: `sudo -u secretops-broker /usr/local/bin/secretops-broker check-vault-read --name FIRST_CHECK_KEY --env dev`.
+
+3. Delete `FIRST_CHECK_KEY` from the `dev` environment in the Infisical web UI. secretops never deletes secrets.
+
+What the results mean:
+
+- `OK secret exists: ...`: the token, vault URL, project, environment and folder work.
+- `vault error: ...` (from `secretops add` as `Not saved: vault error: ...`): the Infisical CLI call failed. Check the token, the vault URL, the project ID, that the environment exists in your project, and that the machine identity has access to it. If your project has no `dev` environment, use your own environment name ([environment names](PREPARE.md#environment-names)).
+- `secret missing or inaccessible: ...`: the call succeeded, but the name was not among the secrets loaded for that environment and folder. Check the name, the environment and the folder path.
+- `Secret already exists`: the name is already in that environment; nothing was written.
+- Other `Not saved: ...` messages say why, for example a reserved or invalid name ([name rules](RECIPES.md#rules-for-all-recipes)).
+
+The vault part works now. GitHub login and sync below are optional; skip them if you only use the vault.
 
 ## Log the broker in to GitHub (only for GitHub sync)
 
@@ -125,7 +171,7 @@ Copy the [consumer-project instructions](AGENT_USAGE.md#instructions-for-agents-
 
 ## First workflow
 
-Follow the [demo](DEMO.md) with synthetic data in a test Infisical project and a test GitHub repository with a `dev` environment. It covers human entry, agent planning, human review and approval, sync, metadata verification and cleanup. Run human commands in your own terminal and agent commands as the configured agent account.
+If you have not done them yet, first do [Configure the vault](#configure-the-vault) and [First check: vault only](#first-check-vault-only). Then follow the [demo](DEMO.md) with synthetic data in a test Infisical project and a test GitHub repository with a `dev` environment. It covers human entry, agent planning, human review and approval, sync, metadata verification and cleanup. Run human commands in your own terminal and agent commands as the configured agent account.
 
 ## Remove a failed installation
 
