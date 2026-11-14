@@ -4717,3 +4717,98 @@ def test_plan_file_with_an_id_outside_the_pattern_is_not_found_and_not_locked(tm
     assert not (plan_dir / ".x.y.lock").exists()
     assert not (tmp_path / "infisical-called").exists()
     assert_no_secret_leak(result, plan_path, audit_path)
+
+
+# approve-plan and reject-plan record each decision that took effect
+
+
+def audit_lines(audit_path):
+    if not audit_path.exists():
+        return []
+    return [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines()]
+
+
+@pytest.mark.parametrize("command,status", DECISIONS)
+def test_decision_writes_one_audit_event(tmp_path, command, status):
+    audit_path = tmp_path / "audit.jsonl"
+    plan_dir = tmp_path / "plans"
+    plan_path = write_plan(plan_dir, copy_many_plan("audited-decision"))
+
+    result = run_secretops(command, "--id", "audited-decision", audit_path=audit_path, plan_dir=plan_dir)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    saved = read_plan(plan_path)
+    events = audit_lines(audit_path)
+    assert len(events) == 1
+    expected = {
+        "action": "vault.secret.copy_many",
+        "secret_name": "multiple",
+        "env": "dev",
+        "status": "success",
+        "secret_value_logged": False,
+        "plan_id": "audited-decision",
+        "step": "approve" if status == "approved" else "reject",
+        "outcome": status,
+    }
+    if status == "approved":
+        expected["approval_digest"] = saved["approval_digest"]
+    assert {key: value for key, value in events[0].items() if key != "timestamp"} == expected
+    assert_no_secret_leak(result, plan_path, audit_path)
+    assert_no_copy_value_leak(result, plan_path, audit_path)
+
+
+@pytest.mark.parametrize("command,status", DECISIONS)
+def test_refused_decision_writes_no_audit_event(tmp_path, command, status):
+    audit_path = tmp_path / "audit.jsonl"
+    plan_dir = tmp_path / "plans"
+    write_plan(plan_dir, rotate_plan("decided-twice", status="approved"))
+
+    result = run_secretops(command, "--id", "decided-twice", audit_path=audit_path, plan_dir=plan_dir)
+
+    assert result.returncode == 1
+    assert result.stdout.strip() == "FAIL plan status is approved; expected planned"
+    assert audit_lines(audit_path) == []
+
+
+@pytest.mark.parametrize("command,status", DECISIONS)
+def test_decision_stands_when_the_audit_event_cannot_be_written(tmp_path, command, status):
+    audit_path = tmp_path / "audit-is-a-directory"
+    audit_path.mkdir()
+    plan_dir = tmp_path / "plans"
+    plan_path = write_plan(plan_dir, rotate_plan("unaudited-decision"))
+
+    result = run_secretops(command, "--id", "unaudited-decision", audit_path=audit_path, plan_dir=plan_dir)
+
+    assert result.returncode == 1
+    lines = result.stdout.strip().splitlines()
+    assert lines[0] == f"OK plan {status}: unaudited-decision"
+    assert lines[-3:] == [
+        "WARNING the audit record could not be written",
+        f"the decision was saved and stands; the plan is {status}",
+        "ask the operator to check the audit log",
+    ]
+    assert "Traceback" not in result.stdout + result.stderr
+    assert read_plan(plan_path)["status"] == status
+    assert_no_secret_leak(result, plan_path)
+
+
+@pytest.mark.parametrize("command,status", DECISIONS)
+def test_decision_whose_status_cannot_be_saved_writes_no_audit_event(
+    tmp_path, monkeypatch, command, status
+):
+    import secretops.plan_lifecycle
+
+    plan_path = write_plan(tmp_path / "plans", rotate_plan("unsaved-decision"))
+    plan_bytes = plan_path.read_bytes()
+
+    def failing_status_save(*args, **kwargs):
+        raise OSError("read-only plan store")
+
+    monkeypatch.setattr(secretops.plan_lifecycle, "set_plan_status", failing_status_save)
+
+    with pytest.raises(OSError):
+        decide_in_process(monkeypatch, tmp_path, command, "unsaved-decision")
+
+    assert plan_path.read_bytes() == plan_bytes
+    assert audit_lines(tmp_path / "audit.jsonl") == []
+    assert_plan_lock_free("unsaved-decision")

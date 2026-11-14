@@ -171,6 +171,21 @@ check "upgrade kept broker.env" pass test "$(stat -c '%U %a' /opt/secretops/brok
 check "upgraded broker runs" pass runuser -u secretops-broker -- /usr/local/bin/secretops-broker version
 check "upgrade keeps the chosen Python" pass grep -qx "python=$PYINFO" /opt/secretops/install-info
 
+# A policy the new version refuses stops the upgrade before the switch.
+cp -p /opt/secretops/policy.yaml /root/policy.good
+printf 'stray_key: true\n' >> /opt/secretops/policy.yaml
+before=$(stat -c %i /opt/secretops/venv /opt/secretops/venv.previous; sha256sum /opt/secretops/install-info)
+check "upgrade with a stray policy key refused" deny sh -c \
+    "bash scripts/install.sh --upgrade --wheel '$WHEEL' > /tmp/policy-upgrade.out 2>&1"
+check "refused policy upgrade names the reason" pass grep -q "unknown key 'stray_key'" /tmp/policy-upgrade.out
+check "refused policy upgrade says nothing changed" pass \
+    grep -q 'refuses the configured policy.*nothing was changed' /tmp/policy-upgrade.out
+check "refused policy upgrade changed nothing" pass test "$before" = \
+    "$(stat -c %i /opt/secretops/venv /opt/secretops/venv.previous; sha256sum /opt/secretops/install-info)"
+check "refused policy upgrade left no new environment" pass test ! -e /opt/secretops/venv.new
+cp -p /root/policy.good /opt/secretops/policy.yaml
+check "broker still runs after the refused policy upgrade" pass runuser -u secretops-broker -- /usr/local/bin/secretops-broker version
+
 # Installer bundle: the same installer, pinned to one wheel by its hash.
 bundle=$(sh scripts/make-installer-bundle.sh "$WHEEL" /tmp/bundle)
 tar -C /tmp -xzf "$bundle"
