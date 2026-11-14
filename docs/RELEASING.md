@@ -10,7 +10,7 @@ How the maintainer publishes a version. Release tags cannot be moved or deleted,
    ```
 3. **Release workflow.** The tag starts `.github/workflows/release.yml`. It checks that the tag matches the version in `pyproject.toml`, runs the tests (including that `secretops version` prints it), builds the wheel, the sdist and the installer bundle, attests them, and creates a **draft** release with install commands and SHA-256 sums.
    If the run fails because of GitHub rather than the code (check githubstatus.com), re-run the job for the same tag; a tag never needs to move.
-4. **Publish the draft.** Check that the *install-container* workflow run for the tag passed. Replace the comment at the top of the notes with a short summary of the changes, then publish. Publishing starts `.github/workflows/publish.yml`.
+4. **Publish the draft.** Check that the *Installer in containers* workflow run for the tag passed. Replace the comment at the top of the notes with a short summary of the changes, then publish. Publishing starts `.github/workflows/publish.yml`.
 5. **Approve PyPI.** `publish.yml` waits for approval in the `pypi` environment, checks the wheel and sdist digests against the release, and uploads them with trusted publishing.
 6. **Check.** Run:
    ```sh
