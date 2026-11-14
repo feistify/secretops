@@ -2,6 +2,19 @@
 
 Product direction and short-, medium-, and long-term goals are recorded in [docs/ROADMAP.md](docs/ROADMAP.md). This file tracks concrete work and implementation order.
 
+## Plan — as of 2026-11-14
+
+v0.1.6 is released with the execution lock. A cold-reader test (two fresh agents, documents only) showed that a new user can finish the first workflow only by filling gaps from general knowledge; the estimates were 2 to 5 hours, and the most likely place to give up is starting the coding agent under the separate agent account. Order of work; tick a step when its pull request is merged:
+
+- [ ] 1. Documentation corrections (branch `docs-corrections`): statements that are wrong or contradict each other: `SECURITY_MODEL` on concurrent execution, old command forms in `AGENT_USAGE`, two example recipes that do not match the reference, `cd /` versus `cd /tmp` before `gh auth login`, two sets of tested versions in `LIMITATIONS`, and the default Infisical domain.
+- [ ] 2. New-user path (branch `docs-new-user-path`): Infisical Cloud and environment names in `PREPARE`, prerequisite checks in `INSTALL`, vault preparation before the install commands in the README, the note that a local install already configures `secretops add`, and a first success that needs only the vault.
+- [ ] 3. The owner installs v0.1.6 on the laptop from `INSTALL` and `PREPARE` only, with a separate agent account, and records where it is hard. The old hand-made broker is removed by hand once; no migration tooling is built for it.
+- [ ] 4. From that record: document one supported way to start the coding agent under the agent account (login, agent installation, Git access), add the missing rows to the failure table in `OPERATIONS`, and state what the installer changes and does not change.
+- [ ] 5. First real-project use (section 7).
+- [ ] 6. The rest of section 9, the CI work in section 10, the launch in section 11, then several vault projects per broker (section 8).
+
+Steps 1 and 2 are written by agents on their own branches and reviewed before the owner commits; they touch different files.
+
 ## Current status and short-term goal
 
 secretops is a CLI-first SecretOps broker. It is not a vault: external vaults remain the source of truth, and agents operate on names, metadata, plans, approvals, and safe results rather than secret values.
@@ -12,7 +25,7 @@ The Infisical adapter hardening is implemented and verified against the NAS inst
 
 The previous goal is reached: a human enters an externally created API key through a hidden prompt, the broker stores it in Infisical, and an agent transfers it to GitHub through a separately approved plan, documented and repeatable from a clean installation.
 
-Plan destination binding is complete and validated (PR #6). The human secret-entry CLI (`secretops add`) is implemented, with direct and agent-prepared entry validated through the real local sudo broker ([results and limits](docs/validation/interactive-secret-entry.md)). GitHub target reliability and the complete local-sudo entry-to-GitHub workflow are now validated ([results and limits](docs/validation/github-target-reliability.md)). Installation and operating guides are merged (PR #10) and a clean installation is validated with a self-hosted Infisical and GitHub ([results and limits](docs/validation/local-broker-installation.md)). Remaining manual checks are tracked below. The public repository is released; the latest release is [v0.1.6](https://github.com/feistify/secretops/releases/tag/v0.1.6). Next: first real-project use (section 7), then the remaining onboarding items it shows are needed (section 6), the rest of section 9 and the CI work in section 10, then several vault projects per broker (section 8).
+Plan destination binding is complete and validated (PR #6). The human secret-entry CLI (`secretops add`) is implemented, with direct and agent-prepared entry validated through the real local sudo broker ([results and limits](docs/validation/interactive-secret-entry.md)). GitHub target reliability and the complete local-sudo entry-to-GitHub workflow are now validated ([results and limits](docs/validation/github-target-reliability.md)). Installation and operating guides are merged (PR #10) and a clean installation is validated with a self-hosted Infisical and GitHub ([results and limits](docs/validation/local-broker-installation.md)). Remaining manual checks are tracked below. The public repository is released; the latest release is [v0.1.6](https://github.com/feistify/secretops/releases/tag/v0.1.6). Next: see the plan at the top of this file.
 
 ## P1 — Deliver the first complete daily-use workflow
 
@@ -21,6 +34,7 @@ Plan destination binding is complete and validated (PR #6). The human secret-ent
 - [x] Add interactive entry of an externally created credential, such as a Scaleway IAM API key, without manually preparing an import file. Start with one name and one value. Implemented as `secretops add` and `vault.secret.add` ([design and gate results](docs/design/interactive-secret-entry.md)); local-sudo live results are recorded [here](docs/validation/interactive-secret-entry.md).
 - [ ] Finish real-broker validation (design acceptance criteria 11–14). CLI `0.43.99`, direct and agent-prepared entry, read-back confirmation, and existing-name refusal passed through local sudo. Standalone terminal paste/cancel/decline checks passed. Still open: complete broker cancellation/decline checks, changed destination, live agent-endpoint denial, audit validation, terminal application/version identification, and the SSH routes if supported. Keep partial evidence and remaining limits in the [validation record](docs/validation/interactive-secret-entry.md).
 - [ ] Before claiming these combinations are validated, test human secret entry over SSH (direct and remote sudo) and terminal input inside tmux. Both remain untested; current manual entry evidence covers local sudo without tmux only.
+- [ ] Replace a secret whose value a human provides. `secretops add` refuses an existing name and `vault.secret.rotate` generates a random value, so a new provider key for an existing name has no path. Found by the cold-reader test; design it as an explicit replace with the same review and read-back as `add`.
 - Prompt for name, environment, and explicit destination metadata. Use a hidden terminal prompt for the value; refuse echoed fallback when no suitable terminal is available.
 - Transfer the value through a narrowly scoped human-to-broker channel, such as stdin over SSH. Keep it out of arguments, shell history, recipes, plans, output, audit logs, and agent-visible files. Credentials remain on the broker.
 - Preserve policy checks, saved planning, preflight, human approval, and create-only defaults. Replacement is explicit. Design how submission is tied to the approved plan and destination before implementation; collect the value only when needed for execution.
@@ -112,6 +126,7 @@ A person should understand from one short page what secretops does, what it can 
 - [ ] Proxy settings for an installed broker: `secretops-configure` accepts no `HTTPS_PROXY`/`NO_PROXY`, so `gh` cannot reach GitHub through a mandatory proxy, and the Infisical adapter passes no proxy variables at all. Add them as known `broker.env` keys and pass them to both CLIs.
 - [ ] Installation guide for people new to this: a short "what you need before you start" checklist (accounts, tools, about how long), one path from an empty Ubuntu machine to a working demo, and the coding agent's own installation and login under the agent account. Today INSTALL is correct but dense.
 - [ ] First success without GitHub: INSTALL and the demo lead straight to a GitHub sync, although GitHub is optional. Add a short first check that needs only the vault: `secretops add`, then a `vault.read.check` plan run by the agent. Documentation only.
+- [ ] Document the exit codes of `plan` and `preflight-plan`: agents are told to stop "if preflight fails" without being told the signal. Found by the cold-reader test.
 - [ ] Machine-readable results: decide whether `show-plan`, `preflight-plan` and `execute-plan` need a stable `--json` output for agents.
 - [ ] MCP: evaluate a thin MCP server over `secretops-local` (typed tools, no new authority; approval stays human-only). Decide after the items above, based on whether agents still struggle.
 - [ ] Check with a fresh agent session: from the repository URL alone to a planned, approved and executed demo sync; record where it got stuck.
