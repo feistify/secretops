@@ -21,7 +21,7 @@ sudo -u secretops-broker /usr/local/bin/secretops-broker
 
 Recipes contain names and target metadata only, never values; examples are in [`examples/recipes/`](../examples/recipes/). Vault rotation and GitHub sync are separate plans: rotating a secret does not update GitHub until a sync plan is approved and executed. Production writes are blocked by the default policy, even with approval.
 
-Before approving, read the whole `show-plan` output: action, environment, vault destination, every source and target name, and the GitHub repository and environment. Do not approve a plan whose preflight failed.
+Before approving, read the whole `show-plan` output: action, environment, vault destination, every source and target name, and the GitHub repository and environment. Do not approve a plan whose preflight failed. Check `planned_at` too: a plan has no age limit before approval, only after it.
 
 ## When something fails
 
@@ -35,6 +35,8 @@ Before approving, read the whole `show-plan` output: action, environment, vault 
 | any command: `FAIL policy file ...` | `/opt/secretops/policy.yaml` has an unknown key (often a typo) or a wrongly typed value, or cannot be read; nothing was done | correct what the message names ([policy file](CONFIGURATION.md#policy-file)), then run the command again |
 | preflight fails | a check failed before anything was written | fix the cause (name, policy, connection), plan again |
 | `plan already executed` | the plan ran before; its status is kept | to run it again, save a new plan (and approve it, for a write) |
+| `plan requires approval`, `not approved yet` | `execute-plan` ran before the approval; nothing was done and the plan is still `planned` | approve it (human), then execute it once |
+| `approval expired`, `approval time is in the future`, `approved by an older secretops version` | the approval is older than `approval_valid_hours` (default 24), the clock moved back, or the plan was approved before the upgrade; no provider call, the plan is now `failed` | save a new plan and approve it |
 | `plan is in use by another command` | another command (execute, approve, reject or `secretops add`) is working on this plan; nothing was done | wait for it to finish, check the plan with `show-plan`, then try again if still needed |
 | `plan lock could not be taken` | the lock file beside the plan cannot be opened (plan directory permissions); nothing was done | fix ownership and permissions of the plan directory, then try again |
 | `approve-plan` / `reject-plan`: `the audit record could not be written` (exit 1) | the decision was saved and stands; only its audit event is missing | fix the audit directory permissions or disk space; do not decide again, the plan is no longer `planned` |
@@ -76,7 +78,7 @@ The GitHub login is renewed the same way it was created: `cd / && sudo -u secret
    sudo ./install.sh --upgrade
    ```
    It refuses while broker processes are running. It builds and checks the new application before switching, then replaces the wrappers. `broker.env`, policy, plans, audit, the SSH service and keys are not changed. It keeps a Python given with `--python` at installation; pass `--python PATH` to change it. If the new version ships a different default policy, it says so and leaves yours unchanged. If the new version refuses the policy the broker uses (the one `broker.env` names; for example a key it does not know or a quoted `"false"`; earlier versions accepted both), the upgrade stops before switching with `the new version refuses the configured policy` below the reason; nothing was changed. Correct what it names and run the upgrade again.
-3. Read the release notes: a new plan contract version means open plans must be planned and approved again.
+3. Read the release notes: a new plan contract version means open plans must be planned and approved again. Upgrading from a version without approval times (0.1.9 and earlier) is the same for approved plans that have not run: they are refused and must be planned and approved again; `planned` plans keep working. The upgrade keeps your policy file: to run the read-only checks in `prod`, add `prod` to `allowed_environments` of `vault.read.check`, `vault.secret.diff_envs` and `github.env_secret.verify_many` there; `approval_valid_hours` and `production_environments` are optional ([policy file](CONFIGURATION.md#policy-file)). The production refusal now ends with `(environment NAME is a production environment by policy)`.
 4. **Agent:** `secretops-local version`.
 
 ### Roll back an upgrade
@@ -95,7 +97,7 @@ done
 sudo -u secretops-broker /usr/local/bin/secretops-broker version
 ```
 
-Rollback does not change plans or audit: plans executed after the upgrade stay executed.
+Rollback does not change plans or audit: plans executed after the upgrade stay executed. Before rolling back past the version that added approval times, remove `approval_valid_hours` and `production_environments` from the policy file (the older version refuses unknown keys), and plan again anything saved after the upgrade: the older version refuses those plans as not matching its schema.
 
 ## Back up
 

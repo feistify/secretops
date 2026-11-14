@@ -185,12 +185,12 @@ def recording_infisical_bin(tmp_path):
 
 
 def test_check_vault_read_refuses_an_environment_the_policy_denies(tmp_path, monkeypatch):
-    # The default policy allows the check in dev, staging and production only.
+    # The default policy allows the check in dev, staging, production and prod only.
     from secretops.policy import require_environment_allowed
 
     audit_path = tmp_path / "audit.jsonl"
     bin_dir, marker = recording_infisical_bin(tmp_path)
-    for env in ("qa", "prod"):
+    for env in ("qa", "Prod"):
         with pytest.raises(PermissionError):
             require_environment_allowed("vault.read.check", env)
 
@@ -209,7 +209,7 @@ def test_check_vault_read_refuses_an_environment_the_policy_denies(tmp_path, mon
     events = read_audit_events(audit_path)
     assert [(event["env"], event["status"], event["failure"]) for event in events] == [
         ("qa", "fail", "policy"),
-        ("prod", "fail", "policy"),
+        ("Prod", "fail", "policy"),
     ]
     assert_no_secret_leak(result, audit_path)
 
@@ -264,7 +264,8 @@ def test_check_vault_read_follows_a_custom_environment_policy(tmp_path, monkeypa
         "FAIL environment denied by policy for vault.read.check: staging"
     )
     assert denied["production"].stdout.splitlines()[0] == (
-        "FAIL production execution denied by policy: vault.read.check"
+        "FAIL production execution denied by policy: vault.read.check "
+        "(environment production is a production environment by policy)"
     )
     assert all(result.returncode == 1 for result in denied.values())
     assert not marker.exists()

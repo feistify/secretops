@@ -8,6 +8,7 @@ import tempfile
 import uuid
 from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +32,13 @@ PLAN_STATUSES = {"planned", "approved", "rejected", "executed", "failed"}
 # the JSON structure; plans with another version must be replanned.
 CONTRACT_VERSION = 1
 DIGEST_PREFIX = "sha256-v1:"
-DIGEST_EXCLUDED_FIELDS = ("status", "approval_digest")
+# `approved_at` is written together with the approval, after the digest is
+# taken, so it cannot be covered; it is protected like `status` (the plan
+# store is broker-owned). No plan had it before, so no digest changes.
+DIGEST_EXCLUDED_FIELDS = ("status", "approval_digest", "approved_at")
+# Planning and approval times: UTC, whole seconds, one fixed form.
+TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+TIMESTAMP_PATTERN = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
 
 # Actions that read or write the vault and therefore record its destination.
 VAULT_ACTIONS = frozenset(
@@ -84,6 +91,8 @@ OPTIONAL_FIELD_TYPES = {
     "value_source": str,
     "vault_destination": dict,
     "approval_digest": str,
+    "planned_at": str,
+    "approved_at": str,
 }
 # Per action: fields that must be present, fields that may be present, and
 # the shape of secret_mappings entries ("name" or "source_target").
@@ -127,6 +136,22 @@ GITHUB_TARGET_FIELD_TYPES = {
 
 
 PLAN_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+
+def utc_now() -> datetime:
+    """The clock of plan times; tests replace it."""
+    return datetime.now(timezone.utc)
+
+
+def format_timestamp(moment: datetime) -> str:
+    return moment.astimezone(timezone.utc).strftime(TIMESTAMP_FORMAT)
+
+
+def parse_timestamp(text: str) -> datetime:
+    """Parse a plan time. Raises ValueError for anything but the fixed form."""
+    if not TIMESTAMP_PATTERN.fullmatch(text):
+        raise ValueError("timestamp is not in the plan format")
+    return datetime.strptime(text, TIMESTAMP_FORMAT).replace(tzinfo=timezone.utc)
 
 
 class PlanBusyError(Exception):
@@ -177,6 +202,10 @@ class PlanArtifact:
     contract_version: int | None = None
     vault_destination: dict[str, str] | None = None
     approval_digest: str | None = None
+    # UTC times in TIMESTAMP_FORMAT. Plans saved by older versions have
+    # neither; an approved plan without `approved_at` cannot execute.
+    planned_at: str | None = None
+    approved_at: str | None = None
     # The parsed file content this artifact was loaded from. Status writes
     # replace only the status in this content, never reload the file.
     loaded_content: dict[str, Any] | None = field(default=None, compare=False, repr=False)
@@ -272,6 +301,7 @@ def build_plan_artifact(recipe, vault_destination: dict[str, str] | None = None)
         value_source=value_source,
         contract_version=CONTRACT_VERSION,
         vault_destination=dict(vault_destination) if vault_destination else None,
+        planned_at=format_timestamp(utc_now()),
     )
     # Refuse a plan that could not be loaded again before anything is saved.
     try:
@@ -343,7 +373,7 @@ def validate_plan_content(data: Any, expected_plan_id: str | None = None) -> Non
     required = set(REQUIRED_FIELD_TYPES) | action_required
     if action in VAULT_ACTIONS:
         required.add("vault_destination")
-    allowed = required | action_optional | {"approval_digest"}
+    allowed = required | action_optional | {"approval_digest", "planned_at", "approved_at"}
     types = dict(REQUIRED_FIELD_TYPES)
     types.update({key: OPTIONAL_FIELD_TYPES[key] for key in allowed - set(REQUIRED_FIELD_TYPES)})
     _check_fields(data, types, required=required)
@@ -354,6 +384,12 @@ def validate_plan_content(data: Any, expected_plan_id: str | None = None) -> Non
         raise PlanFileError("invalid_schema")
     if "approval_digest" in data and not data["approval_digest"].startswith(DIGEST_PREFIX):
         raise PlanFileError("invalid_schema")
+    for key in ("planned_at", "approved_at"):
+        if key in data:
+            try:
+                parse_timestamp(data[key])
+            except ValueError as error:
+                raise PlanFileError("invalid_schema") from error
 
     try:
         if "vault_destination" in data:
@@ -413,7 +449,7 @@ def validate_plan_content(data: Any, expected_plan_id: str | None = None) -> Non
 def plan_digest(data: dict[str, Any]) -> str:
     """Digest of the operation content of a parsed plan.
 
-    Covers every field except `status` and `approval_digest`. The canonical
+    Covers every field except DIGEST_EXCLUDED_FIELDS. The canonical
     form is fixed by DIGEST_PREFIX; changing it needs a new prefix.
     """
     content = {key: value for key, value in data.items() if key not in DIGEST_EXCLUDED_FIELDS}
@@ -448,6 +484,8 @@ def _artifact_from_content(data: dict[str, Any]) -> PlanArtifact:
         contract_version=data["contract_version"],
         vault_destination=data.get("vault_destination"),
         approval_digest=data.get("approval_digest"),
+        planned_at=data.get("planned_at"),
+        approved_at=data.get("approved_at"),
         loaded_content=data,
     )
 
@@ -550,10 +588,14 @@ def save_plan(plan: PlanArtifact) -> Path:
 
 
 def set_plan_status(
-    plan: PlanArtifact, status: str, *, approval_digest: str | None = None
+    plan: PlanArtifact,
+    status: str,
+    *,
+    approval_digest: str | None = None,
+    approved_at: str | None = None,
 ) -> PlanArtifact:
-    """Write a new status (and optionally the approval digest) into the
-    content this plan was loaded from. The file is not read again."""
+    """Write a new status (and optionally the approval digest and time) into
+    the content this plan was loaded from. The file is not read again."""
     if status not in PLAN_STATUSES:
         raise ValueError(f"unsupported plan status: {status}")
     if plan.loaded_content is None:
@@ -562,6 +604,8 @@ def set_plan_status(
     data["status"] = status
     if approval_digest is not None:
         data["approval_digest"] = approval_digest
+    if approved_at is not None:
+        data["approved_at"] = approved_at
     validate_plan_content(data, plan.plan_id)
     _write_plan_content(plan.plan_id, data)
     return _artifact_from_content(data)

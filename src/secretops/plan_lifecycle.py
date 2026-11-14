@@ -1,4 +1,5 @@
 import contextlib
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import typer
@@ -20,13 +21,16 @@ from secretops.plans import (
     PlanBusyError,
     PlanFileError,
     PlanLockError,
+    format_timestamp,
     load_legacy_plan_for_display,
     load_plan,
+    parse_timestamp,
     plan_digest,
     plan_lock,
     set_plan_status,
+    utc_now,
 )
-from secretops.policy import require_environment_allowed, requires_approval
+from secretops.policy import load_policy, require_environment_allowed, requires_approval
 from secretops.targets import (
     GitHubCliEnvSecretTarget,
     GitHubConfigurationError,
@@ -507,7 +511,7 @@ def _fail_plan_file(plan_id: str, command: str, console: Console, error: PlanFil
         plan_id=plan_id,
         details={"failure": error.category},
     )
-    console.print(f"[red]FAIL[/red] {error}")
+    console.print(f"[red]FAIL[/red] {error}", soft_wrap=True)
     console.print("secret values were not printed")
     raise typer.Exit(1) from error
 
@@ -649,6 +653,47 @@ def show_saved_plan(plan_id: str, console: Console) -> None:
     console.print(f"plan_digest: {plan_digest(plan_artifact.loaded_content)}", soft_wrap=True)
     if plan_artifact.approval_digest is not None:
         console.print(f"approval_digest: {plan_artifact.approval_digest}", soft_wrap=True)
+    for line in _plan_time_lines(plan_artifact):
+        console.print(line)
+
+
+def _plan_time_lines(plan_artifact) -> list[str]:
+    lines = [f"planned_at: {plan_artifact.planned_at or 'not recorded (older version)'}"]
+    if plan_artifact.approved_at is not None:
+        lines.append(f"approved_at: {plan_artifact.approved_at}")
+    elif plan_artifact.status == "approved":
+        lines.append("approved_at: not recorded (older version)")
+    if plan_artifact.status == "approved" and plan_artifact.action not in HUMAN_ENTRY_ACTIONS:
+        hours = load_policy().approval_valid_hours
+        refusal = approval_expiry_refusal(plan_artifact, hours, utc_now())
+        if plan_artifact.approved_at is not None:
+            expires = _approval_expires_at(plan_artifact.approved_at, hours)
+            lines.append(f"approval_expires_at: {format_timestamp(expires)}")
+        lines.append(f"approval_valid: {'no; ' + refusal if refusal else 'yes'}")
+    return lines
+
+
+def _approval_expires_at(approved_at: str, hours: int) -> datetime:
+    return parse_timestamp(approved_at) + timedelta(hours=hours)
+
+
+def approval_expiry_refusal(plan_artifact, hours: int, now: datetime) -> str | None:
+    """Why an approved plan may no longer execute, or None.
+
+    Fails closed: no recorded approval time (approved by an older version),
+    an approval time in the future (the clock moved back), and the moment
+    the period ends all count as expired.
+    """
+    if plan_artifact.status != "approved":
+        return None
+    if plan_artifact.approved_at is None:
+        return "plan was approved by an older secretops version without an approval time"
+    approved = parse_timestamp(plan_artifact.approved_at)
+    if approved > now:
+        return "approval time is in the future (the clock may have changed)"
+    if now >= approved + timedelta(hours=hours):
+        return f"approval expired: approved more than {hours} hours ago"
+    return None
 
 
 def transition_planned_plan(
@@ -702,7 +747,8 @@ def _transition_loaded_plan(plan_artifact, status: str, label: str, console: Con
     # Status and digest are written from the content that was just checked;
     # the file is not read again in between.
     digest = plan_digest(plan_artifact.loaded_content) if status == "approved" else None
-    set_plan_status(plan_artifact, status, approval_digest=digest)
+    approved_at = format_timestamp(utc_now()) if status == "approved" else None
+    set_plan_status(plan_artifact, status, approval_digest=digest, approved_at=approved_at)
     # Recorded after the status is saved, still under the plan lock, so the
     # audit log holds only decisions that took effect. Same step and outcome
     # names as the approval recorded by `secretops add`.
@@ -721,6 +767,11 @@ def _transition_loaded_plan(plan_artifact, status: str, label: str, console: Con
     console.print(f"OK plan {label}: {plan_id}")
     if digest is not None:
         console.print(f"approval_digest: {digest}", soft_wrap=True)
+        hours = load_policy().approval_valid_hours
+        console.print(f"approved_at: {approved_at}")
+        console.print(
+            f"approval_expires_at: {format_timestamp(_approval_expires_at(approved_at, hours))}"
+        )
     if not audit_written:
         console.print("[red]WARNING[/red] the audit record could not be written")
         console.print(f"the decision was saved and stands; the plan is {status}")
@@ -732,11 +783,38 @@ def preflight_saved_plan(plan_id: str, console: Console) -> None:
     plan_artifact = _load_plan_or_exit(plan_id, "preflight-plan", console)
     # Preflight must not mutate plan status.
     _require_plan_binding(plan_artifact, console, mark_failed=False)
+    _preflight_approval_validity(plan_artifact, console)
     try:
         _preflight_plan(plan_artifact, console)
     except VaultError as error:
         # Preflight must not mutate plan status.
         _fail_vault_error(plan_artifact, console, error, mark_failed=False)
+
+
+def _preflight_approval_validity(plan_artifact, console: Console) -> None:
+    """Fail preflight for an approved plan that execute-plan would refuse as
+    expired. A plan that is not approved yet passes as before."""
+    if plan_artifact.action in HUMAN_ENTRY_ACTIONS:
+        return
+    refusal = approval_expiry_refusal(
+        plan_artifact, load_policy().approval_valid_hours, utc_now()
+    )
+    if refusal is None:
+        return
+    write_audit_event(
+        action=plan_artifact.action,
+        secret_name=_secret_name_for_policy_audit(plan_artifact),
+        env=plan_artifact.source_env or plan_artifact.env,
+        status="failure",
+        plan_id=plan_artifact.plan_id,
+        details={"failure": "approval_expired"},
+    )
+    console.print(f"[red]FAIL[/red] preflight failed: {plan_artifact.action}")
+    console.print(f"approval_valid: no; {refusal}")
+    console.print("no provider call was made")
+    console.print("save a new plan and ask the human to review and approve it")
+    console.print("secret value was not printed")
+    raise typer.Exit(1)
 
 
 def _preflight_plan(plan_artifact, console: Console) -> None:
@@ -1113,12 +1191,70 @@ def _approval_required_message(action: str) -> str:
     }.get(action, f"{action} plan requires approval")
 
 
-def _require_plan_execution_allowed(plan_artifact, console: Console) -> None:
+def _not_printed_lines(action: str) -> list[str]:
+    lines = []
+    if action in {"vault.secret.generate", "vault.secret.rotate"}:
+        lines.append("secret value was not generated")
+    if action == "vault.secret.import_file":
+        lines.append("source file contents were not read")
+    return [*lines, "secret value was not printed"]
+
+
+def _refuse_unapproved(plan_artifact, console: Console, *, secret_name: str | None = None) -> None:
+    """Refuse a plan that needs approval and is not approved.
+
+    A `planned` plan still waits for the human: it is left unchanged, so the
+    same plan can be approved and executed later. Any other status (only
+    `failed` reaches this point) is refused as before and stays `failed`.
+    """
+    pending = plan_artifact.status == "planned"
+    write_audit_event(
+        action=plan_artifact.action,
+        secret_name=secret_name or _secret_name_for_policy_audit(plan_artifact),
+        env=plan_artifact.source_env or plan_artifact.env,
+        status="failure",
+        plan_id=plan_artifact.plan_id,
+        details={"failure": "approval_pending"} if pending else {},
+    )
+    if not pending:
+        set_plan_status(plan_artifact, "failed")
+    console.print(f"[red]FAIL[/red] {_approval_required_message(plan_artifact.action)}")
+    if pending:
+        console.print("the plan is not approved yet; it stays planned and nothing was done")
+        console.print("no provider call was made")
+        console.print("wait until the human has approved it; do not retry to check")
+    for line in _not_printed_lines(plan_artifact.action):
+        console.print(line)
+    raise typer.Exit(1)
+
+
+# Write actions that need an approved plan even when a custom policy sets
+# requires_approval: false; each also checks this again on its own path.
+APPROVAL_ALWAYS_REQUIRED = frozenset(
+    {
+        "vault.secret.generate",
+        "vault.secret.rotate",
+        "vault.secret.import_file",
+        "vault.secret.copy_many",
+        "github.env_secret.write",
+        "github.env_secret.sync_many",
+    }
+)
+
+
+def _needs_approval(plan_artifact) -> bool:
+    return (
+        plan_artifact.action in APPROVAL_ALWAYS_REQUIRED
+        or requires_approval(plan_artifact.action)
+    )
+
+
+def _require_environment_policy(plan_artifact, console: Console) -> None:
+    # A plan the environment policy refuses can never run: it is marked
+    # failed, also while it still waits for approval.
     try:
         for environment in _execution_policy_environments(plan_artifact):
             require_environment_allowed(plan_artifact.action, environment)
-        if requires_approval(plan_artifact.action) and plan_artifact.status != "approved":
-            raise PermissionError(_approval_required_message(plan_artifact.action))
     except PermissionError as error:
         write_audit_event(
             action=plan_artifact.action,
@@ -1128,13 +1264,36 @@ def _require_plan_execution_allowed(plan_artifact, console: Console) -> None:
             plan_id=plan_artifact.plan_id,
         )
         set_plan_status(plan_artifact, "failed")
-        console.print(f"[red]FAIL[/red] {error}")
-        if plan_artifact.action in {"vault.secret.generate", "vault.secret.rotate"}:
-            console.print("secret value was not generated")
-        if plan_artifact.action == "vault.secret.import_file":
-            console.print("source file contents were not read")
-        console.print("secret value was not printed")
+        console.print(f"[red]FAIL[/red] {error}", soft_wrap=True)
+        for line in _not_printed_lines(plan_artifact.action):
+            console.print(line)
         raise typer.Exit(1) from error
+
+
+def _refuse_expired_approval(plan_artifact, console: Console) -> None:
+    """Refuse an approved plan whose approval is no longer valid, before any
+    provider call. The plan is marked failed: approve-plan accepts only
+    planned plans, so the way on is a new plan and a new approval."""
+    refusal = approval_expiry_refusal(
+        plan_artifact, load_policy().approval_valid_hours, utc_now()
+    )
+    if refusal is None:
+        return
+    write_audit_event(
+        action=plan_artifact.action,
+        secret_name=_secret_name_for_policy_audit(plan_artifact),
+        env=plan_artifact.source_env or plan_artifact.env,
+        status="failure",
+        plan_id=plan_artifact.plan_id,
+        details={"failure": "approval_expired"},
+    )
+    set_plan_status(plan_artifact, "failed")
+    console.print(f"[red]FAIL[/red] {refusal}")
+    console.print("no provider call was made; the plan is now failed")
+    console.print("save a new plan and ask the human to review and approve it")
+    for line in _not_printed_lines(plan_artifact.action):
+        console.print(line)
+    raise typer.Exit(1)
 
 
 def execute_saved_plan(plan_id: str, console: Console) -> None:
@@ -1191,9 +1350,19 @@ def _execute_loaded_plan(plan_artifact, console: Console) -> None:
         console.print("secret value was not printed")
         raise typer.Exit(1)
 
-    # Repeated even after a passing preflight: configuration can change.
+    # Order of checks, all before any provider call:
+    # 1. environment policy (refused: marked failed);
+    # 2. approval (a planned plan stays planned; a failed one stays failed),
+    #    before the binding check, so a vault error or a changed destination
+    #    cannot fail a plan that still waits for the human;
+    # 3. binding: approval digest and vault destination (marked failed),
+    #    repeated even after a passing preflight, as configuration can change;
+    # 4. approval validity (expired: marked failed).
+    _require_environment_policy(plan_artifact, console)
+    if _needs_approval(plan_artifact) and plan_artifact.status != "approved":
+        _refuse_unapproved(plan_artifact, console)
     _require_plan_binding(plan_artifact, console, mark_failed=True)
-    _require_plan_execution_allowed(plan_artifact, console)
+    _refuse_expired_approval(plan_artifact, console)
 
     try:
         _execute_plan(plan_artifact, console)
@@ -1240,6 +1409,8 @@ def _execute_plan(plan_artifact, console: Console) -> None:
         return
 
     if plan_artifact.action == "vault.secret.import_file":
+        if plan_artifact.status != "approved":
+            _refuse_unapproved(plan_artifact, console)
         vault = _bound_vault(plan_artifact)
         create_mode = plan_artifact.create_mode or "create_only"
         source_file = plan_artifact.source_file or ""
@@ -1332,18 +1503,7 @@ def _execute_plan(plan_artifact, console: Console) -> None:
     if plan_artifact.action == "vault.secret.rotate":
         target_secret = _required_secret_name_for_execution(plan_artifact, console)
         if plan_artifact.status != "approved":
-            write_audit_event(
-                action=plan_artifact.action,
-                secret_name=target_secret,
-                env=plan_artifact.env,
-                status="failure",
-                plan_id=plan_artifact.plan_id,
-            )
-            set_plan_status(plan_artifact, "failed")
-            console.print("[red]FAIL[/red] vault.secret.rotate plan requires approval")
-            console.print("secret value was not generated")
-            console.print("secret value was not printed")
-            raise typer.Exit(1)
+            _refuse_unapproved(plan_artifact, console, secret_name=target_secret)
 
         vault = _bound_vault(plan_artifact)
         if not vault.secret_exists(target_secret, plan_artifact.env):
@@ -1390,17 +1550,7 @@ def _execute_plan(plan_artifact, console: Console) -> None:
 
     if plan_artifact.action == "vault.secret.copy_many":
         if plan_artifact.status != "approved":
-            write_audit_event(
-                action=plan_artifact.action,
-                secret_name="multiple",
-                env=plan_artifact.source_env or plan_artifact.env,
-                status="failure",
-                plan_id=plan_artifact.plan_id,
-            )
-            set_plan_status(plan_artifact, "failed")
-            console.print("[red]FAIL[/red] vault.secret.copy_many plan requires approval")
-            console.print("secret values were not printed")
-            raise typer.Exit(1)
+            _refuse_unapproved(plan_artifact, console)
 
         vault = _bound_vault(plan_artifact)
         mappings = plan_artifact.secret_mappings or []
@@ -1466,16 +1616,7 @@ def _execute_plan(plan_artifact, console: Console) -> None:
     if plan_artifact.action == "vault.secret.generate":
         target_secret = _required_secret_name_for_execution(plan_artifact, console)
         if plan_artifact.status != "approved":
-            write_audit_event(
-                action=plan_artifact.action,
-                secret_name=target_secret,
-                env=plan_artifact.env,
-                status="failure",
-                plan_id=plan_artifact.plan_id,
-            )
-            set_plan_status(plan_artifact, "failed")
-            console.print("[red]FAIL[/red] vault.secret.generate plan requires approval")
-            raise typer.Exit(1)
+            _refuse_unapproved(plan_artifact, console, secret_name=target_secret)
 
         vault = _bound_vault(plan_artifact)
         create_mode = plan_artifact.create_mode or "create_only"
@@ -1621,16 +1762,7 @@ def _execute_plan(plan_artifact, console: Console) -> None:
             raise typer.Exit(1)
     elif plan_artifact.action == "github.env_secret.sync_many":
         if plan_artifact.status != "approved":
-            console.print("[red]FAIL[/red] GitHub sync_many plan requires approval")
-            write_audit_event(
-                action=plan_artifact.action,
-                secret_name="multiple",
-                env=plan_artifact.env,
-                status="failure",
-                plan_id=plan_artifact.plan_id,
-            )
-            set_plan_status(plan_artifact, "failed")
-            raise typer.Exit(1)
+            _refuse_unapproved(plan_artifact, console)
 
         github_target = _github_target(plan_artifact, console)
         vault = _bound_vault(plan_artifact)
@@ -1644,16 +1776,7 @@ def _execute_plan(plan_artifact, console: Console) -> None:
         )
     elif plan_artifact.action == "github.env_secret.write":
         if plan_artifact.status != "approved":
-            console.print("[red]FAIL[/red] GitHub write plan requires approval")
-            write_audit_event(
-                action=plan_artifact.action,
-                secret_name=plan_artifact.secret_name,
-                env=plan_artifact.env,
-                status="failure",
-                plan_id=plan_artifact.plan_id,
-            )
-            set_plan_status(plan_artifact, "failed")
-            raise typer.Exit(1)
+            _refuse_unapproved(plan_artifact, console)
 
         target = plan_artifact.target or {}
         github_target = _github_target(plan_artifact, console)

@@ -1,3 +1,14 @@
+# Hours an approval made with approve-plan stays executable (1 to 168).
+approval_valid_hours: 24
+
+# Environment names treated as production, compared without regard to case.
+# production and prod always are; add further names here. Actions with
+# production_allowed: false are refused there even if allowed_environments
+# lists them.
+production_environments:
+  - production
+  - prod
+
 allowed_actions:
   - vault.read.plan
   - vault.read.check
@@ -25,6 +36,7 @@ actions:
       - dev
       - staging
       - production
+      - prod
     production_allowed: true
   vault.secret.generate:
     requires_approval: true
@@ -50,6 +62,7 @@ actions:
       - dev
       - staging
       - production
+      - prod
     production_allowed: true
   vault.secret.import_file:
     requires_approval: true
@@ -87,4 +100,5 @@ actions:
       - dev
       - staging
       - production
+      - prod
     production_allowed: true

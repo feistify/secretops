@@ -109,7 +109,14 @@ TEST_VAULT_DESTINATION = {
 def bind_plan(plan):
     """Turn a hand-written plan into a contract version 1 plan for the test
     vault configuration, approved with a digest when its status says so."""
-    from secretops.plans import CONTRACT_VERSION, GITHUB_ACTIONS, VAULT_ACTIONS, plan_digest
+    from secretops.plans import (
+        CONTRACT_VERSION,
+        GITHUB_ACTIONS,
+        VAULT_ACTIONS,
+        format_timestamp,
+        plan_digest,
+        utc_now,
+    )
 
     plan = json.loads(json.dumps(plan))
     plan.setdefault("contract_version", CONTRACT_VERSION)
@@ -121,6 +128,12 @@ def bind_plan(plan):
         plan["target"].setdefault("secret_value_printed", False)
     if plan.get("status") == "approved" and "approval_digest" not in plan:
         plan["approval_digest"] = plan_digest(plan)
+    # Approved now unless the test sets a time; None leaves it out, as in a
+    # plan approved by an older version.
+    if plan.get("status") == "approved":
+        plan.setdefault("approved_at", format_timestamp(utc_now()))
+    if plan.get("approved_at", "") is None:
+        del plan["approved_at"]
     return plan
 
 
@@ -967,9 +980,11 @@ def test_github_saved_plan_cannot_execute_unless_approved(tmp_path):
     )
 
     output = result.stdout + result.stderr
-    assert result.returncode != 0
+    assert result.returncode == 1
     assert "GitHub plan requires approval" in output
-    assert read_plan(plan_path)["status"] == "failed"
+    assert "the plan is not approved yet; it stays planned and nothing was done" in output
+    assert "no provider call was made" in output
+    assert read_plan(plan_path)["status"] == "planned"
     assert not (tmp_path / "infisical-called").exists()
     assert not (tmp_path / "gh-called").exists()
     assert_no_secret_leak(result, plan_path, audit_path)
@@ -1386,9 +1401,11 @@ def test_github_write_plan_cannot_execute_unless_approved(tmp_path):
     )
 
     output = result.stdout + result.stderr
-    assert result.returncode != 0
+    assert result.returncode == 1
     assert "GitHub write plan requires approval" in output
-    assert read_plan(plan_path)["status"] == "failed"
+    assert "the plan is not approved yet; it stays planned and nothing was done" in output
+    assert "no provider call was made" in output
+    assert read_plan(plan_path)["status"] == "planned"
     assert not (tmp_path / "infisical-called").exists()
     assert not (tmp_path / "gh-called").exists()
     assert_no_secret_leak(result, plan_path, audit_path)
@@ -1792,9 +1809,11 @@ def test_unapproved_generate_plan_cannot_execute(tmp_path):
     )
 
     output = result.stdout + result.stderr
-    assert result.returncode != 0
+    assert result.returncode == 1
     assert "vault.secret.generate plan requires approval" in output
-    assert read_plan(plan_path)["status"] == "failed"
+    assert "the plan is not approved yet; it stays planned and nothing was done" in output
+    assert "no provider call was made" in output
+    assert read_plan(plan_path)["status"] == "planned"
     assert not (tmp_path / "infisical-called").exists()
     assert not (tmp_path / "gh-called").exists()
     assert_no_secret_leak(result, plan_path, audit_path)
@@ -1977,9 +1996,11 @@ def test_unapproved_rotate_plan_cannot_execute(tmp_path):
     )
 
     output = result.stdout + result.stderr
-    assert result.returncode != 0
+    assert result.returncode == 1
     assert "vault.secret.rotate plan requires approval" in output
-    assert read_plan(plan_path)["status"] == "failed"
+    assert "the plan is not approved yet; it stays planned and nothing was done" in output
+    assert "no provider call was made" in output
+    assert read_plan(plan_path)["status"] == "planned"
     assert not (tmp_path / "infisical-called").exists()
     assert not (tmp_path / "gh-called").exists()
     assert_no_secret_leak(result, plan_path, audit_path)
@@ -2655,9 +2676,11 @@ def test_unapproved_copy_many_cannot_execute(tmp_path):
     )
 
     output = result.stdout + result.stderr
-    assert result.returncode != 0
+    assert result.returncode == 1
     assert "vault.secret.copy_many plan requires approval" in output
-    assert read_plan(plan_path)["status"] == "failed"
+    assert "the plan is not approved yet; it stays planned and nothing was done" in output
+    assert "no provider call was made" in output
+    assert read_plan(plan_path)["status"] == "planned"
     assert not (tmp_path / "infisical-called").exists()
     assert not (tmp_path / "gh-called").exists()
     assert_no_secret_leak(result, plan_path, audit_path)
@@ -3444,9 +3467,11 @@ def test_unapproved_sync_many_cannot_execute(tmp_path):
     )
 
     output = result.stdout + result.stderr
-    assert result.returncode != 0
+    assert result.returncode == 1
     assert "GitHub sync_many plan requires approval" in output
-    assert read_plan(plan_path)["status"] == "failed"
+    assert "the plan is not approved yet; it stays planned and nothing was done" in output
+    assert "no provider call was made" in output
+    assert read_plan(plan_path)["status"] == "planned"
     assert not (tmp_path / "infisical-called").exists()
     assert not (tmp_path / "gh-called").exists()
     assert_no_secret_leak(result, plan_path, audit_path)
