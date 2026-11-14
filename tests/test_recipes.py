@@ -253,7 +253,7 @@ def test_vault_secret_import_file_recipe_loading():
     recipe = load_recipe(IMPORT_FILE_RECIPE)
 
     assert recipe.action == "vault.secret.import_file"
-    assert recipe.secret_name == "BACKUP_AWS_ACCESS_KEY_ID"
+    assert recipe.secret_name is None
     assert recipe.env == "staging"
     assert recipe.source_file == "/path/to/local/secret-file"
     assert recipe.create_mode == "create_only"

@@ -91,7 +91,7 @@ planned -> failed
 approved -> failed
 ```
 
-These are illustrative transitions, not a one-time-execution guarantee. Preflight never changes plan status. Invalid JSON, schema violations, and missing or unsupported contract versions leave the plan file untouched; no new status is written. A valid supported plan with a digest or destination mismatch is marked `failed` by execution.
+These are illustrative transitions. `execute-plan` holds a per-plan lock and refuses an executed plan, but `approve-plan` and `reject-plan` take no lock and can overwrite an outcome, so one-time execution is not guaranteed (see [SECURITY_MODEL.md](SECURITY_MODEL.md#residual-risks-and-limits)). Preflight never changes plan status. Invalid JSON, schema violations, and missing or unsupported contract versions leave the plan file untouched; no new status is written. A valid supported plan with a digest or destination mismatch is marked `failed` by execution.
 
 ### Vault adapter
 
