@@ -148,3 +148,9 @@ Current implementation uses:
 Do not add other vault or external-service integrations unless explicitly requested.
 
 Do not call provider CLIs directly except through the approved `uv run secretops ...` surfaces requested by the user.
+
+## Commits
+
+- Subject: `Area: short imperative summary` in English, e.g. `Docs: prepare the vault before installing`, `Installer: --python for Ubuntu 22.04 brokers`.
+- Call out breaking changes in the message body.
+- No agent attribution (`Co-Authored-By` or similar).

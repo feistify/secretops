@@ -12,7 +12,7 @@ The Infisical adapter hardening is implemented and verified against the NAS inst
 
 The previous goal is reached: a human enters an externally created API key through a hidden prompt, the broker stores it in Infisical, and an agent transfers it to GitHub through a separately approved plan, documented and repeatable from a clean installation.
 
-Plan destination binding is complete and validated (PR #6). The human secret-entry CLI (`secretops add`) is implemented, with direct and agent-prepared entry validated through the real local sudo broker ([results and limits](docs/validation/interactive-secret-entry.md)). GitHub target reliability and the complete local-sudo entry-to-GitHub workflow are now validated ([results and limits](docs/validation/github-target-reliability.md)). Installation and operating guides are merged (PR #10) and a clean installation is validated with a self-hosted Infisical and GitHub ([results and limits](docs/validation/local-broker-installation.md)). Remaining manual checks are tracked below. The public repository is released; the latest release is [v0.1.4](https://github.com/feistify/secretops/releases/tag/v0.1.4). Next: first real-project use (section 7), then the remaining onboarding items it shows are needed (section 6), then several vault projects per broker (section 8).
+Plan destination binding is complete and validated (PR #6). The human secret-entry CLI (`secretops add`) is implemented, with direct and agent-prepared entry validated through the real local sudo broker ([results and limits](docs/validation/interactive-secret-entry.md)). GitHub target reliability and the complete local-sudo entry-to-GitHub workflow are now validated ([results and limits](docs/validation/github-target-reliability.md)). Installation and operating guides are merged (PR #10) and a clean installation is validated with a self-hosted Infisical and GitHub ([results and limits](docs/validation/local-broker-installation.md)). Remaining manual checks are tracked below. The public repository is released; the latest release is [v0.1.5](https://github.com/feistify/secretops/releases/tag/v0.1.5). Next: the execution lock from section 9, then first real-project use (section 7), then the remaining onboarding items it shows are needed (section 6), the rest of section 9 and the CI work in section 10, then several vault projects per broker (section 8).
 
 ## P1 — Deliver the first complete daily-use workflow
 
@@ -144,6 +144,26 @@ Today a broker serves one Infisical server, project and folder, set by the human
 - Not in the first version: different servers or tokens per destination, per-destination policy, several brokers on one machine.
 - Implement with tests, then a short VM validation with two projects.
 
+### 9. Plan lifecycle and audit hardening — from the 2026-11-14 code review
+
+Found by reading the code; none is reproduced with a test yet. The execution lock comes before the first real-project use (section 7); the rest follows it. Changes to security behaviour go through a branch and review, each with a short contract and tests.
+
+- [ ] Hold the plan lock during `execute-plan`. Today only `secretops add` and the rejection of a human-entry plan take `plan_lock`, so two `execute-plan` calls started at the same time can both read `approved` and both run, for example a double rotation. "A plan runs only once" must also hold for concurrent calls: the second call stops with the existing "plan is in use" message and makes no provider call.
+- [ ] Write an audit event for `approve-plan` and `reject-plan`, with the plan id and, on approval, the approval digest. Today the decision is visible only in the plan file.
+- [ ] Refuse `details` keys in `write_audit_event` that would replace a core field (`timestamp`, `action`, `secret_name`, `env`, `status`, `secret_value_logged`, `plan_id`).
+- [ ] Decide whether approval expires. Plans carry no creation or approval time, so an approved plan stays executable indefinitely. Proposal: record both times and refuse execution after a configurable period (for example 24 hours). This changes the saved-plan format; define the `contract_version` handling first.
+- [ ] Decide what `execute-plan` does to a plan that still waits for approval. Today it marks the plan `failed`, so an agent that tries too early forces a new plan; the human-entry path leaves the plan unchanged in the same situation. Either leave the plan `planned` or document the current behaviour as intended.
+- [ ] Validate the policy file strictly, as recipes are. Unknown keys are ignored today; the defaults are safe (approval required, production denied), but a misspelled key is never reported. The production block also matches only the literal name `production`: an environment named `prod` added to `allowed_environments` is not covered. Do this with the P2 policy work (`docs/design/name-pattern-policy.md`).
+
+### 10. CI and maintenance — one small pull request, no behaviour change
+
+- [ ] Run the tests on Python 3.11 and 3.12. CI uses only 3.11, while Ubuntu 24.04, the main supported system, ships 3.12.
+- [ ] Use `uv sync --locked` in `ci.yml`, as `release.yml` does.
+- [ ] Let Dependabot also watch the Python dependencies (`uv.lock`), and regenerate `scripts/broker-requirements.txt` with its documented `uv export` command when they change. Today only GitHub Actions are watched.
+- [ ] Add `shellcheck` for `scripts/` and the shell tests, and `ruff` for the Python code, to CI. The wrappers and `install.sh` are part of the security boundary.
+- [ ] Run `tests/test_install_container.sh` in CI on a schedule or on release tags; today it is run by hand.
+- [ ] Read the version in `secretops version` from the package metadata (`importlib.metadata`) instead of a second literal in `cli.py`, and adjust the version check in `release.yml`.
+
 ## Architecture and test requirements — apply to upcoming changes
 
 ### Preserve the option to change implementation language
@@ -159,7 +179,7 @@ Today a broker serves one Infisical server, project and folder, set by the human
 ## P2 — Deferred until the daily-use workflow is proven
 
 - [ ] OpenBao operational trial, then a narrow adapter and conditional-write contract (create-only/versioned replace). First confirm actual install, authentication, restart/unseal, backup, and restore behavior. Preserve the Infisical adapter and document its non-atomic existence-check/write limitation.
-- [ ] Stronger policy rules for action, environment, target, approval, name patterns, and production. Use the reviewed `docs/design/name-pattern-policy.md` when needed; production enablement requires deliberate controls and tests.
+- [ ] Stronger policy rules for action, environment, target, approval, name patterns, and production. Use the reviewed `docs/design/name-pattern-policy.md` when needed; production enablement requires deliberate controls and tests. Include the strict policy-file validation from section 9.
 - [ ] Refactor large CLI/lifecycle code into handlers/services where changes justify it, preserving output, plan state, audit, and adapter contracts.
 - [ ] Improve brokered metadata verification UX using existing actions; do not require agents to run raw provider listing commands.
 - [ ] Policy-gated reads of explicitly non-secret connection metadata; no general secret-reveal surface.
