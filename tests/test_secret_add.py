@@ -374,6 +374,37 @@ def test_execute_plan_refuses_without_changing_the_plan(broker):
     assert read_record(broker.record_path)["calls"] == []
 
 
+def test_execute_plan_refuses_a_human_entry_plan_without_taking_the_lock(broker):
+    broker.fake_vault()
+    write_plan(broker.plan_dir, add_plan())
+    holder = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; from secretops.plans import plan_lock\n"
+                "with plan_lock('add-plan'):\n"
+                "    print('locked', flush=True); sys.stdin.read()"
+            ),
+        ],
+        env=broker.env(), stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+    )
+    try:
+        assert holder.stdout.readline().strip() == "locked"
+        result = broker.run("execute-plan", "--id", "add-plan")
+    finally:
+        holder.kill()
+        holder.communicate()
+
+    output = result.stdout.decode()
+    assert result.returncode == 1
+    assert "requires human completion" in output
+    assert "secretops add --plan add-plan" in output
+    assert "in use" not in output
+    assert read_plan(broker.plan_path("add-plan"))["status"] == "planned"
+    assert read_record(broker.record_path)["calls"] == []
+
+
 def test_approve_plan_points_to_secretops_add(broker):
     write_plan(broker.plan_dir, add_plan())
 
