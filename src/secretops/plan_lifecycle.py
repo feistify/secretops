@@ -183,6 +183,22 @@ def _try_audit(**event) -> bool:
     return True
 
 
+def _try_save_status(plan_artifact, status: str) -> bool:
+    """Save the plan status after a write was attempted; report failure
+    instead of raising it, so the write results are still shown."""
+    try:
+        set_plan_status(plan_artifact, status)
+    except Exception:  # noqa: BLE001 - report results even if the store fails
+        return False
+    return True
+
+
+def _warn_status_not_saved(console: Console) -> None:
+    # An unsaved status can leave the plan approved and executable.
+    console.print("[red]WARNING[/red] the plan status could not be updated")
+    console.print("do not run this plan again; ask the operator to record its outcome")
+
+
 def _transfer_to_github(
     plan_artifact,
     console: Console,
@@ -273,19 +289,14 @@ def _transfer_to_github(
             details={**destination, "step": "summary", **categories},
         )
     succeeded = complete and audit_complete
-    try:
-        set_plan_status(plan_artifact, "executed" if succeeded else "failed")
-        status_saved = True
-    except Exception:  # noqa: BLE001 - report results even if the store fails
-        status_saved = False
+    status_saved = _try_save_status(plan_artifact, "executed" if succeeded else "failed")
 
     _print_github_results(console, results, categories, unknown=unknown, single=single)
     if not audit_complete:
         console.print("[red]WARNING[/red] the audit record could not be completed")
         console.print("the results above are what this run knows; they may be missing from the audit log")
     if not status_saved:
-        console.print("[red]WARNING[/red] the plan status could not be updated")
-        console.print("do not run this plan again; ask the operator to record its outcome")
+        _warn_status_not_saved(console)
     console.print("secret values were not printed")
     if unknown:
         raise typer.Exit(EXIT_OUTCOME_UNKNOWN)
@@ -344,12 +355,29 @@ def _fail_unknown_write(plan_artifact, console: Console, secret_name: str, label
         status="outcome_unknown",
         plan_id=plan_artifact.plan_id,
     )
-    set_plan_status(plan_artifact, "failed")
+    status_saved = _try_save_status(plan_artifact, "failed")
     console.print(f"[red]FAIL[/red] {label} write outcome unknown: {secret_name}")
     console.print(f"the write was not confirmed; check {secret_name} before any retry")
     console.print("no automatic retry was attempted")
+    if not status_saved:
+        _warn_status_not_saved(console)
     console.print("secret value was not printed")
     raise typer.Exit(EXIT_OUTCOME_UNKNOWN)
+
+
+def _finish_confirmed_write(
+    plan_artifact, console: Console, ok_lines: list[str], *, not_printed: str
+) -> None:
+    """Mark a fully confirmed vault write executed. As on the GitHub path, a
+    status that cannot be saved is reported after the results and exits 1."""
+    status_saved = _try_save_status(plan_artifact, "executed")
+    for line in ok_lines:
+        console.print(line, soft_wrap=True)
+    if not status_saved:
+        _warn_status_not_saved(console)
+    console.print(not_printed)
+    if not status_saved:
+        raise typer.Exit(EXIT_FAILED)
 
 
 def _write_secrets_in_order(
@@ -402,7 +430,7 @@ def _stop_partial_write(
             "not_written_names": not_written,
         },
     )
-    set_plan_status(plan_artifact, "failed")
+    status_saved = _try_save_status(plan_artifact, "failed")
     if unknown:
         console.print(f"[red]FAIL[/red] {label} write outcome unknown: {name}")
         console.print(f"the write was not confirmed; check {name} before any retry")
@@ -412,6 +440,8 @@ def _stop_partial_write(
     console.print(f"written and confirmed: {_format_names(names[:index])}", soft_wrap=True)
     console.print(f"not written: {_format_names(not_written)}", soft_wrap=True)
     console.print("no automatic rollback or retry was attempted")
+    if not status_saved:
+        _warn_status_not_saved(console)
     console.print("secret values were not printed")
     raise typer.Exit(EXIT_OUTCOME_UNKNOWN if unknown else EXIT_FAILED)
 
@@ -1265,11 +1295,16 @@ def _execute_plan(plan_artifact, console: Console) -> None:
             status="success",
             plan_id=plan_artifact.plan_id,
         )
-        set_plan_status(plan_artifact, "executed")
-        console.print(f"OK imported dotenv secrets: {len(entries)}")
-        console.print(f"environment: {plan_artifact.env}")
-        console.print(f"secret names: {_format_names(import_names)}", soft_wrap=True)
-        console.print("secret values were not printed")
+        _finish_confirmed_write(
+            plan_artifact,
+            console,
+            [
+                f"OK imported dotenv secrets: {len(entries)}",
+                f"environment: {plan_artifact.env}",
+                f"secret names: {_format_names(import_names)}",
+            ],
+            not_printed="secret values were not printed",
+        )
         return
 
     if plan_artifact.action == "vault.secret.rotate":
@@ -1325,9 +1360,12 @@ def _execute_plan(plan_artifact, console: Console) -> None:
                 status="success",
                 plan_id=plan_artifact.plan_id,
             )
-            set_plan_status(plan_artifact, "executed")
-            console.print(f"OK rotated secret stored: {target_secret}")
-            console.print("secret value was not printed")
+            _finish_confirmed_write(
+                plan_artifact,
+                console,
+                [f"OK rotated secret stored: {target_secret}"],
+                not_printed="secret value was not printed",
+            )
             return
 
         _fail_unknown_write(plan_artifact, console, target_secret, "rotated secret")
@@ -1405,9 +1443,12 @@ def _execute_plan(plan_artifact, console: Console) -> None:
             status="success",
             plan_id=plan_artifact.plan_id,
         )
-        set_plan_status(plan_artifact, "executed")
-        console.print(f"OK vault secrets copied: {len(mappings)}")
-        console.print("secret values were not printed")
+        _finish_confirmed_write(
+            plan_artifact,
+            console,
+            [f"OK vault secrets copied: {len(mappings)}"],
+            not_printed="secret values were not printed",
+        )
         return
 
     if plan_artifact.action == "vault.secret.generate":
@@ -1476,9 +1517,12 @@ def _execute_plan(plan_artifact, console: Console) -> None:
                 status="success",
                 plan_id=plan_artifact.plan_id,
             )
-            set_plan_status(plan_artifact, "executed")
-            console.print(f"OK generated secret stored: {plan_artifact.secret_name}")
-            console.print("secret value was not printed")
+            _finish_confirmed_write(
+                plan_artifact,
+                console,
+                [f"OK generated secret stored: {plan_artifact.secret_name}"],
+                not_printed="secret value was not printed",
+            )
             return
 
         _fail_unknown_write(plan_artifact, console, target_secret, "generated secret")
