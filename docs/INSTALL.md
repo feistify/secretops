@@ -106,7 +106,7 @@ The installer installs secretops 0.1.7 from PyPI, checked against the SHA-256 pi
 sudo secretops-configure
 ```
 
-It asks for the vault URL (Enter keeps the `--infisical-domain` address), project ID and folder path (Enter keeps `/`, the project root; see [PREPARE.md](PREPARE.md#infisical-steps)), then for the access token at a hidden prompt. The token is not shown, not put in an argument or shell history, and written only to `broker.env`.
+It asks for the vault URL (Enter keeps the `--infisical-domain` address), project ID and folder path (Enter keeps `/`, the project root; see [PREPARE.md](PREPARE.md#infisical-steps)), then for the access token at a hidden prompt. The token is not shown, not put in an argument or shell history, and written only to `broker.env`; after Enter only its length is shown, for example `Input received: 40 characters.`
 
 After saving, it checks the connection by looking up a made-up name in the `dev` environment (nothing is written) and prints one result with the next step: `OK vault connection works`, `vault not reachable at the configured URL`, `the vault refused the access token`, `project, environment or folder not found, or not permitted`, or `could not tell what is wrong`. A failed check keeps the saved configuration. Check again at any time with `sudo secretops-configure --check`; add `--env NAME` if your project has no `dev` environment. A folder that does not exist may look empty rather than missing; the first check below confirms it.
 

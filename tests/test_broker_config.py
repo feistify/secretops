@@ -318,3 +318,42 @@ def test_check_option_refuses_bad_combinations(interactive_root, argv, capsys):
     assert broker_config.main(argv) == 1
     assert checks == []
     assert "secretops-configure:" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(("typed", "told"), [(TOKEN, [f"Input received: {len(TOKEN)} characters."]), ("", [])])
+def test_hidden_input_reports_only_the_count(monkeypatch, capsys, typed, told):
+    import getpass
+
+    lines = []
+    monkeypatch.setattr(getpass, "getpass", lambda prompt: typed)
+    monkeypatch.setattr(broker_config, "tell_terminal", lines.append)
+    assert broker_config.hidden_input("Token: ") == typed
+    assert lines == told
+    captured = capsys.readouterr()
+    assert TOKEN not in captured.out + captured.err + "".join(lines)
+
+
+def test_refused_hidden_input_reports_nothing(monkeypatch):
+    import getpass
+    import warnings
+
+    lines = []
+
+    def fallback(prompt):
+        warnings.warn("Can not control echo on the terminal.", getpass.GetPassWarning, stacklevel=2)
+        return TOKEN
+
+    monkeypatch.setattr(getpass, "getpass", fallback)
+    monkeypatch.setattr(broker_config, "tell_terminal", lines.append)
+    with pytest.raises(ConfigError):
+        broker_config.hidden_input("Token: ")
+    assert lines == []
+
+
+def test_tell_terminal_falls_back_to_stderr(monkeypatch, capsys):
+    def no_tty(*args, **kwargs):
+        raise OSError("no terminal")
+
+    monkeypatch.setattr(broker_config.os, "open", no_tty)
+    broker_config.tell_terminal("Input received: 3 characters.")
+    assert capsys.readouterr().err == "Input received: 3 characters.\n"

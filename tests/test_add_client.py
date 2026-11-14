@@ -430,3 +430,25 @@ def test_cli_rejects_invalid_names_before_contacting_the_broker(broker, tmp_path
     assert result.returncode == EXIT_NOT_WRITTEN
     assert not list(broker.plan_dir.glob("*.json"))
     assert os.path.exists(broker.record_path) is False or read_record(broker.record_path)["calls"] == []
+
+
+def test_hidden_entry_reports_only_the_count_on_the_terminal(broker):
+    terminal = ScriptedTerminal()
+    echoed = []
+
+    code = run_add(echoed.append, access=local_access(), review_args=direct_args(), terminal_factory=terminal)
+
+    assert code == EXIT_CREATED
+    line = f"Input received: {len(ADD_VALUE)} characters."
+    assert terminal.printed[0] == line
+    assert all(ADD_VALUE not in text for text in terminal.printed + echoed)
+    assert line not in echoed
+    for path in [broker.audit_path, *broker.plan_dir.glob("*.json")]:
+        assert "Input received" not in path.read_text(encoding="utf-8")
+
+
+def test_empty_hidden_entry_prints_no_count(broker):
+    terminal = ScriptedTerminal(value="")
+    code, lines = run(terminal, direct_args())
+    assert code == EXIT_NOT_WRITTEN
+    assert not any(line.startswith("Input received") for line in lines)

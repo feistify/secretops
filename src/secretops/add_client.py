@@ -28,6 +28,7 @@ from secretops.terminal_input import (
     InputCancelled,
     InputRejected,
     TerminalUnavailable,
+    input_received_line,
 )
 
 CLIENT_CONFIG_ENV = "SECRETOPS_CLIENT_CONFIG"
@@ -295,6 +296,8 @@ def run_add(echo, *, access: BrokerAccess, review_args: list[str],
         with terminal_factory() as terminal:
             try:
                 value = terminal.read_hidden("Value (hidden): ")
+                if value:
+                    terminal.print(input_received_line(value))
                 validate_entered_value(value)
             except (InputRejected, InvalidValueError) as error:
                 terminal.print(f"Not saved: {error}")

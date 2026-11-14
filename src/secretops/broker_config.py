@@ -34,6 +34,8 @@ from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from secretops.terminal_input import input_received_line
+
 BROKER_ENV = Path("/opt/secretops/broker.env")
 BROKER_USER = "secretops-broker"
 BROKER_COMMAND = "/usr/local/bin/secretops-broker"
@@ -210,9 +212,23 @@ def hidden_input(prompt: str) -> str:
     with warnings.catch_warnings():
         warnings.simplefilter("error", getpass.GetPassWarning)
         try:
-            return getpass.getpass(prompt)
+            value = getpass.getpass(prompt)
         except getpass.GetPassWarning:
             raise ConfigError("hidden input is not available on this terminal; nothing was changed") from None
+    if value:
+        tell_terminal(input_received_line(value))
+    return value
+
+
+def tell_terminal(line: str) -> None:
+    """Print one line where getpass shows its prompt: /dev/tty, else stderr."""
+    try:
+        fd = os.open("/dev/tty", os.O_WRONLY | os.O_NOCTTY)
+    except OSError:
+        print(line, file=sys.stderr, flush=True)
+        return
+    with os.fdopen(fd, "w", encoding="utf-8") as tty:
+        tty.write(line + "\n")
 
 
 def ask(prompt: str, current: str, validate: Callable[[str], str], read: Callable[[str], str]) -> str:
