@@ -164,6 +164,16 @@ Found by reading the code; none is reproduced with a test yet. The execution loc
 - [ ] Run `tests/test_install_container.sh` in CI on a schedule or on release tags; today it is run by hand.
 - [ ] Read the version in `secretops version` from the package metadata (`importlib.metadata`) instead of a second literal in `cli.py`, and adjust the version check in `release.yml`.
 
+### 11. Launch — after section 7 and the execution lock
+
+The topic is current and larger vendors now ship runtime credential proxies for agents. secretops is presented as the complement: a proxy lets an agent use a secret, secretops lets an agent manage secrets with human approval. A security tool gets one first impression, so nothing is announced before the first real-project use (section 7) and the execution lock (section 9) are done. Channels and timing are kept in the owner's notes, not in this repository.
+
+- [x] README: a short "How it differs" section, generic and without vendor names.
+- [ ] Demo recording of 60 to 90 seconds in the README: the agent saves a plan, the human approves it, the secret reaches GitHub, and no value appears in the agent's output. Synthetic values only.
+- [ ] Write-up of the first real-project use, from the record in section 7: what was hard, the threat model and deployment levels, unknown write outcomes, and the provider CLI write bug that fake providers missed.
+- [ ] Announce only after the two items above; then collect feedback as issues and choose the next work from it.
+- [ ] After launch feedback, decide whether a second vault (the OpenBao item in P2) moves up, to reduce dependence on one vault vendor.
+
 ## Architecture and test requirements — apply to upcoming changes
 
 ### Preserve the option to change implementation language
