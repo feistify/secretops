@@ -26,6 +26,7 @@ esac
 version=${name#secretops-}
 version=${version%-py3-none-any.whl}
 out=${2:-$(dirname -- "$wheel")}
+# shellcheck disable=SC1007  # deliberate: empty CDPATH for this cd only
 src=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 sha256=$(sha256sum -- "$wheel" | cut -d' ' -f1)
 

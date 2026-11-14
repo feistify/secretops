@@ -13,6 +13,7 @@
 # the test starts the dedicated sshd itself. A fake infisical CLI stands in
 # for the vault; no real provider or credential is used.
 set -eu
+# shellcheck disable=SC1007  # deliberate: empty CDPATH for this cd only
 REPO=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 WHEEL=$(ls "$REPO"/dist/secretops-*-py3-none-any.whl | head -n 1)
 exec docker run --rm -i -v "$REPO:/src:ro" -e WHEEL="/src/dist/$(basename "$WHEEL")" \
