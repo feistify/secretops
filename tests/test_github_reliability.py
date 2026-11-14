@@ -653,6 +653,10 @@ def test_sigint_during_a_sync_write_reports_partial_results_and_exits_3(tmp_path
 
 
 def make_plan_store_read_only(plan_dir):
+    # The lock files exist already, so execute-plan can still take the plan
+    # lock; only the status write fails.
+    for plan_path in plan_dir.glob("*.json"):
+        (plan_dir / f".{plan_path.stem}.lock").touch(mode=0o600)
     plan_dir.chmod(0o500)
 
 

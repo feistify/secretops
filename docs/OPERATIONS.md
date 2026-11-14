@@ -31,6 +31,7 @@ Before approving, read the whole `show-plan` output: action, environment, vault 
 | --- | --- | --- |
 | preflight fails | a check failed before anything was written | fix the cause (name, policy, connection), plan again |
 | `plan already executed` | the plan ran before; its status is kept | to run it again, save a new plan (and approve it, for a write) |
+| `plan is in use by another command` | another command is running this plan; nothing was done | wait for it to finish, then check the plan with `show-plan` |
 | `replan required`, changed destination | the vault configuration changed since planning | plan again and approve the new plan |
 | `vault error: ...` | token, URL or connection problem | check the token; see [renew](#renew-the-vault-token) |
 | `secret missing or inaccessible` | name absent, or no permission for it | check the name, environment, folder and identity permissions |

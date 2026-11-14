@@ -16,8 +16,10 @@ from secretops.plans import (
     DIGEST_PREFIX,
     HUMAN_ENTRY_ACTIONS,
     VAULT_ACTIONS,
+    PLAN_ID_PATTERN,
     PlanBusyError,
     PlanFileError,
+    PlanLockError,
     load_legacy_plan_for_display,
     load_plan,
     plan_digest,
@@ -1046,9 +1048,31 @@ def _require_plan_execution_allowed(plan_artifact, console: Console) -> None:
 
 
 def execute_saved_plan(plan_id: str, console: Console) -> None:
-    # The plan is read once; checks and the operation use this object.
+    # Loaded first so a missing or invalid plan fails as before, without a
+    # lock file.
     plan_artifact = _load_plan_or_exit(plan_id, "execute-plan", console)
+    if plan_artifact.action in HUMAN_ENTRY_ACTIONS:
+        # Always refused, and the action of a plan never changes: no lock, so
+        # this command cannot make a human submission find the plan busy.
+        _execute_loaded_plan(plan_artifact, console)
+        return
+    if not PLAN_ID_PATTERN.fullmatch(plan_id):
+        _fail_plan_file(plan_id, "execute-plan", console, PlanFileError("not_found"))
+    # Concurrent executions exclude each other through the plan lock; the
+    # plan is read again under the lock so a finished run is seen.
+    try:
+        with plan_lock(plan_id):
+            _execute_loaded_plan(_load_plan_or_exit(plan_id, "execute-plan", console), console)
+    except (PlanBusyError, PlanLockError) as error:
+        # Raised only while taking the lock, before anything else ran.
+        message = f"{error}; try again later" if isinstance(error, PlanBusyError) else str(error)
+        console.print(f"[red]FAIL[/red] {message}")
+        console.print("no provider call was made")
+        raise typer.Exit(1) from error
 
+
+def _execute_loaded_plan(plan_artifact, console: Console) -> None:
+    # Checks and the operation use this one loaded object.
     if plan_artifact.status == "rejected":
         console.print("[red]FAIL[/red] rejected plan cannot execute")
         raise typer.Exit(1)

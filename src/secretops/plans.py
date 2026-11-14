@@ -133,6 +133,10 @@ class PlanBusyError(Exception):
     """Another process holds the completion lock for this plan."""
 
 
+class PlanLockError(Exception):
+    """The lock file of this plan could not be opened."""
+
+
 class PlanFileError(Exception):
     """The plan file cannot be trusted, so nothing in it is used.
 
@@ -573,8 +577,11 @@ def plan_lock(plan_id: str) -> Iterator[None]:
     if not PLAN_ID_PATTERN.fullmatch(plan_id):
         raise PlanFileError("not_found")
     directory = plan_dir()
-    directory.mkdir(parents=True, exist_ok=True)
-    file_descriptor = os.open(directory / f".{plan_id}.lock", os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        file_descriptor = os.open(directory / f".{plan_id}.lock", os.O_RDWR | os.O_CREAT, 0o600)
+    except OSError as error:
+        raise PlanLockError("plan lock could not be taken") from error
     try:
         try:
             fcntl.flock(file_descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)

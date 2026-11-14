@@ -1,3 +1,4 @@
+import contextlib
 import json
 import os
 import subprocess
@@ -4253,3 +4254,255 @@ def test_import_stops_before_empty_value_and_reports_partial_result(tmp_path):
     ]
     assert "import-access-id" not in output
     assert "import-access-id" not in audit_path.read_text(encoding="utf-8")
+
+
+# One execution per plan: execute-plan holds the plan lock
+
+
+@contextlib.contextmanager
+def hold_plan_lock(plan_dir, plan_id):
+    """Hold the plan lock in another process until the block ends."""
+    holder = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; from secretops.plans import plan_lock\n"
+                f"with plan_lock({plan_id!r}):\n"
+                "    print('locked', flush=True); sys.stdin.read()"
+            ),
+        ],
+        env={**os.environ, "SECRETOPS_PLAN_DIR": str(plan_dir)},
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert holder.stdout.readline().strip() == "locked"
+        yield
+    finally:
+        holder.kill()
+        holder.communicate()
+
+
+def execute_in_process(monkeypatch, tmp_path, plan_id, fake_bin):
+    """Run execute-plan in this process, so a lock left behind would show."""
+    import io
+
+    import typer
+    from rich.console import Console
+
+    from secretops.plan_lifecycle import execute_saved_plan
+
+    monkeypatch.setenv("SECRETOPS_PLAN_DIR", str(tmp_path / "plans"))
+    monkeypatch.setenv("SECRETOPS_AUDIT_PATH", str(tmp_path / "audit.jsonl"))
+    monkeypatch.setenv("SECRETOPS_INFISICAL_BIN", str(fake_bin / "infisical"))
+    monkeypatch.setenv(DUMMY_SECRET_NAME, DUMMY_SECRET_VALUE)
+    buffer = io.StringIO()
+    exit_code = 0
+    try:
+        execute_saved_plan(plan_id, Console(file=buffer, width=200))
+    except typer.Exit as error:
+        exit_code = error.exit_code
+    return exit_code, buffer.getvalue()
+
+
+def assert_plan_lock_free(plan_id):
+    from secretops.plans import plan_lock
+
+    with plan_lock(plan_id):
+        pass
+
+
+def test_execute_plan_is_refused_while_the_plan_is_in_use(tmp_path):
+    audit_path = tmp_path / "audit.jsonl"
+    plan_dir = tmp_path / "plans"
+    record_path = write_fake_infisical_for_rotate(tmp_path)
+    plan_path = write_plan(plan_dir, rotate_plan("busy-rotate", status="approved"))
+    plan_bytes = plan_path.read_bytes()
+
+    with hold_plan_lock(plan_dir, "busy-rotate"):
+        result = run_secretops(
+            "execute-plan",
+            "--id",
+            "busy-rotate",
+            audit_path=audit_path,
+            plan_dir=plan_dir,
+            path_prefix=tmp_path,
+        )
+
+    assert result.returncode == 1
+    assert result.stdout.strip().splitlines() == [
+        "FAIL plan is in use by another command; try again later",
+        "no provider call was made",
+    ]
+    assert plan_path.read_bytes() == plan_bytes
+    assert read_plan(plan_path)["status"] == "approved"
+    assert not record_path.exists()
+    assert not (tmp_path / "infisical-rotate-order.txt").exists()
+    assert not audit_path.exists()
+    assert_no_secret_leak(result, plan_path, audit_path)
+
+
+def test_concurrent_executions_of_one_plan_write_once(tmp_path):
+    audit_path = tmp_path / "audit.jsonl"
+    plan_dir = tmp_path / "plans"
+    write_fake_infisical_for_rotate(tmp_path)
+    order_path = tmp_path / "infisical-rotate-order.txt"
+    fake_infisical = tmp_path / "infisical"
+    # The write is slow, so the second execution starts while the first runs.
+    script = fake_infisical.read_text(encoding="utf-8")
+    slow_script = script.replace("import json, os,", "import time, json, os,", 1).replace(
+        "raise SystemExit(0)\n", "time.sleep(3)\nraise SystemExit(0)\n", 1
+    )
+    assert slow_script.count("time.sleep(3)") == 1 and "import time," in slow_script
+    fake_infisical.write_text(slow_script, encoding="utf-8")
+    plan_path = write_plan(plan_dir, rotate_plan("raced-rotate", status="approved"))
+    env = os.environ.copy()
+    env.update(
+        {
+            DUMMY_SECRET_NAME: DUMMY_SECRET_VALUE,
+            "SECRETOPS_AUDIT_PATH": str(audit_path),
+            "SECRETOPS_PLAN_DIR": str(plan_dir),
+            "SECRETOPS_INFISICAL_BIN": str(fake_infisical),
+        }
+    )
+
+    processes = [
+        subprocess.Popen(
+            ["uv", "run", "secretops", "execute-plan", "--id", "raced-rotate"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+        )
+        for _ in range(2)
+    ]
+    results = []
+    for process in processes:
+        stdout, stderr = process.communicate(timeout=60)
+        results.append(subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr))
+
+    assert order_path.read_text(encoding="utf-8").splitlines().count("set") == 1
+    assert sorted(result.returncode for result in results) == [0, 1]
+    refused = next(result for result in results if result.returncode == 1)
+    assert (
+        "plan is in use by another command" in refused.stdout
+        or "plan already executed" in refused.stdout
+    )
+    assert "no provider call was made" in refused.stdout
+    assert read_plan(plan_path)["status"] == "executed"
+    for result in results:
+        assert_no_secret_leak(result, plan_path, audit_path)
+
+
+def test_plan_lock_is_free_after_a_failed_execution(tmp_path, monkeypatch):
+    plan_path = write_plan(tmp_path / "plans", rotate_plan("failed-rotate", status="approved"))
+    fake_bin = write_vault_infisical(tmp_path, {}, run_exit=1)
+
+    exit_code, output = execute_in_process(monkeypatch, tmp_path, "failed-rotate", fake_bin)
+
+    assert exit_code == 1
+    assert "in use" not in output
+    assert read_plan(plan_path)["status"] == "failed"
+    assert_plan_lock_free("failed-rotate")
+    assert DUMMY_SECRET_VALUE not in output
+
+
+def test_plan_lock_is_free_after_an_unknown_outcome(tmp_path, monkeypatch):
+    plan_path = write_plan(tmp_path / "plans", rotate_plan("unknown-rotate", status="approved"))
+    fake_bin = write_vault_infisical(tmp_path, {"GENERATED_DUMMY_PASSWORD": "existing-placeholder"})
+    fake = fake_bin / "infisical"
+    fake.write_text(
+        fake.read_text(encoding="utf-8").replace("    raise SystemExit(0)\n", "    raise SystemExit(1)\n", 1),
+        encoding="utf-8",
+    )
+
+    exit_code, output = execute_in_process(monkeypatch, tmp_path, "unknown-rotate", fake_bin)
+
+    assert exit_code != 0
+    assert "outcome unknown" in output
+    assert (tmp_path / "infisical-set-called").exists()
+    assert read_plan(plan_path)["status"] == "failed"
+    assert_plan_lock_free("unknown-rotate")
+    assert DUMMY_SECRET_VALUE not in output
+
+
+def test_plan_lock_is_free_after_an_unexpected_error(tmp_path, monkeypatch):
+    import secretops.plan_lifecycle
+
+    write_plan(tmp_path / "plans", rotate_plan("error-rotate", status="approved"))
+    fake_bin = write_failing_external_commands(tmp_path)
+
+    def broken_execution(plan_artifact, console):
+        raise RuntimeError("synthetic failure")
+
+    monkeypatch.setattr(secretops.plan_lifecycle, "_execute_plan", broken_execution)
+    with pytest.raises(RuntimeError):
+        execute_in_process(monkeypatch, tmp_path, "error-rotate", fake_bin)
+
+    assert_plan_lock_free("error-rotate")
+
+
+@pytest.mark.parametrize("plan_text", [None, "not json"], ids=["missing", "invalid_json"])
+def test_execute_plan_for_a_missing_or_invalid_plan_leaves_no_lock_file(tmp_path, plan_text):
+    audit_path = tmp_path / "audit.jsonl"
+    plan_dir = tmp_path / "plans"
+    plan_dir.mkdir()
+    if plan_text is not None:
+        (plan_dir / "broken-plan.json").write_text(plan_text, encoding="utf-8")
+    fake_bin = write_failing_external_commands(tmp_path)
+
+    result = run_secretops(
+        "execute-plan",
+        "--id",
+        "broken-plan",
+        audit_path=audit_path,
+        plan_dir=plan_dir,
+        path_prefix=fake_bin,
+    )
+
+    expected = "plan not found" if plan_text is None else "plan file is not valid JSON"
+    assert result.returncode == 1
+    assert result.stdout.strip().splitlines() == [
+        f"FAIL {expected}",
+        "secret values were not printed",
+    ]
+    assert not (plan_dir / ".broken-plan.lock").exists()
+    assert not (tmp_path / "infisical-called").exists()
+    assert not (tmp_path / "gh-called").exists()
+    assert_no_secret_leak(result, audit_path)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permissions")
+def test_execute_plan_fails_cleanly_when_the_plan_lock_cannot_be_taken(tmp_path):
+    audit_path = tmp_path / "audit.jsonl"
+    plan_dir = tmp_path / "plans"
+    record_path = write_fake_infisical_for_rotate(tmp_path)
+    plan_path = write_plan(plan_dir, rotate_plan("unlockable-rotate", status="approved"))
+    plan_bytes = plan_path.read_bytes()
+    # No lock file exists and none can be created.
+    plan_dir.chmod(0o500)
+    try:
+        result = run_secretops(
+            "execute-plan",
+            "--id",
+            "unlockable-rotate",
+            audit_path=audit_path,
+            plan_dir=plan_dir,
+            path_prefix=tmp_path,
+        )
+    finally:
+        plan_dir.chmod(0o700)
+
+    assert result.returncode == 1
+    assert result.stdout.strip().splitlines() == [
+        "FAIL plan lock could not be taken",
+        "no provider call was made",
+    ]
+    assert "Traceback" not in result.stdout + result.stderr
+    assert plan_path.read_bytes() == plan_bytes
+    assert not record_path.exists()
+    assert not (tmp_path / "infisical-rotate-order.txt").exists()
+    assert not (plan_dir / ".unlockable-rotate.lock").exists()
+    assert_no_secret_leak(result, plan_path, audit_path)
