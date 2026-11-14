@@ -22,7 +22,8 @@ secretops itself is designed so that values never reach a place the agent can re
 - values move between vault and target only during an approved `execute-plan`
 - GitHub target writes receive the value on stdin; Infisical writes use a temporary YAML file with `0600` permissions, passed with `--file` and deleted right after use
 - values are never passed as command-line arguments, where they would be visible in process listings and shell history
-- provider CLI output is captured and suppressed, not echoed
+- provider CLI output is captured and suppressed, not echoed; failure messages are fixed text chosen by matching that output in memory
+- the human-only vault check (`secretops-configure --check`, `check-vault-connection`) is the one place where secretops itself contacts the vault: one unauthenticated GET of `<vault URL>/api/status`, without the token, no proxy, no redirects
 - the Infisical CLI runs with an explicit environment (machine token, fixed `PATH`, empty temporary `HOME`), so broker variables, user sessions, and working-directory config cannot change what secretops reads
 - vault answers are checked against a strict response protocol; an error, a malformed answer, or a timeout stops the operation and is never treated as "secret missing"
 - an Infisical vault write counts as done only when a read-back returns the written value; otherwise the outcome is reported as unknown, recorded as `outcome_unknown` in the audit log with the partial result for multi-secret operations, and never retried automatically. GitHub target writes are not read back and still rely on the `gh` exit status

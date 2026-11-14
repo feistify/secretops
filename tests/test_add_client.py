@@ -452,3 +452,12 @@ def test_empty_hidden_entry_prints_no_count(broker):
     code, lines = run(terminal, direct_args())
     assert code == EXIT_NOT_WRITTEN
     assert not any(line.startswith("Input received") for line in lines)
+
+
+def test_count_is_shown_for_a_value_that_is_then_rejected(broker):
+    terminal = ScriptedTerminal(value="a\tb")
+    code, lines = run(terminal, direct_args())
+    assert code == EXIT_NOT_WRITTEN
+    assert terminal.printed[0] == "Input received: 3 characters."
+    assert terminal.printed[1].startswith("Not saved:")
+    assert "a\tb" not in "".join(lines)

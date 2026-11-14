@@ -50,16 +50,23 @@ class Probe(Enum):
     INCONCLUSIVE = "inconclusive"  # something answered, or TLS failed
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse redirects: a 3xx surfaces as HTTPError, so it decides nothing."""
+
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
 def probe_server(domain: str, *, timeout: float = PROBE_TIMEOUT_SECONDS) -> Probe:
     """Ask the vault URL whether an Infisical API answers. Sends no token.
 
     Proxies from the environment are not used, as for the provider CLI,
-    which gets no proxy variables. The answer is parsed only to see that it
+    which gets no proxy variables. Redirects are not followed. The answer is parsed only to see that it
     is a JSON object; it is never printed.
     """
     base = domain if domain.endswith("/api") else f"{domain}/api"
     request = urllib.request.Request(f"{base}/status", headers={"Accept": "application/json"})
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect)
     try:
         with opener.open(request, timeout=timeout) as response:
             if response.status != 200:
@@ -128,7 +135,9 @@ def result_lines(result: CheckResult, detail: str, env: str) -> list[str]:
         return [
             "FAIL vault not reachable at the configured URL (connection, DNS or TLS failed).",
             "Next: check the URL and that the vault server runs and is reachable from this",
-            "machine; to change the URL run: sudo secretops-configure",
+            "machine; to change the URL run: sudo secretops-configure. For a TLS certificate",
+            "error, make this machine trust the vault's certificate authority (CA), for",
+            "example through the system CA store.",
         ]
     if result is CheckResult.TOKEN_REFUSED:
         return [

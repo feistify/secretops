@@ -59,11 +59,20 @@ HELPER_CODE = (
 # category, or more than one, keeps the generic message: a wrong category
 # is worse than none.
 #
+# - A network pattern counts only on a stderr line that also names the
+#   configured vault host, so unrelated network noise (an update check)
+#   decides nothing.
+# - 401 is "token refused". 403 and 404 are "not found or not permitted"
+#   only when a check has seen the Infisical API answer at the configured
+#   URL (`api_confirmed`): another server at a wrong URL can answer them.
+#   Any other status decides nothing.
+#
 # Evidence: none of these strings was observed from a real Infisical CLI in
-# this repository's tests or validation records. The network patterns are
-# Go standard library error texts (net, crypto/tls, crypto/x509); that the
-# CLI prints them is assumed. `[status-code=NNN]` is assumed from the CLI's
-# API error format. Correct them here when a real run shows otherwise.
+# this repository's tests or validation records; all are unverified
+# guesses. The network patterns are Go standard library error texts (net,
+# crypto/x509); that the CLI prints them on stderr, on one line with the
+# host, is assumed. `[status-code=NNN]` is assumed from the CLI's API error
+# format. Correct them here when a real run shows otherwise.
 UNREACHABLE_PATTERNS = tuple(
     re.compile(pattern)
     for pattern in (
@@ -73,12 +82,14 @@ UNREACHABLE_PATTERNS = tuple(
         r"network is unreachable",
         r"no route to host",
         r"i/o timeout",
-        r"x509: ",
-        r"tls: ",
+        r"x509: certificate",
     )
 )
 STATUS_CODE_PATTERN = re.compile(r"\[status-code=(\d{3})\]")
-UNREACHABLE_MESSAGE = "vault not reachable at the configured URL (connection, DNS or TLS failed)"
+UNREACHABLE_MESSAGE = (
+    "vault not reachable at the configured URL (connection, DNS or TLS failed); "
+    "check the URL, the server, and for TLS that this machine trusts its certificate (CA)"
+)
 TOKEN_REFUSED_MESSAGE = (
     "the vault refused the access token (expired, revoked or wrong); "
     "renew it with secretops-configure --token-only"
@@ -88,28 +99,32 @@ NOT_FOUND_MESSAGE = (
 )
 
 
-def classify_failure(stderr: str, *, api_confirmed: bool = False) -> type[VaultProviderError] | None:
-    """Return the failure category for a failed CLI call, or None.
-
-    404 counts only when `api_confirmed`: a server that is not the Infisical
-    API (a wrong URL) can also answer 404.
-    """
+def classify_failure(
+    stderr: str, *, host: str, api_confirmed: bool = False
+) -> type[VaultProviderError] | None:
+    """Return the failure category for a failed CLI call, or None."""
     found: set[type[VaultProviderError] | None] = set()
-    if any(pattern.search(stderr) for pattern in UNREACHABLE_PATTERNS):
+    host = host.lower()
+    if host and any(
+        host in line.lower() and any(pattern.search(line) for pattern in UNREACHABLE_PATTERNS)
+        for line in stderr.splitlines()
+    ):
         found.add(VaultUnreachableError)
     for code in STATUS_CODE_PATTERN.findall(stderr):
         if code == "401":
             found.add(VaultTokenRefusedError)
-        elif code == "403" or (code == "404" and api_confirmed):
+        elif code in ("403", "404") and api_confirmed:
             found.add(VaultNotFoundError)
         else:
             found.add(None)
     return found.pop() if len(found) == 1 else None
 
 
-def provider_failure(returncode: int, stderr: str | None, *, api_confirmed: bool = False) -> VaultProviderError:
+def provider_failure(
+    returncode: int, stderr: str | None, *, host: str, api_confirmed: bool = False
+) -> VaultProviderError:
     """Build the error for a failed CLI call; its message is fixed text."""
-    category = classify_failure(stderr or "", api_confirmed=api_confirmed)
+    category = classify_failure(stderr or "", host=host, api_confirmed=api_confirmed)
     if category is VaultUnreachableError:
         return VaultUnreachableError(UNREACHABLE_MESSAGE)
     if category is VaultTokenRefusedError:
@@ -296,6 +311,10 @@ class InfisicalCliVault(Vault):
                 return self.runner(
                     command,
                     text=True,
+                    # Undecodable provider bytes become U+FFFD instead of a
+                    # UnicodeDecodeError that would quote them. The helper's
+                    # answer is ASCII JSON, so parsing is unaffected.
+                    errors="replace",
                     capture_output=True,
                     env=env,
                     timeout=timeout,
@@ -333,7 +352,12 @@ class InfisicalCliVault(Vault):
             ]
         )
         if result.returncode != 0:
-            raise provider_failure(result.returncode, result.stderr, api_confirmed=self._api_confirmed)
+            raise provider_failure(
+                result.returncode,
+                result.stderr,
+                host=urlsplit(connection.domain).hostname or "",
+                api_confirmed=self._api_confirmed,
+            )
         return self._parse_response(result.stdout, nonce, mode)
 
     @staticmethod

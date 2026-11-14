@@ -232,28 +232,67 @@ def test_hidden_input_refuses_visible_fallback(monkeypatch):
 
 
 class _Recorder:
-    def __init__(self, returncode=0, error=None):
+    def __init__(self, returncode=0, error=None, output=b""):
         self.returncode = returncode
         self.error = error
+        self.output = output
         self.calls = []
 
     def __call__(self, command, **kwargs):
         self.calls.append((command, kwargs))
         if self.error is not None:
             raise self.error
-        return subprocess.CompletedProcess(command, self.returncode)
+        return subprocess.CompletedProcess(command, self.returncode, self.output)
 
 
 def test_check_runs_as_broker_user_without_credentials(capsys):
     account = _account()
-    runner = _Recorder(returncode=1)
-    assert broker_config.run_check(account, "staging", runner=runner) == 1
+    runner = _Recorder(returncode=1, output=b"FAIL vault not reachable \xff\n")
+    assert broker_config.run_check(account, "staging", 95, runner=runner) == 1
     (command, kwargs), = runner.calls
     assert command == ["/usr/local/bin/secretops-broker", "check-vault-connection", "--env", "staging"]
     assert kwargs["user"] == account.pw_uid and kwargs["group"] == account.pw_gid
     assert kwargs["extra_groups"] == []
     assert set(kwargs["env"]) == {"PATH", "HOME", "LANG"}
-    assert "staging" in capsys.readouterr().out
+    # Isolated from root's terminal: new session, no stdin, output piped.
+    assert kwargs["start_new_session"] is True
+    assert kwargs["stdin"] is subprocess.DEVNULL
+    assert kwargs["stdout"] is subprocess.PIPE and kwargs["stderr"] is subprocess.STDOUT
+    assert kwargs["cwd"] == "/"
+    assert kwargs.get("shell", False) is False
+    assert kwargs["timeout"] == 95
+    out = capsys.readouterr().out
+    assert "staging" in out
+    assert "FAIL vault not reachable \ufffd" in out
+
+
+def test_check_timeout_follows_the_provider_timeout():
+    assert broker_config.check_timeout({}) == 90
+    assert broker_config.check_timeout({"SECRETOPS_PROVIDER_TIMEOUT_SECONDS": "120"}) == 150
+    assert broker_config.check_timeout({"SECRETOPS_PROVIDER_TIMEOUT_SECONDS": "x"}) == 90
+
+
+def test_check_timeout_is_reported(capsys):
+    runner = _Recorder(error=subprocess.TimeoutExpired("secretops-broker", 90))
+    assert broker_config.run_check(_account(), "dev", 90, runner=runner) == 1
+    assert "did not finish within 90 seconds" in capsys.readouterr().err
+
+
+def test_interrupted_check_is_reported_without_traceback(capsys):
+    runner = _Recorder(error=KeyboardInterrupt())
+    assert broker_config.run_check(_account(), "dev", runner=runner) == broker_config.CHECK_INTERRUPTED
+    assert "interrupted" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("name", ["dev", "staging", "prod-eu", "e2e_1.x"])
+def test_env_names_accepted(name):
+    assert broker_config.validate_env_name(name) == name
+
+
+@pytest.mark.parametrize("name", ["", "-dev", ".dev", "_dev", "dev;id", "a" * 65])
+def test_env_names_refused(name):
+    with pytest.raises(ConfigError):
+        broker_config.validate_env_name(name)
 
 
 def test_check_that_cannot_start_fails_safely(capsys):
@@ -271,7 +310,7 @@ def interactive_root(monkeypatch, tmp_path):
     monkeypatch.setattr(broker_config, "BROKER_ENV", env_file)
     checks = []
 
-    def fake_check(account, env, runner=None):
+    def fake_check(account, env, timeout=None, runner=None):
         checks.append(env)
         return fake_check.returncode
 
@@ -280,7 +319,7 @@ def interactive_root(monkeypatch, tmp_path):
     return env_file, checks, fake_check
 
 
-@pytest.mark.parametrize("check_code", [0, 1])
+@pytest.mark.parametrize("check_code", [0, 1, broker_config.CHECK_INTERRUPTED])
 def test_check_runs_after_save_and_failure_keeps_the_save(interactive_root, monkeypatch, capsys, check_code):
     env_file, checks, fake_check = interactive_root
     fake_check.returncode = check_code
@@ -296,7 +335,8 @@ def test_check_runs_after_save_and_failure_keeps_the_save(interactive_root, monk
     assert read_env(env_file, os.getuid())[TOKEN_KEY] == TOKEN
     out = capsys.readouterr().out
     assert "Broker configuration saved" in out
-    assert ("vault check failed" in out) is bool(check_code)
+    assert ("vault check failed" in out) is (check_code == 1)
+    assert ("vault check was interrupted" in out) is (check_code == broker_config.CHECK_INTERRUPTED)
     if check_code:
         assert "sudo secretops-configure --check --env staging" in out
     assert TOKEN not in out

@@ -56,7 +56,7 @@ The token is renewed by hand. An expired or revoked token fails safely with `vau
    sudo secretops-configure --token-only
    ```
    It asks only for the token, at a hidden prompt, and keeps every other setting. Plans and approvals stay valid: the destination is unchanged.
-3. **Human:** check with an existing secret:
+3. The vault check runs automatically after `--token-only` (again: `sudo secretops-configure --check`). To also confirm the folder, check an existing secret:
    ```sh
    broker check-vault-read --name EXISTING_TEST_SECRET --env dev
    ```

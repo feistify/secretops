@@ -41,7 +41,12 @@ BROKER_USER = "secretops-broker"
 BROKER_COMMAND = "/usr/local/bin/secretops-broker"
 CHECK_PATH = "/usr/bin:/bin"
 DEFAULT_CHECK_ENV = "dev"
-ENV_NAME = re.compile(r"[A-Za-z0-9_.-]{1,64}")
+ENV_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
+# The check makes one provider call plus a short unauthenticated probe.
+DEFAULT_PROVIDER_TIMEOUT = 60
+PROBE_TIMEOUT = 10
+CHECK_MARGIN_SECONDS = 20
+CHECK_INTERRUPTED = 130
 TOKEN_KEY = "INFISICAL_TOKEN"
 # Written in this order; unknown keys are refused.
 KNOWN_KEYS = (
@@ -267,7 +272,9 @@ def configure(
 
 def validate_env_name(value: str) -> str:
     if not ENV_NAME.fullmatch(value):
-        raise ConfigError("environment name may contain only letters, digits, '.', '-' and '_'")
+        raise ConfigError(
+            "environment name must start with a letter or digit and contain only letters, digits, '.', '-' and '_'"
+        )
     return value
 
 
@@ -275,15 +282,26 @@ def check_command(env: str) -> list[str]:
     return [BROKER_COMMAND, "check-vault-connection", "--env", env]
 
 
+def check_timeout(values: dict[str, str]) -> int:
+    raw = values.get("SECRETOPS_PROVIDER_TIMEOUT_SECONDS", "")
+    provider = int(raw) if raw.isdigit() and int(raw) > 0 else DEFAULT_PROVIDER_TIMEOUT
+    return provider + PROBE_TIMEOUT + CHECK_MARGIN_SECONDS
+
+
 def run_check(
     account: pwd.struct_passwd,
     env: str,
+    timeout: int = DEFAULT_PROVIDER_TIMEOUT + PROBE_TIMEOUT + CHECK_MARGIN_SECONDS,
     runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
 ) -> int:
-    """Run the vault check as the broker user; its output goes to the terminal.
+    """Run the vault check as the broker user and print its output.
 
     The broker wrapper loads broker.env itself, so neither the token nor any
-    other setting is passed here, in the arguments or the environment.
+    other setting is passed here, in the arguments or the environment. The
+    child runs in a new session without root's terminal (no stdin, output
+    through a pipe), so broker-user code cannot write to or inject input
+    into the terminal. Returns the check's exit status, 1 when it could not
+    run or timed out, CHECK_INTERRUPTED on Ctrl+C.
     """
     print(f"Checking the vault connection for environment {env} ...", flush=True)
     try:
@@ -295,11 +313,23 @@ def run_check(
             env={"PATH": CHECK_PATH, "HOME": account.pw_dir, "LANG": "C.UTF-8"},
             cwd="/",
             stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            timeout=timeout,
             check=False,
         )
+    except subprocess.TimeoutExpired:
+        print(f"secretops-configure: the vault check did not finish within {timeout} seconds", file=sys.stderr)
+        return 1
     except (OSError, subprocess.SubprocessError):
         print(f"secretops-configure: the vault check could not start {BROKER_COMMAND}", file=sys.stderr)
         return 1
+    except KeyboardInterrupt:
+        print("\nsecretops-configure: the vault check was interrupted", file=sys.stderr)
+        return CHECK_INTERRUPTED
+    sys.stdout.write((result.stdout or b"").decode("utf-8", errors="replace"))
+    sys.stdout.flush()
     return result.returncode
 
 
@@ -332,7 +362,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.check:
             if args.token_only or args.init:
                 raise ConfigError("--check cannot be combined with --token-only or --init")
-            return run_check(account, env)
+            return run_check(account, env, check_timeout(read_env(BROKER_ENV, account.pw_uid)))
         if args.init:
             if BROKER_ENV.exists() or BROKER_ENV.is_symlink():
                 raise ConfigError(f"{BROKER_ENV} already exists")
@@ -358,10 +388,15 @@ def main(argv: list[str] | None = None) -> int:
     print("Broker configuration saved. No credential was displayed.")
     if is_unencrypted_remote(updated["INFISICAL_DOMAIN"]):
         print("WARNING: the vault URL uses unencrypted HTTP to a non-loopback host.")
-    if run_check(account, env) != 0:
+    # The exit status reports the save; a failed or interrupted check keeps it.
+    code = run_check(account, env, check_timeout(updated))
+    if code != 0:
         again = "sudo secretops-configure --check" + (f" --env {env}" if env != DEFAULT_CHECK_ENV else "")
-        print("The configuration was saved, but the vault check failed. Fix the cause above,")
-        print(f"then check again: {again}")
+        if code == CHECK_INTERRUPTED:
+            print("The configuration was saved; the vault check was interrupted.")
+        else:
+            print("The configuration was saved, but the vault check failed. Fix the cause above,")
+        print(f"then check again: {again}" if code != CHECK_INTERRUPTED else f"Check it with: {again}")
     return 0
 
 

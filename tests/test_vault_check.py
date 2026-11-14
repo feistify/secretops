@@ -15,6 +15,7 @@ from secretops.vault_check import CheckResult, Probe, check_vault_connection, pr
 from secretops.vaults import (
     VaultNotFoundError,
     VaultProviderError,
+    VaultResponseError,
     VaultTokenRefusedError,
     VaultUnreachableError,
 )
@@ -29,8 +30,11 @@ ENVIRON = {
     "SECRETOPS_INFISICAL_PATH": "/",
 }
 UNREACHABLE = 'Get "https://vault.example.com/api/v3/secrets/raw": dial tcp: lookup vault.example.com: no such host'
-REFUSED_CONNECTION = "dial tcp 127.0.0.1:8086: connect: connection refused"
-TLS = "tls: failed to verify certificate: x509: certificate signed by unknown authority"
+REFUSED_CONNECTION = 'Get "https://vault.example.com/api/v3/secrets/raw": dial tcp 192.0.2.1:443: connect: connection refused'
+TLS = 'Get "https://vault.example.com/api/v3/secrets/raw": tls: failed to verify certificate: x509: certificate signed by unknown authority'
+# Network noise that does not name the vault host, e.g. an update check.
+NOISE = 'Get "https://updates.example.org/latest": dial tcp: lookup updates.example.org: no such host'
+HOST = "vault.example.com"
 STATUS = "error: CallGetRawSecretsV3: Unsuccessful response [GET https://vault.example.com/api/v3/secrets/raw] [status-code={code}] [response={{}}]"
 
 
@@ -64,10 +68,16 @@ def missing_runner(command, **kwargs):
         (REFUSED_CONNECTION, False, VaultUnreachableError),
         (TLS, False, VaultUnreachableError),
         (STATUS.format(code=401), False, VaultTokenRefusedError),
-        (STATUS.format(code=403), False, VaultNotFoundError),
+        (STATUS.format(code=403), True, VaultNotFoundError),
         (STATUS.format(code=404), True, VaultNotFoundError),
-        # A 404 can come from a server that is not the Infisical API.
+        # 403 and 404 can come from a server that is not the Infisical API.
+        (STATUS.format(code=403), False, None),
         (STATUS.format(code=404), False, None),
+        # Network lines count only when they name the vault host.
+        (NOISE, True, None),
+        (NOISE + "\n" + STATUS.format(code=401), True, VaultTokenRefusedError),
+        (NOISE + "\n" + f"error: something new {MARKER}", True, None),
+        ("tls: handshake failure for vault.example.com", True, None),
         (STATUS.format(code=500), True, None),
         (STATUS.format(code=401) + "\n" + STATUS.format(code=403), True, None),
         (STATUS.format(code=401) + "\n" + UNREACHABLE, True, None),
@@ -76,7 +86,11 @@ def missing_runner(command, **kwargs):
     ],
 )
 def test_classification(stderr, confirmed, expected):
-    assert classify_failure(stderr, api_confirmed=confirmed) is expected
+    assert classify_failure(stderr, host=HOST, api_confirmed=confirmed) is expected
+
+
+def test_without_host_no_network_line_counts():
+    assert classify_failure(UNREACHABLE, host="", api_confirmed=True) is None
 
 
 def test_only_stderr_is_classified():
@@ -91,7 +105,8 @@ def test_only_stderr_is_classified():
     [
         (UNREACHABLE, VaultUnreachableError, "vault not reachable at the configured URL"),
         (STATUS.format(code=401), VaultTokenRefusedError, "refused the access token"),
-        (STATUS.format(code=403), VaultNotFoundError, "project, environment or folder not found"),
+        # Ordinary operations have no API confirmation: 403 decides nothing.
+        (STATUS.format(code=403), VaultProviderError, "infisical CLI failed with exit status 1"),
         ("unrecognised", VaultProviderError, "infisical CLI failed with exit status 1"),
     ],
 )
@@ -99,6 +114,7 @@ def test_ordinary_operations_get_the_fixed_message(stderr, kind, text):
     vault = factory(failing_runner(f"{stderr} {MARKER} {TOKEN}"))()
     with pytest.raises(kind) as error:
         vault.secret_exists("DUMMY_SECRET", "dev")
+    assert type(error.value) is kind
     message = str(error.value)
     assert text in message
     assert MARKER not in message and TOKEN not in message
@@ -118,7 +134,9 @@ def test_failed_write_stays_unknown_whatever_the_output():
         (Probe.CONFIRMED, UNREACHABLE, CheckResult.UNREACHABLE),
         (Probe.INCONCLUSIVE, TLS, CheckResult.UNREACHABLE),
         (Probe.CONFIRMED, STATUS.format(code=401), CheckResult.TOKEN_REFUSED),
-        (Probe.INCONCLUSIVE, STATUS.format(code=403), CheckResult.NOT_FOUND),
+        (Probe.CONFIRMED, STATUS.format(code=403), CheckResult.NOT_FOUND),
+        (Probe.INCONCLUSIVE, STATUS.format(code=403), CheckResult.UNKNOWN),
+        (Probe.CONFIRMED, NOISE + "\n" + STATUS.format(code=500), CheckResult.UNKNOWN),
         (Probe.CONFIRMED, STATUS.format(code=404), CheckResult.NOT_FOUND),
         (Probe.INCONCLUSIVE, STATUS.format(code=404), CheckResult.UNKNOWN),
         (Probe.CONFIRMED, f"new text {MARKER}", CheckResult.UNKNOWN),
@@ -186,6 +204,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         type(self).paths.append(self.path)
         type(self).headers_seen.append(dict(self.headers))
         self.send_response(self.status)
+        if self.status in (301, 302, 307, 308):
+            self.send_header("Location", "/elsewhere/api/status")
         self.end_headers()
         self.wfile.write(self.body)
 
@@ -210,6 +230,10 @@ def server():
         (200, b'{"message":"Ok"}', Probe.CONFIRMED),
         (200, b"<html>not the api</html>", Probe.INCONCLUSIVE),
         (404, b"not found", Probe.INCONCLUSIVE),
+        (200, b'{"message":"' + b"x" * (64 * 1024) + b'"}', Probe.INCONCLUSIVE),
+        # Redirects are not followed: only the first path is requested.
+        (302, b"", Probe.INCONCLUSIVE),
+        (301, b"", Probe.INCONCLUSIVE),
     ],
 )
 def test_probe_answers(server, monkeypatch, status, body, expected):
@@ -219,6 +243,11 @@ def test_probe_answers(server, monkeypatch, status, body, expected):
     assert probe_server(domain) is expected
     assert _Handler.paths == ["/base/api/status"]
     assert not any("authorization" in key.lower() for key in _Handler.headers_seen[0])
+
+
+def test_probe_tls_failure_is_not_decided(server):
+    # A TLS handshake against a plain HTTP server fails; the CLI step decides.
+    assert probe_server(f"https://127.0.0.1:{server.server_port}") is Probe.INCONCLUSIVE
 
 
 def test_probe_refused_connection_is_unreachable():
@@ -303,3 +332,30 @@ def test_command_refuses_invalid_environment():
     result = CliRunner().invoke(app, ["check-vault-connection", "--env", "dev;id"])
     assert result.exit_code == 1
     assert "environment name is not valid" in result.output
+
+
+@pytest.mark.parametrize(
+    ("exit_code", "kind", "message"),
+    [
+        (1, VaultProviderError, "infisical CLI failed with exit status 1"),
+        (0, VaultResponseError, "unexpected infisical response"),
+    ],
+)
+def test_undecodable_provider_output_raises_only_fixed_text(tmp_path, exit_code, kind, message):
+    fake = tmp_path / "infisical"
+    fake.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        f"sys.stdout.buffer.write(b'\\xff\\xfe' + {MARKER.encode()!r} + b'\\n')\n"
+        f"sys.stderr.buffer.write(b'\\xff\\xfe' + {MARKER.encode()!r} + b'\\n')\n"
+        f"sys.exit({exit_code})\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o700)
+    vault = InfisicalCliVault(binary=str(fake), environ=ENVIRON)
+    with pytest.raises(kind) as error:
+        vault.secret_exists("DUMMY_SECRET", "dev")
+    assert type(error.value) is kind
+    assert str(error.value) == message
+    assert not isinstance(error.value.__context__, UnicodeError)
+    assert MARKER not in repr(error.value)
