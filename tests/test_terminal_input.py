@@ -343,3 +343,18 @@ def test_closed_terminal_cancels(tmp_path):
         result = json.loads(started.result_path.read_text(encoding="utf-8"))
         assert result.get("cancelled") is True
         assert "confirmed" not in result
+
+
+@pytest.mark.parametrize(
+    ("value", "line"),
+    [
+        ("x", "Input received: 1 character."),
+        ("a b", "Input received: 3 characters."),
+        ("čćž€", "Input received: 4 characters."),
+        ("s" * 32, "Input received: 32 characters."),
+    ],
+)
+def test_input_received_line_shows_only_the_count(value, line):
+    from secretops.terminal_input import input_received_line
+
+    assert input_received_line(value) == line

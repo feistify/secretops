@@ -284,6 +284,17 @@ class HiddenTerminal:
         return answer.decode("ascii").strip().lower() in {"y", "yes"}
 
 
+def input_received_line(value: str) -> str:
+    """The only feedback on a hidden entry: its length in characters.
+
+    Characters are Unicode code points of the value as read, which is the
+    value that is stored (hidden entries are not trimmed). Print it to the
+    human's terminal only, never to logs, audit events, or plans.
+    """
+    count = len(value)
+    return f"Input received: {count} character{'' if count == 1 else 's'}."
+
+
 def _erase_last_character(value: bytearray) -> None:
     # Remove one whole UTF-8 character: continuation bytes, then its lead byte.
     while value and 0x80 <= value[-1] <= 0xBF:

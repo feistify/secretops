@@ -8,9 +8,14 @@ every value with shlex.quote. Errors name a line number, never its content.
 
     secretops-configure                 # destination settings and token
     secretops-configure --token-only    # replace only the token
+    secretops-configure --check         # check the saved configuration
 
-The installer uses --init once to write the initial file without a token.
-No provider is called and no credential is printed.
+After saving, and with --check, the vault connection is checked as the
+broker user through the broker wrapper (`check-vault-connection`), for the
+environment given with --env (default dev). That command reads broker.env
+itself; this helper passes it no credential. A failed check does not undo
+the save. The installer uses --init once to write the initial file without
+a token. No credential is printed.
 """
 
 import argparse
@@ -21,6 +26,7 @@ import pwd
 import re
 import shlex
 import stat
+import subprocess
 import sys
 import tempfile
 import warnings
@@ -28,8 +34,19 @@ from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from secretops.terminal_input import input_received_line
+
 BROKER_ENV = Path("/opt/secretops/broker.env")
 BROKER_USER = "secretops-broker"
+BROKER_COMMAND = "/usr/local/bin/secretops-broker"
+CHECK_PATH = "/usr/bin:/bin"
+DEFAULT_CHECK_ENV = "dev"
+ENV_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
+# The check makes one provider call plus a short unauthenticated probe.
+DEFAULT_PROVIDER_TIMEOUT = 60
+PROBE_TIMEOUT = 10
+CHECK_MARGIN_SECONDS = 20
+CHECK_INTERRUPTED = 130
 TOKEN_KEY = "INFISICAL_TOKEN"
 # Written in this order; unknown keys are refused.
 KNOWN_KEYS = (
@@ -200,9 +217,23 @@ def hidden_input(prompt: str) -> str:
     with warnings.catch_warnings():
         warnings.simplefilter("error", getpass.GetPassWarning)
         try:
-            return getpass.getpass(prompt)
+            value = getpass.getpass(prompt)
         except getpass.GetPassWarning:
             raise ConfigError("hidden input is not available on this terminal; nothing was changed") from None
+    if value:
+        tell_terminal(input_received_line(value))
+    return value
+
+
+def tell_terminal(line: str) -> None:
+    """Print one line where getpass shows its prompt: /dev/tty, else stderr."""
+    try:
+        fd = os.open("/dev/tty", os.O_WRONLY | os.O_NOCTTY)
+    except OSError:
+        print(line, file=sys.stderr, flush=True)
+        return
+    with os.fdopen(fd, "w", encoding="utf-8") as tty:
+        tty.write(line + "\n")
 
 
 def ask(prompt: str, current: str, validate: Callable[[str], str], read: Callable[[str], str]) -> str:
@@ -239,6 +270,69 @@ def configure(
     return updated
 
 
+def validate_env_name(value: str) -> str:
+    if not ENV_NAME.fullmatch(value):
+        raise ConfigError(
+            "environment name must start with a letter or digit and contain only letters, digits, '.', '-' and '_'"
+        )
+    return value
+
+
+def check_command(env: str) -> list[str]:
+    return [BROKER_COMMAND, "check-vault-connection", "--env", env]
+
+
+def check_timeout(values: dict[str, str]) -> int:
+    raw = values.get("SECRETOPS_PROVIDER_TIMEOUT_SECONDS", "")
+    provider = int(raw) if raw.isdigit() and int(raw) > 0 else DEFAULT_PROVIDER_TIMEOUT
+    return provider + PROBE_TIMEOUT + CHECK_MARGIN_SECONDS
+
+
+def run_check(
+    account: pwd.struct_passwd,
+    env: str,
+    timeout: int = DEFAULT_PROVIDER_TIMEOUT + PROBE_TIMEOUT + CHECK_MARGIN_SECONDS,
+    runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+) -> int:
+    """Run the vault check as the broker user and print its output.
+
+    The broker wrapper loads broker.env itself, so neither the token nor any
+    other setting is passed here, in the arguments or the environment. The
+    child runs in a new session without root's terminal (no stdin, output
+    through a pipe), so broker-user code cannot write to or inject input
+    into the terminal. Returns the check's exit status, 1 when it could not
+    run or timed out, CHECK_INTERRUPTED on Ctrl+C.
+    """
+    print(f"Checking the vault connection for environment {env} ...", flush=True)
+    try:
+        result = runner(
+            check_command(env),
+            user=account.pw_uid,
+            group=account.pw_gid,
+            extra_groups=[],
+            env={"PATH": CHECK_PATH, "HOME": account.pw_dir, "LANG": "C.UTF-8"},
+            cwd="/",
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        print(f"secretops-configure: the vault check did not finish within {timeout} seconds", file=sys.stderr)
+        return 1
+    except (OSError, subprocess.SubprocessError):
+        print(f"secretops-configure: the vault check could not start {BROKER_COMMAND}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("\nsecretops-configure: the vault check was interrupted", file=sys.stderr)
+        return CHECK_INTERRUPTED
+    sys.stdout.write((result.stdout or b"").decode("utf-8", errors="replace"))
+    sys.stdout.flush()
+    return result.returncode
+
+
 def init_values(domain: str, infisical_bin: str, gh_bin: str | None) -> dict[str, str]:
     values = dict(LAYOUT_DEFAULTS)
     values["INFISICAL_DOMAIN"] = validate_domain(domain)
@@ -251,6 +345,10 @@ def init_values(domain: str, infisical_bin: str, gh_bin: str | None) -> dict[str
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="secretops-configure", description=__doc__.split("\n\n")[0])
     parser.add_argument("--token-only", action="store_true", help="replace only the access token")
+    parser.add_argument("--check", action="store_true",
+                        help="only check the saved configuration against the vault; changes nothing")
+    parser.add_argument("--env", default=DEFAULT_CHECK_ENV,
+                        help="vault environment for the check (default: dev)")
     parser.add_argument("--init", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--domain", help=argparse.SUPPRESS)
     parser.add_argument("--infisical-bin", help=argparse.SUPPRESS)
@@ -260,6 +358,11 @@ def main(argv: list[str] | None = None) -> int:
         if os.geteuid() != 0:
             raise ConfigError("run with sudo from your own terminal, not from an agent session")
         account = pwd.getpwnam(BROKER_USER)
+        env = validate_env_name(args.env)
+        if args.check:
+            if args.token_only or args.init:
+                raise ConfigError("--check cannot be combined with --token-only or --init")
+            return run_check(account, env, check_timeout(read_env(BROKER_ENV, account.pw_uid)))
         if args.init:
             if BROKER_ENV.exists() or BROKER_ENV.is_symlink():
                 raise ConfigError(f"{BROKER_ENV} already exists")
@@ -285,8 +388,15 @@ def main(argv: list[str] | None = None) -> int:
     print("Broker configuration saved. No credential was displayed.")
     if is_unencrypted_remote(updated["INFISICAL_DOMAIN"]):
         print("WARNING: the vault URL uses unencrypted HTTP to a non-loopback host.")
-    print("Check it: sudo -u secretops-broker /usr/local/bin/secretops-broker "
-          "check-vault-read --name <EXISTING_TEST_SECRET> --env dev")
+    # The exit status reports the save; a failed or interrupted check keeps it.
+    code = run_check(account, env, check_timeout(updated))
+    if code != 0:
+        again = "sudo secretops-configure --check" + (f" --env {env}" if env != DEFAULT_CHECK_ENV else "")
+        if code == CHECK_INTERRUPTED:
+            print("The configuration was saved; the vault check was interrupted.")
+        else:
+            print("The configuration was saved, but the vault check failed. Fix the cause above,")
+        print(f"then check again: {again}" if code != CHECK_INTERRUPTED else f"Check it with: {again}")
     return 0
 
 

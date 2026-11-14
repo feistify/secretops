@@ -44,10 +44,13 @@ Plan:        PLAN_ID
 
 Checks passed. The secret is currently absent.
 Value (hidden):
+Input received: 32 characters.
 Save? [y/N]: y
 
 Saved and verified.
 ```
+
+Note (2026-11-14): after a nonblank entry the client prints its length in characters (Unicode code points of the value as stored) on the terminal only, so the human sees that input arrived. No asterisks or echo; the count is not sent to the broker or written to plans or audit events.
 
 The operation text reflects the adapter's declared capability. For a non-atomic adapter, use the wording above. Explain the remaining race with other writers in `--help` and operating documentation rather than repeating a warning at every entry. Only an adapter that guarantees atomic creation may say that an existing secret is never replaced by this operation. Do not expose adapter configuration questions in the normal input flow.
 

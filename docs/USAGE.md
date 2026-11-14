@@ -16,12 +16,13 @@ secretops add --plan PLAN_ID
 
 Use `--broker NAME` to select a configured broker. The first form asks for the name and environment; all three show the broker's destination before hidden value entry and confirmation. When running from a source checkout, prefix these commands with `uv run`.
 
-Type or paste one nonblank line, at most 16 KiB in UTF-8, into the hidden prompt. Multiline values are rejected; empty/whitespace-only values and control characters are not supported. Values cannot be supplied as command arguments, environment variables, files, or raw stdin to `add`. Existing names are refused at the final check; this command does not rotate or replace them. Creating a provider API key and syncing the stored value to GitHub are separate operations.
+Type or paste one nonblank line, at most 16 KiB in UTF-8, into the hidden prompt. Multiline values are rejected; empty/whitespace-only values and control characters are not supported. After Enter, the terminal shows only how many characters arrived, for example `Input received: 32 characters.`; nothing else about the value is shown or recorded. Values cannot be supplied as command arguments, environment variables, files, or raw stdin to `add`. Existing names are refused at the final check; this command does not rotate or replace them. Creating a provider API key and syncing the stored value to GitHub are separate operations.
 
 ```text
 $ secretops add SCALEWAY_API_KEY --env staging
 ...
 Value (hidden):
+Input received: 32 characters.
 Save? [y/N]: y
 
 Saved and verified.

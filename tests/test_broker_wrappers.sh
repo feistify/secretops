@@ -89,6 +89,7 @@ agent "prepare-add --name DUMMY_SECRET --env dev" </dev/null; check "prepare-add
 agent "review-add --id deadbeef" </dev/null; check "review-add (human endpoint) denied" 1 $?
 echo '{"value":"x"}' | agent "submit-add"; check "submit-add (human endpoint) denied" 1 $?
 agent "add DUMMY_SECRET --env dev" </dev/null; check "add denied" 1 $?
+agent "check-vault-connection --env dev" </dev/null; check "check-vault-connection (human check) denied" 1 $?
 agent "show-plan --id ../../broker" </dev/null; check "traversal plan id denied" 1 $?
 agent "show-plan --id a b" </dev/null; check "multi-token plan id denied" 1 $?
 agent "plan; rm -rf /" </dev/null; check "semicolon denied" 1 $?

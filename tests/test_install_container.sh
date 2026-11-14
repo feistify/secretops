@@ -143,6 +143,8 @@ PY
 check "configure through a terminal" pass sh -c 'python3 /tmp/answer.py http://127.0.0.1:8086,project-1,/,synthetic-token-1 secretops-configure > /tmp/configure.out'
 check "token renewal through a terminal" pass sh -c 'python3 /tmp/answer.py synthetic-token-2 secretops-configure --token-only >> /tmp/configure.out'
 check "configure output shows no token" pass sh -c '! grep -q synthetic-token /tmp/configure.out'
+check "check after save reports the unreachable vault" pass grep -q "FAIL vault not reachable" /tmp/configure.out
+check "vault check on request" pass sh -c 'secretops-configure --check | grep -q "FAIL vault not reachable"'
 check "configured file stays broker-owned 0600" pass test "$(stat -c '%U %a' /opt/secretops/broker.env)" = "secretops-broker 600"
 runuser -u secretops-broker -- /usr/local/bin/secretops-broker check-vault-read --name DEMO --env dev >/dev/null 2>&1 </dev/null || true
 check "renewed token reaches the vault CLI" pass test -e /tmp/token-seen
