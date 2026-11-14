@@ -1,8 +1,10 @@
 # Hours an approval made with approve-plan stays executable (1 to 168).
 approval_valid_hours: 24
 
-# Environment names treated as production. Actions with production_allowed:
-# false are refused there even if allowed_environments lists them.
+# Environment names treated as production, compared without regard to case.
+# production and prod always are; add further names here. Actions with
+# production_allowed: false are refused there even if allowed_environments
+# lists them.
 production_environments:
   - production
   - prod

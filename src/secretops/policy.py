@@ -8,8 +8,9 @@ import yaml
 POLICY_PATH_ENV = "SECRETOPS_POLICY_PATH"
 DEFAULT_POLICY_RESOURCE_PACKAGE = "secretops.policies"
 DEFAULT_POLICY_RESOURCE_NAME = "default.yaml"
-# Environment names treated as production, whatever the vault product calls
-# them. The policy file can replace the list, never empty it.
+# Environment names always treated as production, whatever the vault product
+# calls them. `production_environments` in the policy adds further names; it
+# cannot remove these. Names are compared without regard to case.
 DEFAULT_PRODUCTION_ENVIRONMENTS = ["production", "prod"]
 # How long an approval made with approve-plan stays executable.
 DEFAULT_APPROVAL_VALID_HOURS = 24
@@ -83,11 +84,11 @@ def _check_mapping(mapping, allowed: tuple[str, ...], location: str, source: str
         ):
             _fail(source, f"{key} in {location} must be a list of names", "correct its value")
         if key == "production_environments" and not value:
-            # An empty list would switch the production block off.
+            # Kept strict: an empty list says nothing; leave the key out.
             _fail(
                 source,
                 f"{key} in {location} must name at least one environment",
-                "list the production environment names",
+                "list additional production names or remove the key",
             )
         if key == "approval_valid_hours":
             low, high = APPROVAL_VALID_HOURS_RANGE
@@ -213,7 +214,9 @@ def load_policy(path: str | Path | None = None) -> Policy:
         actions=_load_action_policies(data),
         approval_valid_hours=data.get("approval_valid_hours", DEFAULT_APPROVAL_VALID_HOURS),
         production_environments=list(
-            data.get("production_environments", DEFAULT_PRODUCTION_ENVIRONMENTS)
+            dict.fromkeys(
+                DEFAULT_PRODUCTION_ENVIRONMENTS + data.get("production_environments", [])
+            )
         ),
     )
 
@@ -243,7 +246,9 @@ def is_production_allowed(action: str, policy: Policy | None = None) -> bool:
 
 def is_production_environment(env: str, policy: Policy | None = None) -> bool:
     policy = policy or load_policy()
-    return env in policy.production_environments
+    # Case-insensitive, so `Prod` listed in allowed_environments cannot
+    # sidestep the block.
+    return env.casefold() in {name.casefold() for name in policy.production_environments}
 
 
 def require_environment_allowed(
@@ -251,7 +256,8 @@ def require_environment_allowed(
     env: str,
     policy: Policy | None = None,
 ) -> None:
-    """An environment in `production_environments` needs `production_allowed`
+    """A production environment (`production`, `prod`, and any name in
+    `production_environments`, in any case) needs `production_allowed`
     for the action, whether or not it is also listed in the action's
     `allowed_environments`; every environment must be listed there."""
     policy = policy or load_policy()

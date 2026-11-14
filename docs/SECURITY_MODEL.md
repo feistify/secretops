@@ -108,7 +108,7 @@ How much secretops protects depends on how you run it. From weakest to strongest
 | Agent reads secrets directly with a provider CLI | vault credentials exist only in the broker domain | 3 (2 without broker) |
 | Agent approves its own plan | `approve-plan` is not on the agent wrapper allowlist | 3 (2 without broker) |
 | Agent marks a plan approved by editing its JSON | plan store is owned by the broker user | 3 (2 without broker) |
-| Agent runs an operation against production | policy denies production execution before any provider call, for every name in `production_environments` (default `production`, `prod`), even when an action's `allowed_environments` lists it | 2 and 3 |
+| Agent runs an operation against production | policy denies production execution before any provider call, for `production`, `prod` and every name added in `production_environments`, compared without regard to case, even when an action's `allowed_environments` lists it | 2 and 3 |
 | Agent smuggles extra arguments or paths through SSH | forced-command wrapper validates exact argument shapes and rejects shell metacharacters | 3 |
 | Malformed `.env` import echoes file content in an error | parser errors never include file content; policy runs before parse | 1 |
 | A broker variable with a secret's name is read as if it came from the vault | explicit provider environment; reserved names rejected | 1 |

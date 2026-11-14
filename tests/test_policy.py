@@ -479,8 +479,8 @@ def test_default_behaviour_for_dev_and_staging_is_unchanged():
     for action in WRITE_ACTIONS + METADATA_ACTIONS:
         require_environment_allowed(action, "dev")
         require_environment_allowed(action, "staging")
-    with pytest.raises(PermissionError, match="^environment denied by policy for vault.secret.generate: Prod$"):
-        require_environment_allowed("vault.secret.generate", "Prod")
+    with pytest.raises(PermissionError, match="^environment denied by policy for vault.secret.generate: Dev$"):
+        require_environment_allowed("vault.secret.generate", "Dev")
 
 
 def custom_policy(tmp_path, top_level, allowed_environments, production_allowed):
@@ -512,10 +512,37 @@ def test_custom_production_set(tmp_path):
         tmp_path, "production_environments: [live]\n", "[dev, live, prod]", "false"
     )
 
+    assert policy.production_environments == ["production", "prod", "live"]
     with pytest.raises(PermissionError, match=r"\(environment live is a production environment"):
         require_environment_allowed("vault.secret.generate", "live", policy)
-    # Not in the custom set: governed by allowed_environments only.
-    require_environment_allowed("vault.secret.generate", "prod", policy)
+    # The key adds names; production and prod stay production.
+    with pytest.raises(PermissionError, match=r"\(environment prod is a production environment"):
+        require_environment_allowed("vault.secret.generate", "prod", policy)
+    require_environment_allowed("vault.secret.generate", "dev", policy)
+
+
+def test_production_names_cannot_be_dropped_and_duplicates_are_harmless(tmp_path):
+    policy = custom_policy(
+        tmp_path, "production_environments: [live, live, Prod]\n", "[dev, production]", "false"
+    )
+
+    assert policy.production_environments == ["production", "prod", "live", "Prod"]
+    with pytest.raises(PermissionError, match="is a production environment by policy"):
+        require_environment_allowed("vault.secret.generate", "production", policy)
+
+
+@pytest.mark.parametrize("env", ["Prod", "PRODUCTION", "pRoD", "LIVE"])
+def test_production_names_match_without_regard_to_case(tmp_path, env):
+    policy = custom_policy(
+        tmp_path, "production_environments: [live]\n", f"[dev, {env}]", "false"
+    )
+
+    with pytest.raises(PermissionError) as raised:
+        require_environment_allowed("vault.secret.generate", env, policy)
+    assert str(raised.value) == (
+        "production execution denied by policy: vault.secret.generate "
+        f"(environment {env} is a production environment by policy)"
+    )
 
 
 def test_production_allowed_still_needs_the_environment_listed(tmp_path):
@@ -530,13 +557,15 @@ def test_production_allowed_still_needs_the_environment_listed(tmp_path):
     "value,expected",
     [
         ("[]", "production_environments in the top level must name at least one environment; "
-               "list the production environment names"),
+               "list additional production names or remove the key"),
+        ("[prod, null]", "production_environments in the top level must be a list of names; "
+                         "correct its value"),
         ("", "production_environments in the top level must be a list of names; correct its value"),
         ("prod", "production_environments in the top level must be a list of names; correct its value"),
         ("[prod, 1]", "production_environments in the top level must be a list of names; "
                       "correct its value"),
     ],
-    ids=["empty", "null", "string", "non_string_item"],
+    ids=["empty", "null_item", "null", "string", "non_string_item"],
 )
 def test_production_environments_must_be_a_non_empty_list_of_names(tmp_path, value, expected):
     from secretops.policy import PolicyError

@@ -470,6 +470,45 @@ def test_github_target_environment_prod_is_refused(broker):
     assert broker.calls == []
 
 
+@pytest.mark.parametrize("envs", [
+    {"env": "prod", "source_env": "prod"},
+    {"target_env": "prod"},
+    {"env": "production", "source_env": "production", "target_env": "prod"},
+])
+def test_diff_envs_runs_with_production_names(broker, envs):
+    plan = in_env(diff_envs_plan("prod-diff"), **envs)
+    broker.write(plan)
+    for mapping in plan["secret_mappings"]:
+        for env in (plan["source_env"], plan["target_env"]):
+            broker.vault.values[(mapping["name"], env)] = "present"
+
+    code, lines = broker.execute("prod-diff")
+
+    assert code == 0
+    assert lines[0] == "OK vault environment secret names match: 4"
+
+
+def test_verify_many_runs_in_prod(broker, monkeypatch):
+    plan = verify_many_plan("prod-verify")
+    plan["target"]["target_environment"] = "prod"
+    broker.write(plan)
+    names = [mapping["name"] for mapping in plan["secret_mappings"]]
+
+    class FakeGitHub:
+        def __init__(self, **kwargs):
+            assert kwargs["environment"] == "prod"
+
+        def list_secret_names(self):
+            return names
+
+    monkeypatch.setattr(secretops.plan_lifecycle, "GitHubCliEnvSecretTarget", FakeGitHub)
+
+    code, lines = broker.execute("prod-verify")
+
+    assert code == 0
+    assert lines[0] == "OK GitHub environment secrets verified: 4"
+
+
 def test_metadata_check_runs_in_prod(broker):
     plan = in_env(vault_plan("prod-read"), env="prod")
     broker.write(plan)
