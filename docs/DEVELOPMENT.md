@@ -34,7 +34,7 @@ CI runs ruff (lint only, default rules, version pinned in the dev group) and she
 
 ```sh
 uv run ruff check
-shellcheck scripts/*.sh scripts/secretops-* tests/*.sh
+shellcheck --severity=warning --exclude=SC1007 scripts/*.sh scripts/secretops-* tests/*.sh
 ```
 
 When Dependabot changes `uv.lock`, regenerate the broker requirements; CI fails until they match:

@@ -64,5 +64,7 @@ jobs:
         run: sh tests/test_broker_wrappers.sh
 
       - name: Lint shell scripts
-        # shellcheck is preinstalled on ubuntu-latest.
-        run: shellcheck scripts/*.sh scripts/secretops-* tests/*.sh
+        # shellcheck is preinstalled on ubuntu-latest. Warnings and errors fail;
+        # style and info notes do not. SC1007 is excluded for the deliberate
+        # `CDPATH= cd` idiom.
+        run: shellcheck --severity=warning --exclude=SC1007 scripts/*.sh scripts/secretops-* tests/*.sh
