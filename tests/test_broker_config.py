@@ -6,6 +6,7 @@ import pytest
 
 from secretops import broker_config
 from secretops.broker_config import (
+    TOKEN_KEY,
     ConfigError,
     configure,
     parse,
@@ -228,3 +229,92 @@ def test_hidden_input_refuses_visible_fallback(monkeypatch):
     with pytest.raises(ConfigError, match="hidden input"):
         broker_config.hidden_input("Token: ")
     assert typed == []
+
+
+class _Recorder:
+    def __init__(self, returncode=0, error=None):
+        self.returncode = returncode
+        self.error = error
+        self.calls = []
+
+    def __call__(self, command, **kwargs):
+        self.calls.append((command, kwargs))
+        if self.error is not None:
+            raise self.error
+        return subprocess.CompletedProcess(command, self.returncode)
+
+
+def test_check_runs_as_broker_user_without_credentials(capsys):
+    account = _account()
+    runner = _Recorder(returncode=1)
+    assert broker_config.run_check(account, "staging", runner=runner) == 1
+    (command, kwargs), = runner.calls
+    assert command == ["/usr/local/bin/secretops-broker", "check-vault-connection", "--env", "staging"]
+    assert kwargs["user"] == account.pw_uid and kwargs["group"] == account.pw_gid
+    assert kwargs["extra_groups"] == []
+    assert set(kwargs["env"]) == {"PATH", "HOME", "LANG"}
+    assert "staging" in capsys.readouterr().out
+
+
+def test_check_that_cannot_start_fails_safely(capsys):
+    runner = _Recorder(error=FileNotFoundError("/usr/local/bin/secretops-broker"))
+    assert broker_config.run_check(_account(), "dev", runner=runner) == 1
+    assert "could not start" in capsys.readouterr().err
+
+
+@pytest.fixture
+def interactive_root(monkeypatch, tmp_path):
+    env_file = tmp_path / "broker.env"
+    write_env(env_file, {"INFISICAL_TOKEN": "old"}, os.getuid(), os.getgid())
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    monkeypatch.setattr(broker_config.pwd, "getpwnam", lambda name: _account())
+    monkeypatch.setattr(broker_config, "BROKER_ENV", env_file)
+    checks = []
+
+    def fake_check(account, env, runner=None):
+        checks.append(env)
+        return fake_check.returncode
+
+    fake_check.returncode = 0
+    monkeypatch.setattr(broker_config, "run_check", fake_check)
+    return env_file, checks, fake_check
+
+
+@pytest.mark.parametrize("check_code", [0, 1])
+def test_check_runs_after_save_and_failure_keeps_the_save(interactive_root, monkeypatch, capsys, check_code):
+    env_file, checks, fake_check = interactive_root
+    fake_check.returncode = check_code
+    # Set here, in the test call: pytest swaps the captured streams per phase.
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+    monkeypatch.setattr(
+        broker_config, "configure",
+        lambda values, token_only: {**values, "INFISICAL_DOMAIN": "https://v.example.com", TOKEN_KEY: TOKEN},
+    )
+    assert broker_config.main(["--env", "staging"]) == 0
+    assert checks == ["staging"]
+    assert read_env(env_file, os.getuid())[TOKEN_KEY] == TOKEN
+    out = capsys.readouterr().out
+    assert "Broker configuration saved" in out
+    assert ("vault check failed" in out) is bool(check_code)
+    if check_code:
+        assert "sudo secretops-configure --check --env staging" in out
+    assert TOKEN not in out
+
+
+def test_check_option_only_checks(interactive_root, monkeypatch):
+    env_file, checks, fake_check = interactive_root
+    fake_check.returncode = 1
+    before = env_file.read_text()
+    monkeypatch.setattr(broker_config, "configure", lambda *a, **k: pytest.fail("must not configure"))
+    assert broker_config.main(["--check"]) == 1
+    assert checks == ["dev"]
+    assert env_file.read_text() == before
+
+
+@pytest.mark.parametrize("argv", [["--check", "--token-only"], ["--check", "--env", "dev;id"]])
+def test_check_option_refuses_bad_combinations(interactive_root, argv, capsys):
+    _, checks, _ = interactive_root
+    assert broker_config.main(argv) == 1
+    assert checks == []
+    assert "secretops-configure:" in capsys.readouterr().err

@@ -8,9 +8,14 @@ every value with shlex.quote. Errors name a line number, never its content.
 
     secretops-configure                 # destination settings and token
     secretops-configure --token-only    # replace only the token
+    secretops-configure --check         # check the saved configuration
 
-The installer uses --init once to write the initial file without a token.
-No provider is called and no credential is printed.
+After saving, and with --check, the vault connection is checked as the
+broker user through the broker wrapper (`check-vault-connection`), for the
+environment given with --env (default dev). That command reads broker.env
+itself; this helper passes it no credential. A failed check does not undo
+the save. The installer uses --init once to write the initial file without
+a token. No credential is printed.
 """
 
 import argparse
@@ -21,6 +26,7 @@ import pwd
 import re
 import shlex
 import stat
+import subprocess
 import sys
 import tempfile
 import warnings
@@ -30,6 +36,10 @@ from urllib.parse import urlsplit
 
 BROKER_ENV = Path("/opt/secretops/broker.env")
 BROKER_USER = "secretops-broker"
+BROKER_COMMAND = "/usr/local/bin/secretops-broker"
+CHECK_PATH = "/usr/bin:/bin"
+DEFAULT_CHECK_ENV = "dev"
+ENV_NAME = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 TOKEN_KEY = "INFISICAL_TOKEN"
 # Written in this order; unknown keys are refused.
 KNOWN_KEYS = (
@@ -239,6 +249,44 @@ def configure(
     return updated
 
 
+def validate_env_name(value: str) -> str:
+    if not ENV_NAME.fullmatch(value):
+        raise ConfigError("environment name may contain only letters, digits, '.', '-' and '_'")
+    return value
+
+
+def check_command(env: str) -> list[str]:
+    return [BROKER_COMMAND, "check-vault-connection", "--env", env]
+
+
+def run_check(
+    account: pwd.struct_passwd,
+    env: str,
+    runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+) -> int:
+    """Run the vault check as the broker user; its output goes to the terminal.
+
+    The broker wrapper loads broker.env itself, so neither the token nor any
+    other setting is passed here, in the arguments or the environment.
+    """
+    print(f"Checking the vault connection for environment {env} ...", flush=True)
+    try:
+        result = runner(
+            check_command(env),
+            user=account.pw_uid,
+            group=account.pw_gid,
+            extra_groups=[],
+            env={"PATH": CHECK_PATH, "HOME": account.pw_dir, "LANG": "C.UTF-8"},
+            cwd="/",
+            stdin=subprocess.DEVNULL,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        print(f"secretops-configure: the vault check could not start {BROKER_COMMAND}", file=sys.stderr)
+        return 1
+    return result.returncode
+
+
 def init_values(domain: str, infisical_bin: str, gh_bin: str | None) -> dict[str, str]:
     values = dict(LAYOUT_DEFAULTS)
     values["INFISICAL_DOMAIN"] = validate_domain(domain)
@@ -251,6 +299,10 @@ def init_values(domain: str, infisical_bin: str, gh_bin: str | None) -> dict[str
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="secretops-configure", description=__doc__.split("\n\n")[0])
     parser.add_argument("--token-only", action="store_true", help="replace only the access token")
+    parser.add_argument("--check", action="store_true",
+                        help="only check the saved configuration against the vault; changes nothing")
+    parser.add_argument("--env", default=DEFAULT_CHECK_ENV,
+                        help="vault environment for the check (default: dev)")
     parser.add_argument("--init", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--domain", help=argparse.SUPPRESS)
     parser.add_argument("--infisical-bin", help=argparse.SUPPRESS)
@@ -260,6 +312,11 @@ def main(argv: list[str] | None = None) -> int:
         if os.geteuid() != 0:
             raise ConfigError("run with sudo from your own terminal, not from an agent session")
         account = pwd.getpwnam(BROKER_USER)
+        env = validate_env_name(args.env)
+        if args.check:
+            if args.token_only or args.init:
+                raise ConfigError("--check cannot be combined with --token-only or --init")
+            return run_check(account, env)
         if args.init:
             if BROKER_ENV.exists() or BROKER_ENV.is_symlink():
                 raise ConfigError(f"{BROKER_ENV} already exists")
@@ -285,8 +342,10 @@ def main(argv: list[str] | None = None) -> int:
     print("Broker configuration saved. No credential was displayed.")
     if is_unencrypted_remote(updated["INFISICAL_DOMAIN"]):
         print("WARNING: the vault URL uses unencrypted HTTP to a non-loopback host.")
-    print("Check it: sudo -u secretops-broker /usr/local/bin/secretops-broker "
-          "check-vault-read --name <EXISTING_TEST_SECRET> --env dev")
+    if run_check(account, env) != 0:
+        again = "sudo secretops-configure --check" + (f" --env {env}" if env != DEFAULT_CHECK_ENV else "")
+        print("The configuration was saved, but the vault check failed. Fix the cause above,")
+        print(f"then check again: {again}")
     return 0
 
 

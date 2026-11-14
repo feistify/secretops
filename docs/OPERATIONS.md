@@ -37,8 +37,7 @@ Before approving, read the whole `show-plan` output: action, environment, vault 
 | `plan is in use by another command` | another command (execute, approve, reject or `secretops add`) is working on this plan; nothing was done | wait for it to finish, check the plan with `show-plan`, then try again if still needed |
 | `plan lock could not be taken` | the lock file beside the plan cannot be opened (plan directory permissions); nothing was done | fix ownership and permissions of the plan directory, then try again |
 | `replan required`, changed destination | the vault configuration changed since planning | plan again and approve the new plan |
-| `vault error: ...` | token, URL or connection problem | check the token; see [renew](#renew-the-vault-token) |
-| first operation after `secretops-configure` fails with `infisical CLI failed with exit status 1` | the vault refused or could not serve the call; the provider's output is suppressed | check the vault URL, project ID and environment slug; create a new token and enter it with `sudo secretops-configure --token-only`. A clearer connection check is planned |
+| `vault error: ...` | the message names the cause: vault not reachable, token refused, or project, environment or folder not found or not permitted; `infisical CLI failed` means it could not tell | run `sudo secretops-configure --check` (add `--env NAME` for another environment) and follow its next step; for a refused token see [renew](#renew-the-vault-token) |
 | `secret missing or inaccessible` | name absent, or no permission for it | check the name, environment, folder and identity permissions |
 | GitHub `not written` / `not attempted` | the sync stopped before these writes | fix the cause; a new plan writes them |
 | exit 3, `outcome unknown` | a write may or may not have happened | see below |

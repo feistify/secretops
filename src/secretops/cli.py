@@ -45,6 +45,12 @@ from secretops.plans import (
 from secretops.policy import load_policy, require_allowed
 from secretops.recipes import load_recipe
 from secretops.validation import validate_secret_name
+from secretops.vault_check import (
+    CHECK_SECRET_NAME,
+    CheckResult,
+    check_vault_connection,
+    result_lines,
+)
 from secretops.vaults import VaultError, configured_vault_destination, get_vault
 
 app = typer.Typer(
@@ -239,6 +245,39 @@ def check_vault_read(
         )
         console.print(f"[red]FAIL[/red] secret missing or inaccessible: {name}")
         raise typer.Exit(1)
+
+
+@app.command(
+    "check-vault-connection",
+    help="Check the saved vault configuration (human; usually through secretops-configure --check).",
+    rich_help_panel="Checks",
+)
+def check_vault_connection_command(env: str = typer.Option("dev", "--env")):
+    if not ENV_PATTERN.fullmatch(env):
+        typer.echo("environment name is not valid")
+        raise typer.Exit(1)
+    destination = None
+    try:
+        destination = configured_vault_destination()
+    except VaultError:
+        pass
+    if destination is not None:
+        typer.echo(
+            f"Vault: {destination['domain']}, project {destination['project_id']}, "
+            f"environment {env}, folder {destination['path']}"
+        )
+    result, detail = check_vault_connection(env)
+    write_audit_event(
+        action="check-vault-connection",
+        secret_name=CHECK_SECRET_NAME,
+        env=env,
+        status="ok" if result is CheckResult.WORKING else "fail",
+        details={"result": result.value},
+    )
+    for line in result_lines(result, detail, env):
+        typer.echo(line)
+    typer.echo("Provider output and secret values were not printed.")
+    raise typer.Exit(0 if result is CheckResult.WORKING else 1)
 
 @app.command("add", rich_help_panel="Secrets")
 def add(

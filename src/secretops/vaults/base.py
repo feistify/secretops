@@ -18,6 +18,18 @@ class VaultProviderError(VaultError):
     """The provider CLI failed (authentication, permission, or availability)."""
 
 
+class VaultUnreachableError(VaultProviderError):
+    """The provider CLI reported that the vault server could not be reached."""
+
+
+class VaultTokenRefusedError(VaultProviderError):
+    """The vault refused the access token."""
+
+
+class VaultNotFoundError(VaultProviderError):
+    """Project, environment, or folder not found, or not permitted."""
+
+
 class VaultTimeoutError(VaultError):
     """The provider CLI did not finish within the configured timeout."""
 
