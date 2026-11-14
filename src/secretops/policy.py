@@ -8,7 +8,9 @@ import yaml
 POLICY_PATH_ENV = "SECRETOPS_POLICY_PATH"
 DEFAULT_POLICY_RESOURCE_PACKAGE = "secretops.policies"
 DEFAULT_POLICY_RESOURCE_NAME = "default.yaml"
-DEFAULT_ALLOWED_ENVIRONMENTS = ["dev", "staging", "production"]
+# Environment names treated as production, whatever the vault product calls
+# them. The policy file can replace the list, never empty it.
+DEFAULT_PRODUCTION_ENVIRONMENTS = ["production", "prod"]
 # How long an approval made with approve-plan stays executable.
 DEFAULT_APPROVAL_VALID_HOURS = 24
 APPROVAL_VALID_HOURS_RANGE = (1, 168)
@@ -27,12 +29,23 @@ class Policy:
     denied_actions: list[str]
     actions: dict[str, ActionPolicy]
     approval_valid_hours: int = DEFAULT_APPROVAL_VALID_HOURS
+    production_environments: list[str] = field(
+        default_factory=lambda: list(DEFAULT_PRODUCTION_ENVIRONMENTS)
+    )
 
 
-POLICY_KEYS = ("allowed_actions", "denied_actions", "actions", "approval_valid_hours")
+POLICY_KEYS = (
+    "allowed_actions",
+    "denied_actions",
+    "actions",
+    "approval_valid_hours",
+    "production_environments",
+)
 ACTION_POLICY_KEYS = ("requires_approval", "allowed_environments", "production_allowed")
 DOC_HINT = "see docs/CONFIGURATION.md#policy-file"
-LIST_KEYS = {"allowed_actions", "denied_actions", "allowed_environments"}
+LIST_KEYS = {
+    "allowed_actions", "denied_actions", "allowed_environments", "production_environments"
+}
 BOOLEAN_KEYS = {"requires_approval", "production_allowed"}
 
 
@@ -69,6 +82,13 @@ def _check_mapping(mapping, allowed: tuple[str, ...], location: str, source: str
             isinstance(value, list) and all(isinstance(item, str) for item in value)
         ):
             _fail(source, f"{key} in {location} must be a list of names", "correct its value")
+        if key == "production_environments" and not value:
+            # An empty list would switch the production block off.
+            _fail(
+                source,
+                f"{key} in {location} must name at least one environment",
+                "list the production environment names",
+            )
         if key == "approval_valid_hours":
             low, high = APPROVAL_VALID_HOURS_RANGE
             # bool is an int in Python; `true` must not mean one hour.
@@ -192,6 +212,9 @@ def load_policy(path: str | Path | None = None) -> Policy:
         denied_actions=list(data.get("denied_actions", [])),
         actions=_load_action_policies(data),
         approval_valid_hours=data.get("approval_valid_hours", DEFAULT_APPROVAL_VALID_HOURS),
+        production_environments=list(
+            data.get("production_environments", DEFAULT_PRODUCTION_ENVIRONMENTS)
+        ),
     )
 
 
@@ -218,15 +241,26 @@ def is_production_allowed(action: str, policy: Policy | None = None) -> bool:
     return get_action_policy(action, policy).production_allowed
 
 
+def is_production_environment(env: str, policy: Policy | None = None) -> bool:
+    policy = policy or load_policy()
+    return env in policy.production_environments
+
+
 def require_environment_allowed(
     action: str,
     env: str,
     policy: Policy | None = None,
 ) -> None:
+    """An environment in `production_environments` needs `production_allowed`
+    for the action, whether or not it is also listed in the action's
+    `allowed_environments`; every environment must be listed there."""
     policy = policy or load_policy()
     require_allowed(action, policy)
     action_policy = get_action_policy(action, policy)
-    if env == "production" and not action_policy.production_allowed:
-        raise PermissionError(f"production execution denied by policy: {action}")
+    if is_production_environment(env, policy) and not action_policy.production_allowed:
+        raise PermissionError(
+            f"production execution denied by policy: {action} "
+            f"(environment {env} is a production environment by policy)"
+        )
     if env not in action_policy.allowed_environments:
         raise PermissionError(f"environment denied by policy for {action}: {env}")

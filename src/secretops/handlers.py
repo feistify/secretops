@@ -239,7 +239,7 @@ def require_read_check_environment(
             )
         except OSError:
             console.print("[red]WARNING[/red] the audit record could not be written")
-        console.print(f"[red]FAIL[/red] {error}")
+        console.print(f"[red]FAIL[/red] {error}", soft_wrap=True)
         console.print("no provider call was made")
         raise typer.Exit(1) from error
 

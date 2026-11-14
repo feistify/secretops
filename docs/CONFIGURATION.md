@@ -33,14 +33,20 @@ The executable is resolved through `/usr/local/bin:/usr/bin:/bin`, never the cal
 
 `SECRETOPS_POLICY_PATH` names the policy file; without it the packaged default (`src/secretops/policies/default.yaml`) applies. The file is checked strictly before every command:
 
-- top level: only `allowed_actions`, `denied_actions`, `actions`, `approval_valid_hours`
+- top level: only `allowed_actions`, `denied_actions`, `actions`, `approval_valid_hours`, `production_environments`
 - each entry under `actions`: only `requires_approval`, `allowed_environments`, `production_allowed`
 
-`requires_approval` and `production_allowed` are `true` or `false` without quotes; `allowed_actions`, `denied_actions` and `allowed_environments` are lists of names. `approval_valid_hours` is a whole number from 1 to 168 (default 24, also when the key is absent): how long an `approve-plan` approval stays executable. `execute-plan` refuses an older approval, an approval time in the future, and a plan approved by a version before approval times were recorded; the plan is then `failed` and needs a new plan and approval. Expiry cannot be turned off. `secretops add` approves and writes in one step, so no expiry applies there. A key may appear only once in each mapping. Action names under `actions` are not checked. Anything else stops every command:
+`requires_approval` and `production_allowed` are `true` or `false` without quotes; `allowed_actions`, `denied_actions` and `allowed_environments` are lists of names. `approval_valid_hours` is a whole number from 1 to 168 (default 24, also when the key is absent): how long an `approve-plan` approval stays executable. `execute-plan` refuses an older approval, an approval time in the future, and a plan approved by a version before approval times were recorded; the plan is then `failed` and needs a new plan and approval. Expiry cannot be turned off. `secretops add` approves and writes in one step, so no expiry applies there.
+
+`production_environments` lists the environment names treated as production, whatever the vault product calls them (default `production` and `prod`; an empty list is refused, since it would turn the production block off). It applies to every environment a plan touches: the vault environment, copy and diff source and target, and the GitHub environment. An action may run in such an environment only when its `production_allowed` is `true` **and** its `allowed_environments` lists the name; with `production_allowed: false` it is refused even if listed (`production execution denied by policy: ACTION (environment NAME is a production environment by policy)`). Other names need only `allowed_environments`. If you add a name, also list it under the metadata checks that should run there.
+
+A key may appear only once in each mapping. Action names under `actions` are not checked. Anything else stops every command:
 
 - an unknown or repeated key, or a value of another type: `FAIL policy file PATH: ...`, naming the key and its location or line, and what to correct
 - a missing or unreadable file: `FAIL policy file PATH is missing or not readable by this account`
 - invalid YAML: `FAIL policy file PATH is not valid YAML at line N`
+
+**Breaking change (production names):** `prod` is now a production environment by default. A custom policy that lists `prod` in `allowed_environments` of an action with `production_allowed: false` now refuses it; a custom policy without `production_environments` gets the default list. Metadata checks need `prod` listed to run there, as the packaged default does.
 
 **Breaking change (approval expiry):** plans approved before the upgrade have no approval time; `execute-plan` refuses them. Plan and approve them again. Plans still `planned` keep working.
 

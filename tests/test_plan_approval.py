@@ -422,3 +422,61 @@ def test_plan_times_must_have_the_fixed_form(broker, value):
     assert code == 1
     assert lines[0] == "FAIL plan file does not match the plan schema"
     assert broker.calls == []
+
+
+# Production environment names on the execute paths
+
+
+def in_env(plan, **envs):
+    plan.update(envs)
+    return plan
+
+
+PRODUCTION_WRITES = {
+    "generate_prod": lambda: in_env(generate_plan("prod-generate", "approved"), env="prod"),
+    "copy_to_prod": lambda: in_env(copy_many_plan("prod-copy", "approved"), target_env="prod"),
+    "copy_from_production": lambda: in_env(
+        copy_many_plan("production-copy", "approved"), env="production", source_env="production"
+    ),
+}
+
+
+@pytest.mark.parametrize("kind", sorted(PRODUCTION_WRITES))
+def test_production_names_are_refused_on_write_paths(broker, kind):
+    plan = PRODUCTION_WRITES[kind]()
+    plan_path = broker.write(plan)
+
+    code, lines = broker.execute(plan["plan_id"])
+
+    assert code == 1
+    assert lines[0].startswith(f"FAIL production execution denied by policy: {plan['action']} ")
+    assert "is a production environment by policy" in lines[0]
+    assert read_plan(plan_path)["status"] == "failed"
+    assert broker.calls == []
+
+
+def test_github_target_environment_prod_is_refused(broker):
+    plan = sync_many_plan("prod-sync", status="approved")
+    plan["target"]["target_environment"] = "prod"
+    broker.write(plan)
+
+    code, lines = broker.execute("prod-sync")
+
+    assert code == 1
+    assert lines[0] == (
+        "FAIL production execution denied by policy: github.env_secret.sync_many "
+        "(environment prod is a production environment by policy)"
+    )
+    assert broker.calls == []
+
+
+def test_metadata_check_runs_in_prod(broker):
+    plan = in_env(vault_plan("prod-read"), env="prod")
+    broker.write(plan)
+    broker.vault.values[(plan["secret_name"], "prod")] = DUMMY_SECRET_VALUE
+
+    code, lines = broker.execute("prod-read")
+
+    assert code == 0
+    assert lines[0] == f"OK secret exists: {plan['secret_name']}"
+    assert DUMMY_SECRET_VALUE not in "\n".join(lines)

@@ -511,7 +511,7 @@ def _fail_plan_file(plan_id: str, command: str, console: Console, error: PlanFil
         plan_id=plan_id,
         details={"failure": error.category},
     )
-    console.print(f"[red]FAIL[/red] {error}")
+    console.print(f"[red]FAIL[/red] {error}", soft_wrap=True)
     console.print("secret values were not printed")
     raise typer.Exit(1) from error
 
@@ -1216,7 +1216,7 @@ def _require_plan_execution_allowed(plan_artifact, console: Console) -> None:
             plan_id=plan_artifact.plan_id,
         )
         set_plan_status(plan_artifact, "failed")
-        console.print(f"[red]FAIL[/red] {error}")
+        console.print(f"[red]FAIL[/red] {error}", soft_wrap=True)
         for line in _not_printed_lines(plan_artifact.action):
             console.print(line)
         raise typer.Exit(1) from error

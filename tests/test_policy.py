@@ -87,7 +87,7 @@ def test_default_policy_loads_action_metadata():
     assert "production" in verify_policy.allowed_environments
     assert diff_policy.requires_approval is False
     assert diff_policy.production_allowed is True
-    assert diff_policy.allowed_environments == ["dev", "staging", "production"]
+    assert diff_policy.allowed_environments == ["dev", "staging", "production", "prod"]
 
 
 def test_policy_approval_metadata_matches_current_actions():
@@ -247,7 +247,8 @@ ENTRY = "actions entry 'vault.read.check'"
         (
             VALID_ACTION + "deny_actions: [x]\n",
             "unknown key 'deny_actions' in the top level "
-            "(allowed: allowed_actions, denied_actions, actions, approval_valid_hours)",
+            "(allowed: allowed_actions, denied_actions, actions, approval_valid_hours, "
+            "production_environments)",
             FIX_KEY,
         ),
         (
@@ -441,3 +442,109 @@ def test_approval_period_is_a_top_level_key_only(tmp_path):
 
     with pytest.raises(PolicyError, match="unknown key 'approval_valid_hours' in actions entry"):
         load_policy(write_policy(tmp_path, VALID_ACTION + "    approval_valid_hours: 2\n"))
+
+
+# production_environments: names treated as production, default production and prod
+
+WRITE_ACTIONS = (
+    "vault.secret.generate",
+    "vault.secret.rotate",
+    "vault.secret.copy_many",
+    "vault.secret.import_file",
+    "vault.secret.add",
+    "github.env_secret.write",
+    "github.env_secret.sync_many",
+)
+METADATA_ACTIONS = ("vault.read.check", "vault.secret.diff_envs", "github.env_secret.verify_many")
+
+
+def test_default_production_environments():
+    assert load_policy().production_environments == ["production", "prod"]
+
+
+@pytest.mark.parametrize("env", ["production", "prod"])
+def test_production_names_are_blocked_for_writes_and_allowed_for_metadata_checks(env):
+    for action in WRITE_ACTIONS:
+        with pytest.raises(PermissionError) as raised:
+            require_environment_allowed(action, env)
+        assert str(raised.value) == (
+            f"production execution denied by policy: {action} "
+            f"(environment {env} is a production environment by policy)"
+        )
+    for action in METADATA_ACTIONS:
+        require_environment_allowed(action, env)
+
+
+def test_default_behaviour_for_dev_and_staging_is_unchanged():
+    for action in WRITE_ACTIONS + METADATA_ACTIONS:
+        require_environment_allowed(action, "dev")
+        require_environment_allowed(action, "staging")
+    with pytest.raises(PermissionError, match="^environment denied by policy for vault.secret.generate: Prod$"):
+        require_environment_allowed("vault.secret.generate", "Prod")
+
+
+def custom_policy(tmp_path, top_level, allowed_environments, production_allowed):
+    path = tmp_path / "policy.yaml"
+    path.write_text(
+        "allowed_actions: [vault.secret.generate]\n"
+        "denied_actions: []\n"
+        f"{top_level}"
+        "actions:\n"
+        "  vault.secret.generate:\n"
+        f"    allowed_environments: {allowed_environments}\n"
+        f"    production_allowed: {production_allowed}\n",
+        encoding="utf-8",
+    )
+    return load_policy(path)
+
+
+def test_a_production_name_listed_in_allowed_environments_is_still_refused(tmp_path):
+    policy = custom_policy(tmp_path, "", "[dev, prod, production]", "false")
+
+    for env in ("prod", "production"):
+        with pytest.raises(PermissionError, match="is a production environment by policy"):
+            require_environment_allowed("vault.secret.generate", env, policy)
+    require_environment_allowed("vault.secret.generate", "dev", policy)
+
+
+def test_custom_production_set(tmp_path):
+    policy = custom_policy(
+        tmp_path, "production_environments: [live]\n", "[dev, live, prod]", "false"
+    )
+
+    with pytest.raises(PermissionError, match=r"\(environment live is a production environment"):
+        require_environment_allowed("vault.secret.generate", "live", policy)
+    # Not in the custom set: governed by allowed_environments only.
+    require_environment_allowed("vault.secret.generate", "prod", policy)
+
+
+def test_production_allowed_still_needs_the_environment_listed(tmp_path):
+    policy = custom_policy(tmp_path, "", "[dev, production]", "true")
+
+    require_environment_allowed("vault.secret.generate", "production", policy)
+    with pytest.raises(PermissionError, match="^environment denied by policy for vault.secret.generate: prod$"):
+        require_environment_allowed("vault.secret.generate", "prod", policy)
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("[]", "production_environments in the top level must name at least one environment; "
+               "list the production environment names"),
+        ("", "production_environments in the top level must be a list of names; correct its value"),
+        ("prod", "production_environments in the top level must be a list of names; correct its value"),
+        ("[prod, 1]", "production_environments in the top level must be a list of names; "
+                      "correct its value"),
+    ],
+    ids=["empty", "null", "string", "non_string_item"],
+)
+def test_production_environments_must_be_a_non_empty_list_of_names(tmp_path, value, expected):
+    from secretops.policy import PolicyError
+
+    path = write_policy(tmp_path, f"production_environments: {value}\n")
+
+    with pytest.raises(PolicyError) as raised:
+        load_policy(path)
+
+    assert str(raised.value) == f"policy file {path}: {expected}; see docs/CONFIGURATION.md#policy-file"
+    assert MARKER not in str(raised.value)
