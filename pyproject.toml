@@ -44,4 +44,12 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "ruff==0.15.12",
 ]
+
+# Lint only, ruff's default rules. No formatter.
+[tool.ruff.lint.per-file-ignores]
+# Unused import left for the owner of this file to remove; kept out of the CI change.
+"src/secretops/plan_lifecycle.py" = ["F401"]
+# These imports follow a helper (fake_process) that needs the tests directory on the path.
+"tests/test_github_target.py" = ["E402"]
