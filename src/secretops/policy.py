@@ -25,6 +25,51 @@ class Policy:
     actions: dict[str, ActionPolicy]
 
 
+POLICY_KEYS = ("allowed_actions", "denied_actions", "actions")
+ACTION_POLICY_KEYS = ("requires_approval", "allowed_environments", "production_allowed")
+FIX_HINT = "correct or remove it; see docs/CONFIGURATION.md#policy-file"
+
+
+class PolicyError(Exception):
+    """The policy file cannot be used. The message names the file, a key
+    and its location at most, never other file content."""
+
+
+def _key_name(key) -> str:
+    text = repr(str(key))
+    return text if len(text) <= 80 else text[:77] + "..."
+
+
+def _check_keys(mapping, allowed: tuple[str, ...], location: str, source: str) -> None:
+    if not isinstance(mapping, dict):
+        raise PolicyError(f"policy file {source}: {location} must be a mapping; {FIX_HINT}")
+    for key in mapping:
+        if key not in allowed:
+            raise PolicyError(
+                f"policy file {source}: unknown key {_key_name(key)} in {location} "
+                f"(allowed: {', '.join(allowed)}); {FIX_HINT}"
+            )
+
+
+def validate_policy_data(data, source: str) -> None:
+    """Refuse unknown keys at the top level and in each `actions` entry.
+
+    Action names under `actions` are not checked: any name is accepted and
+    an entry for an action that is not allowed has no effect.
+    """
+    _check_keys(data, POLICY_KEYS, "the top level", source)
+    actions = data.get("actions")
+    if actions is None:
+        return
+    if not isinstance(actions, dict):
+        raise PolicyError(f"policy file {source}: actions must be a mapping; {FIX_HINT}")
+    for action, metadata in actions.items():
+        if metadata is not None:
+            _check_keys(
+                metadata, ACTION_POLICY_KEYS, f"actions entry {_key_name(action)}", source
+            )
+
+
 def _load_action_policies(data: dict) -> dict[str, ActionPolicy]:
     policies = {}
     for action, metadata in (data.get("actions") or {}).items():
@@ -50,15 +95,29 @@ def _load_default_policy_text() -> str:
     )
 
 
-def _load_policy_text(path: str | Path | None = None) -> str:
+def _load_policy_text(path: str | Path | None = None) -> tuple[str, str]:
+    """Return the policy text and a name for it in messages."""
     explicit_path = path or os.environ.get(POLICY_PATH_ENV)
     if explicit_path:
-        return Path(explicit_path).read_text(encoding="utf-8")
-    return _load_default_policy_text()
+        try:
+            return Path(explicit_path).read_text(encoding="utf-8"), str(explicit_path)
+        except (OSError, UnicodeDecodeError) as error:
+            raise PolicyError(f"policy file {explicit_path} cannot be read") from error
+    return _load_default_policy_text(), "(packaged default)"
 
 
 def load_policy(path: str | Path | None = None) -> Policy:
-    data = yaml.safe_load(_load_policy_text(path)) or {}
+    """Load and strictly validate the policy. Raises PolicyError."""
+    text, source = _load_policy_text(path)
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as error:
+        # The parser message can quote file content; only the line is kept.
+        mark = getattr(error, "problem_mark", None)
+        where = f" at line {mark.line + 1}" if mark is not None else ""
+        raise PolicyError(f"policy file {source} is not valid YAML{where}") from None
+    data = {} if data is None else data
+    validate_policy_data(data, source)
     return Policy(
         allowed_actions=list(data.get("allowed_actions", [])),
         denied_actions=list(data.get("denied_actions", [])),

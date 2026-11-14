@@ -204,3 +204,104 @@ def test_policy_empty_env_override_falls_back_to_package_default(monkeypatch):
     policy = load_policy()
 
     assert "vault.read.check" in policy.allowed_actions
+
+
+# Strict validation: unknown keys are an error naming the key and location
+
+MARKER = "content-that-must-not-be-echoed"
+VALID_ACTION = (
+    "actions:\n"
+    "  vault.read.check:\n"
+    "    requires_approval: false\n"
+    "    allowed_environments: [dev]\n"
+    "    production_allowed: false\n"
+)
+
+
+def write_policy(tmp_path, text):
+    path = tmp_path / "policy.yaml"
+    path.write_text(f"allowed_actions: [{MARKER}]\ndenied_actions: []\n" + text, encoding="utf-8")
+    return path
+
+
+def test_packaged_default_policy_passes_strict_validation():
+    from importlib import resources
+
+    import yaml
+
+    from secretops.policy import validate_policy_data
+
+    text = resources.files("secretops.policies").joinpath("default.yaml").read_text(encoding="utf-8")
+    validate_policy_data(yaml.safe_load(text), "default")
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        (
+            VALID_ACTION + "deny_actions: [x]\n",
+            "unknown key 'deny_actions' in the top level "
+            "(allowed: allowed_actions, denied_actions, actions)",
+        ),
+        (
+            VALID_ACTION + "    requires_aproval: true\n",
+            "unknown key 'requires_aproval' in actions entry 'vault.read.check' "
+            "(allowed: requires_approval, allowed_environments, production_allowed)",
+        ),
+        ("actions: [vault.read.check]\n", "actions must be a mapping"),
+        ("actions:\n  vault.read.check: [dev]\n", "actions entry 'vault.read.check' must be a mapping"),
+    ],
+    ids=["top_level", "nested", "actions_list", "entry_list"],
+)
+def test_unknown_or_misplaced_policy_keys_are_refused(tmp_path, text, expected):
+    from secretops.policy import PolicyError
+
+    path = write_policy(tmp_path, text)
+
+    with pytest.raises(PolicyError) as raised:
+        load_policy(path)
+
+    message = str(raised.value)
+    assert message.startswith(f"policy file {path}: {expected}")
+    assert message.endswith("correct or remove it; see docs/CONFIGURATION.md#policy-file")
+    assert MARKER not in message
+
+
+def test_empty_action_entry_and_valid_custom_policy_still_load(tmp_path):
+    policy = load_policy(write_policy(tmp_path, VALID_ACTION + "  custom.empty:\n"))
+
+    assert policy.allowed_actions == [MARKER]
+    assert get_action_policy("custom.empty", policy).requires_approval is True
+    assert get_action_policy("vault.read.check", policy).allowed_environments == ["dev"]
+
+
+def test_invalid_policy_yaml_names_the_line_only(tmp_path):
+    from secretops.policy import PolicyError
+
+    path = tmp_path / "policy.yaml"
+    path.write_text(f"allowed_actions: [ok]\nactions: {{{MARKER}: [\n", encoding="utf-8")
+
+    with pytest.raises(PolicyError) as raised:
+        load_policy(path)
+
+    assert str(raised.value).startswith(f"policy file {path} is not valid YAML at line ")
+    assert MARKER not in str(raised.value)
+    assert raised.value.__cause__ is None and raised.value.__suppress_context__
+
+
+def test_every_command_stops_on_an_invalid_policy(tmp_path, monkeypatch):
+    path = write_policy(tmp_path, VALID_ACTION + "    production_alowed: true\n")
+    monkeypatch.setenv("SECRETOPS_POLICY_PATH", str(path))
+
+    for command in (["version"], ["actions"], ["show-plan", "--id", "missing"]):
+        result = run_secretops(*command, audit_path=tmp_path / "audit.jsonl")
+
+        assert result.returncode == 1
+        assert result.stdout == ""
+        assert result.stderr.strip() == (
+            f"FAIL policy file {path}: unknown key 'production_alowed' in actions entry "
+            "'vault.read.check' (allowed: requires_approval, allowed_environments, "
+            "production_allowed); correct or remove it; see docs/CONFIGURATION.md#policy-file"
+        )
+        assert MARKER not in combined_output(result)
+    assert not (tmp_path / "audit.jsonl").exists()

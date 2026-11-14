@@ -29,6 +29,17 @@ GitHub workflows require `gh` and a stored CLI login for the executing broker us
 
 The executable is resolved through `/usr/local/bin:/usr/bin:/bin`, never the caller's `PATH`. For another location, set `SECRETOPS_GH_BIN` to an absolute executable path in trusted `broker.env`. Upgrade both the application and `/usr/local/bin/secretops-broker` from the same version; the wrapper clears inherited executable overrides. Keep the executable and its directory outside agent/broker-user write access.
 
+## Policy file
+
+`SECRETOPS_POLICY_PATH` names the policy file; without it the packaged default (`src/secretops/policies/default.yaml`) applies. The file is checked strictly before every command:
+
+- top level: only `allowed_actions`, `denied_actions`, `actions`
+- each entry under `actions`: only `requires_approval`, `allowed_environments`, `production_allowed`
+
+Any other key stops the command with `FAIL policy file PATH: unknown key 'KEY' in LOCATION ...`; correct or remove that key. Action names under `actions` are not checked.
+
+**Breaking change:** unknown keys were ignored before. A custom policy with a stray or misspelled key now stops every broker command until it is fixed.
+
 ## Adapters
 
 - Infisical CLI vault adapter
