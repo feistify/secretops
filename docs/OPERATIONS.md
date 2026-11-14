@@ -46,7 +46,7 @@ Before approving, read the whole `show-plan` output: action, environment, vault 
 
 **Exit 3.** The agent stops and tells you; it never retries. For a vault write, check the secret in Infisical. For GitHub, `verify_many` only shows whether the name exists: GitHub never returns values, so nothing can prove which value was stored. If you need certainty, approve a new sync plan for those names: it writes the current vault value again and overwrites whatever is there. Do that deliberately, after considering who uses the secret. A partial sync is not rolled back: acknowledged writes stay.
 
-If `execute-plan` says the plan status could not be saved, do not run the plan again; inspect it with `broker show-plan` first.
+If `execute-plan` says the plan status could not be saved, do not run the plan again; inspect it with `broker show-plan` first. If it says the audit record could not be completed, the printed results are what happened; the plan is marked `failed` even after confirmed writes, so it cannot run again. Fix the audit log location before the next operation.
 
 ## Renew the vault token
 

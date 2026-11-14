@@ -193,6 +193,11 @@ def _try_save_status(plan_artifact, status: str) -> bool:
     return True
 
 
+def _warn_audit_incomplete(console: Console) -> None:
+    console.print("[red]WARNING[/red] the audit record could not be completed")
+    console.print("the results above are what this run knows; they may be missing from the audit log")
+
+
 def _warn_status_not_saved(console: Console) -> None:
     # An unsaved status can leave the plan approved and executable.
     console.print("[red]WARNING[/red] the plan status could not be updated")
@@ -293,8 +298,7 @@ def _transfer_to_github(
 
     _print_github_results(console, results, categories, unknown=unknown, single=single)
     if not audit_complete:
-        console.print("[red]WARNING[/red] the audit record could not be completed")
-        console.print("the results above are what this run knows; they may be missing from the audit log")
+        _warn_audit_incomplete(console)
     if not status_saved:
         _warn_status_not_saved(console)
     console.print("secret values were not printed")
@@ -348,7 +352,7 @@ def _print_github_results(
 
 
 def _fail_unknown_write(plan_artifact, console: Console, secret_name: str, label: str) -> None:
-    write_audit_event(
+    audited = _try_audit(
         action=plan_artifact.action,
         secret_name=secret_name,
         env=plan_artifact.env,
@@ -359,24 +363,44 @@ def _fail_unknown_write(plan_artifact, console: Console, secret_name: str, label
     console.print(f"[red]FAIL[/red] {label} write outcome unknown: {secret_name}")
     console.print(f"the write was not confirmed; check {secret_name} before any retry")
     console.print("no automatic retry was attempted")
-    if not status_saved:
-        _warn_status_not_saved(console)
+    _warn_unrecorded(console, audited=audited, status_saved=status_saved)
     console.print("secret value was not printed")
     raise typer.Exit(EXIT_OUTCOME_UNKNOWN)
 
 
-def _finish_confirmed_write(
-    plan_artifact, console: Console, ok_lines: list[str], *, not_printed: str
-) -> None:
-    """Mark a fully confirmed vault write executed. As on the GitHub path, a
-    status that cannot be saved is reported after the results and exits 1."""
-    status_saved = _try_save_status(plan_artifact, "executed")
-    for line in ok_lines:
-        console.print(line, soft_wrap=True)
+def _warn_unrecorded(console: Console, *, audited: bool, status_saved: bool) -> None:
+    if not audited:
+        _warn_audit_incomplete(console)
     if not status_saved:
         _warn_status_not_saved(console)
+
+
+def _finish_confirmed_write(
+    plan_artifact,
+    console: Console,
+    ok_lines: list[str],
+    *,
+    secret_name: str,
+    env: str,
+    not_printed: str,
+) -> None:
+    """Record a fully confirmed vault write, as the GitHub path does: the
+    success event first, then the status; `executed` only when the event
+    was written, otherwise `failed`. Neither failure is raised: the results
+    are shown with a warning and the exit code is 1."""
+    audited = _try_audit(
+        action=plan_artifact.action,
+        secret_name=secret_name,
+        env=env,
+        status="success",
+        plan_id=plan_artifact.plan_id,
+    )
+    status_saved = _try_save_status(plan_artifact, "executed" if audited else "failed")
+    for line in ok_lines:
+        console.print(line, soft_wrap=True)
+    _warn_unrecorded(console, audited=audited, status_saved=status_saved)
     console.print(not_printed)
-    if not status_saved:
+    if not (audited and status_saved):
         raise typer.Exit(EXIT_FAILED)
 
 
@@ -419,7 +443,7 @@ def _stop_partial_write(
     not_written = names[index + 1 :] if unknown else names[index:]
     # The audit event names the write that stopped the run and its target
     # environment, plus the partial result, so it survives beyond the console.
-    write_audit_event(
+    audited = _try_audit(
         action=plan_artifact.action,
         secret_name=name,
         env=env,
@@ -440,8 +464,7 @@ def _stop_partial_write(
     console.print(f"written and confirmed: {_format_names(names[:index])}", soft_wrap=True)
     console.print(f"not written: {_format_names(not_written)}", soft_wrap=True)
     console.print("no automatic rollback or retry was attempted")
-    if not status_saved:
-        _warn_status_not_saved(console)
+    _warn_unrecorded(console, audited=audited, status_saved=status_saved)
     console.print("secret values were not printed")
     raise typer.Exit(EXIT_OUTCOME_UNKNOWN if unknown else EXIT_FAILED)
 
@@ -1288,13 +1311,6 @@ def _execute_plan(plan_artifact, console: Console) -> None:
             label="imported secret",
         )
 
-        write_audit_event(
-            action=plan_artifact.action,
-            secret_name=audit_secret_name,
-            env=plan_artifact.env,
-            status="success",
-            plan_id=plan_artifact.plan_id,
-        )
         _finish_confirmed_write(
             plan_artifact,
             console,
@@ -1303,6 +1319,8 @@ def _execute_plan(plan_artifact, console: Console) -> None:
                 f"environment: {plan_artifact.env}",
                 f"secret names: {_format_names(import_names)}",
             ],
+            secret_name=audit_secret_name,
+            env=plan_artifact.env,
             not_printed="secret values were not printed",
         )
         return
@@ -1353,17 +1371,12 @@ def _execute_plan(plan_artifact, console: Console) -> None:
 
         outcome = vault.write_secret(target_secret, plan_artifact.env, rotated_value)
         if outcome is WriteOutcome.CONFIRMED:
-            write_audit_event(
-                action=plan_artifact.action,
-                secret_name=target_secret,
-                env=plan_artifact.env,
-                status="success",
-                plan_id=plan_artifact.plan_id,
-            )
             _finish_confirmed_write(
                 plan_artifact,
                 console,
                 [f"OK rotated secret stored: {target_secret}"],
+                secret_name=target_secret,
+                env=plan_artifact.env,
                 not_printed="secret value was not printed",
             )
             return
@@ -1436,17 +1449,12 @@ def _execute_plan(plan_artifact, console: Console) -> None:
             label="copied secret",
         )
 
-        write_audit_event(
-            action=plan_artifact.action,
-            secret_name="multiple",
-            env=source_env,
-            status="success",
-            plan_id=plan_artifact.plan_id,
-        )
         _finish_confirmed_write(
             plan_artifact,
             console,
             [f"OK vault secrets copied: {len(mappings)}"],
+            secret_name="multiple",
+            env=source_env,
             not_printed="secret values were not printed",
         )
         return
@@ -1510,17 +1518,12 @@ def _execute_plan(plan_artifact, console: Console) -> None:
 
         outcome = vault.write_secret(target_secret, plan_artifact.env, generated_value)
         if outcome is WriteOutcome.CONFIRMED:
-            write_audit_event(
-                action=plan_artifact.action,
-                secret_name=target_secret,
-                env=plan_artifact.env,
-                status="success",
-                plan_id=plan_artifact.plan_id,
-            )
             _finish_confirmed_write(
                 plan_artifact,
                 console,
                 [f"OK generated secret stored: {plan_artifact.secret_name}"],
+                secret_name=target_secret,
+                env=plan_artifact.env,
                 not_printed="secret value was not printed",
             )
             return

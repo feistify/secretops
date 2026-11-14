@@ -22,6 +22,10 @@ from test_plans import (
 import secretops.plan_lifecycle
 from secretops.vaults import WriteOutcome
 
+AUDIT_WARNING = [
+    "WARNING the audit record could not be completed",
+    "the results above are what this run knows; they may be missing from the audit log",
+]
 WARNING = [
     "WARNING the plan status could not be updated",
     "do not run this plan again; ask the operator to record its outcome",
@@ -52,15 +56,23 @@ class FakeVault:
         return self.outcomes.pop(0) if self.outcomes else WriteOutcome.CONFIRMED
 
 
-def execute_with_unsaved_status(monkeypatch, tmp_path, plan, vault):
+def execute_with_unsaved_status(monkeypatch, tmp_path, plan, vault, *, unwritable_audit=False):
+    """Run execute-plan in process. The status save fails, or with
+    unwritable_audit the audit log cannot be written and the save works."""
     plan_path = write_plan(tmp_path / "plans", plan)
+    audit_path = tmp_path / "audit.jsonl"
+    if unwritable_audit:
+        audit_path.mkdir()
     monkeypatch.setenv("SECRETOPS_PLAN_DIR", str(tmp_path / "plans"))
-    monkeypatch.setenv("SECRETOPS_AUDIT_PATH", str(tmp_path / "audit.jsonl"))
+    monkeypatch.setenv("SECRETOPS_AUDIT_PATH", str(audit_path))
     monkeypatch.setattr(secretops.plan_lifecycle, "get_vault", lambda destination: vault)
     attempts = []
+    real_status_save = secretops.plan_lifecycle.set_plan_status
 
     def failing_status_save(plan_artifact, status, **kwargs):
         attempts.append(status)
+        if unwritable_audit:
+            return real_status_save(plan_artifact, status, **kwargs)
         raise OSError("read-only plan store")
 
     monkeypatch.setattr(secretops.plan_lifecycle, "set_plan_status", failing_status_save)
@@ -163,3 +175,71 @@ def test_unsaved_status_after_partial_copy_exits_3(monkeypatch, tmp_path):
     assert lines[-3:] == [*WARNING, "secret values were not printed"]
     assert attempts == ["failed"]
     assert_no_written_value(lines, vault)
+
+
+# The audit log cannot be written: the status is still saved, as on the GitHub path
+
+
+@pytest.mark.parametrize("action", ["generate", "rotate", "import", "copy"])
+def test_unwritable_audit_after_confirmed_vault_write_marks_failed_and_exits_1(
+    monkeypatch, tmp_path, action
+):
+    plan, vault, ok_lines, not_printed = cases(tmp_path)[action]
+
+    exit_code, lines, plan_path, attempts = execute_with_unsaved_status(
+        monkeypatch, tmp_path, plan, vault, unwritable_audit=True
+    )
+
+    assert exit_code == 1
+    assert lines == [*ok_lines, *AUDIT_WARNING, not_printed]
+    assert attempts == ["failed"]
+    # A failed plan cannot run again, so a confirmed rotation is not repeated.
+    assert read_plan(plan_path)["status"] == "failed"
+    assert_no_written_value(lines, vault)
+
+
+def test_unwritable_audit_after_unknown_vault_write_exits_3(monkeypatch, tmp_path):
+    vault = FakeVault({("GENERATED_DUMMY_PASSWORD", "dev"): "old"}, outcomes=[WriteOutcome.UNKNOWN])
+
+    exit_code, lines, plan_path, attempts = execute_with_unsaved_status(
+        monkeypatch, tmp_path, rotate_plan("rotate-unknown", status="approved"), vault,
+        unwritable_audit=True,
+    )
+
+    assert exit_code == 3
+    assert lines[0] == "FAIL rotated secret write outcome unknown: GENERATED_DUMMY_PASSWORD"
+    assert lines[-3:] == [*AUDIT_WARNING, "secret value was not printed"]
+    assert read_plan(plan_path)["status"] == "failed"
+    assert_no_written_value(lines, vault)
+
+
+def test_unwritable_audit_after_partial_import_exits_3(monkeypatch, tmp_path):
+    vault = FakeVault({}, outcomes=[WriteOutcome.UNKNOWN])
+
+    exit_code, lines, plan_path, _ = execute_with_unsaved_status(
+        monkeypatch, tmp_path, import_plan_with_source(tmp_path), vault, unwritable_audit=True
+    )
+
+    assert exit_code == 3
+    assert lines[-3:] == [*AUDIT_WARNING, "secret values were not printed"]
+    assert read_plan(plan_path)["status"] == "failed"
+    assert_no_written_value(lines, vault)
+
+
+def test_audit_and_status_both_failing_after_confirmed_write_exit_1(monkeypatch, tmp_path):
+    (tmp_path / "audit.jsonl").mkdir()
+    vault = FakeVault({})
+
+    exit_code, lines, plan_path, attempts = execute_with_unsaved_status(
+        monkeypatch, tmp_path, generate_plan("generate-both", status="approved"), vault
+    )
+
+    assert exit_code == 1
+    assert lines == [
+        "OK generated secret stored: GENERATED_DUMMY_PASSWORD",
+        *AUDIT_WARNING,
+        *WARNING,
+        "secret value was not printed",
+    ]
+    assert attempts == ["failed"]
+    assert read_plan(plan_path)["status"] == "approved"
