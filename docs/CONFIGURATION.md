@@ -36,9 +36,13 @@ The executable is resolved through `/usr/local/bin:/usr/bin:/bin`, never the cal
 - top level: only `allowed_actions`, `denied_actions`, `actions`
 - each entry under `actions`: only `requires_approval`, `allowed_environments`, `production_allowed`
 
-`requires_approval` and `production_allowed` are `true` or `false` without quotes; `allowed_actions`, `denied_actions` and `allowed_environments` are lists of names. Any other key, another value type, or a missing or unreadable file stops the command with `FAIL policy file PATH: ...`, naming the key and its location; correct what it names. Action names under `actions` are not checked.
+`requires_approval` and `production_allowed` are `true` or `false` without quotes; `allowed_actions`, `denied_actions` and `allowed_environments` are lists of names. A key may appear only once in each mapping. Action names under `actions` are not checked. Anything else stops every command:
 
-**Breaking change:** unknown keys and wrong value types were accepted before (a quoted `"false"` counted as true, a single name instead of a list was read letter by letter). A custom policy with such a key now stops every broker command until it is fixed.
+- an unknown or repeated key, or a value of another type: `FAIL policy file PATH: ...`, naming the key and its location or line, and what to correct
+- a missing or unreadable file: `FAIL policy file PATH is missing or not readable by this account`
+- invalid YAML: `FAIL policy file PATH is not valid YAML at line N`
+
+**Breaking change:** unknown keys and wrong value types were accepted before (a quoted `"false"` counted as true, a single name instead of a list was read letter by letter). A custom policy with such a key or value, or a repeated key, now stops every broker command until it is fixed.
 
 ## Adapters
 

@@ -374,3 +374,31 @@ def test_every_command_stops_on_an_invalid_policy(tmp_path, monkeypatch):
         )
         assert MARKER not in combined_output(result)
     assert not (tmp_path / "audit.jsonl").exists()
+
+
+@pytest.mark.parametrize(
+    "text,key,line",
+    [
+        ("allowed_actions: [a]\ndenied_actions: []\nallowed_actions: [b]\n", "allowed_actions", 3),
+        (VALID_ACTION + "    production_allowed: true\n", "production_allowed", 8),
+        (VALID_ACTION + "  vault.read.check:\n    requires_approval: true\n", "vault.read.check", 8),
+    ],
+    ids=["top_level", "nested", "action_entry"],
+)
+def test_duplicate_policy_keys_are_refused(tmp_path, text, key, line):
+    from secretops.policy import PolicyError
+
+    path = tmp_path / "policy.yaml"
+    if text.startswith("actions:"):
+        path.write_text(f"allowed_actions: [{MARKER}]\ndenied_actions: []\n" + text, encoding="utf-8")
+    else:
+        path.write_text(text, encoding="utf-8")
+
+    with pytest.raises(PolicyError) as raised:
+        load_policy(path)
+
+    assert str(raised.value) == (
+        f"policy file {path}: duplicate key '{key}' at line {line}; keep only one of them; "
+        "see docs/CONFIGURATION.md#policy-file"
+    )
+    assert MARKER not in str(raised.value)

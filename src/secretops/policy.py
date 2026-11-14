@@ -87,6 +87,37 @@ def validate_policy_data(data, source: str) -> None:
             )
 
 
+class _DuplicateKey(Exception):
+    def __init__(self, key, line: int):
+        super().__init__()
+        self.key = key
+        self.line = line
+
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """SafeLoader that refuses a key repeated in one mapping, instead of
+    keeping the last one."""
+
+
+def _construct_unique_mapping(loader, node, deep=False):
+    seen = set()
+    for key_node, _ in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        try:
+            repeated = key in seen
+        except TypeError:
+            continue  # an unhashable key fails in the default constructor
+        if repeated:
+            raise _DuplicateKey(key, key_node.start_mark.line + 1)
+        seen.add(key)
+    return yaml.SafeLoader.construct_mapping(loader, node, deep=deep)
+
+
+_UniqueKeyLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_unique_mapping
+)
+
+
 def _load_action_policies(data: dict) -> dict[str, ActionPolicy]:
     policies = {}
     for action, metadata in (data.get("actions") or {}).items():
@@ -129,7 +160,13 @@ def load_policy(path: str | Path | None = None) -> Policy:
     """Load and strictly validate the policy. Raises PolicyError."""
     text, source = _load_policy_text(path)
     try:
-        data = yaml.safe_load(text)
+        data = yaml.load(text, Loader=_UniqueKeyLoader)  # a SafeLoader subclass
+    except _DuplicateKey as duplicate:
+        _fail(
+            source,
+            f"duplicate key {_key_name(duplicate.key)} at line {duplicate.line}",
+            "keep only one of them",
+        )
     except yaml.YAMLError as error:
         # The parser message can quote file content; only the line is kept.
         mark = getattr(error, "problem_mark", None)
