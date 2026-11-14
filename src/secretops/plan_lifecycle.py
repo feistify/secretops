@@ -1,3 +1,4 @@
+import contextlib
 from pathlib import Path
 
 import typer
@@ -600,25 +601,37 @@ def transition_planned_plan(
     console: Console,
 ) -> None:
     command = "approve-plan" if status == "approved" else "reject-plan"
+    # Loaded first so a missing or invalid plan fails as before, without a
+    # lock file.
     plan_artifact = _load_plan_or_exit(plan_id, command, console)
-    if plan_artifact.action not in HUMAN_ENTRY_ACTIONS:
+    if status == "approved" and plan_artifact.action in HUMAN_ENTRY_ACTIONS:
+        # Always refused: no lock, so this command cannot make a human
+        # submission find the plan busy.
+        _refuse_human_entry_approval(plan_artifact, console)
+    if not PLAN_ID_PATTERN.fullmatch(plan_id):
+        _fail_plan_file(plan_id, command, console, PlanFileError("not_found"))
+    # Decisions, submission and execution exclude each other through the plan
+    # lock; the plan is read again under the lock and the decision is made
+    # and written only from that read, so a finished run is seen.
+    with contextlib.ExitStack() as stack:
+        try:
+            stack.enter_context(plan_lock(plan_id))
+        except (PlanBusyError, PlanLockError) as error:
+            message = f"{error}; try again later" if isinstance(error, PlanBusyError) else str(error)
+            console.print(f"[red]FAIL[/red] {message}")
+            raise typer.Exit(1) from error
+        plan_artifact = _load_plan_or_exit(plan_id, command, console)
+        if status == "approved" and plan_artifact.action in HUMAN_ENTRY_ACTIONS:
+            _refuse_human_entry_approval(plan_artifact, console)
         _transition_loaded_plan(plan_artifact, status, label, console)
-        return
-    if status == "approved":
-        # Approval of a human-entry plan is recorded only together with the
-        # value, by the human submission endpoint.
-        console.print(f"[red]FAIL[/red] {plan_artifact.action} is approved while entering the value")
-        console.print(f"use: secretops add --plan {plan_id}")
-        raise typer.Exit(1)
-    # Rejection and submission exclude each other through the plan lock; the
-    # plan is read again under the lock so a completed submission is seen.
-    try:
-        with plan_lock(plan_id):
-            plan_artifact = _load_plan_or_exit(plan_id, command, console)
-            _transition_loaded_plan(plan_artifact, status, label, console)
-    except PlanBusyError as error:
-        console.print(f"[red]FAIL[/red] {error}; try again later")
-        raise typer.Exit(1) from error
+
+
+def _refuse_human_entry_approval(plan_artifact, console: Console) -> None:
+    # Approval of a human-entry plan is recorded only together with the
+    # value, by the human submission endpoint.
+    console.print(f"[red]FAIL[/red] {plan_artifact.action} is approved while entering the value")
+    console.print(f"use: secretops add --plan {plan_artifact.plan_id}")
+    raise typer.Exit(1)
 
 
 def _transition_loaded_plan(plan_artifact, status: str, label: str, console: Console) -> None:

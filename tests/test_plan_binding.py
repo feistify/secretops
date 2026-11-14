@@ -658,7 +658,10 @@ def test_interrupted_plan_write_keeps_the_old_file(tmp_path, monkeypatch, vault_
         plan_lifecycle.transition_planned_plan(plan_id, "approved", "approved", Console())
 
     assert plan_path.read_bytes() == original
-    assert sorted(path.name for path in plan_dir.iterdir()) == [plan_path.name]
+    # No temporary file is left; approve-plan leaves only its lock file.
+    assert sorted(path.name for path in plan_dir.iterdir()) == sorted(
+        [plan_path.name, f".{plan_id}.lock"]
+    )
 
 
 # 15, 16: GitHub destination

@@ -217,6 +217,40 @@ def test_unknown_broker_outcome_is_reported(broker, tmp_path):
     assert "Write outcome is unknown. Do not submit again yet." in lines
 
 
+class UnlockableAfterConfirmTerminal(ScriptedTerminal):
+    """Confirms, then makes the plan lock impossible to take before submission."""
+
+    def __init__(self, plan_dir):
+        super().__init__()
+        self.plan_dir = plan_dir
+
+    def confirm(self, prompt):
+        assert not list(self.plan_dir.glob(".*.lock"))
+        self.plan_dir.chmod(0o500)
+        return True
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permissions")
+def test_unopenable_plan_lock_is_a_refusal_not_an_unknown_outcome(broker):
+    plan_path = write_plan(broker.plan_dir, add_plan())
+    plan_bytes = plan_path.read_bytes()
+    terminal = UnlockableAfterConfirmTerminal(broker.plan_dir)
+    try:
+        code, lines = run(terminal, ["review-add", "--id", "add-plan"])
+    finally:
+        broker.plan_dir.chmod(0o700)
+
+    assert code == EXIT_NOT_WRITTEN
+    assert "Not saved: plan lock could not be taken" in lines
+    assert not any("unknown" in line for line in lines)
+    assert "set" not in read_record(broker.record_path)["calls"]
+    assert plan_path.read_bytes() == plan_bytes
+    assert all(ADD_VALUE not in line for line in lines)
+    # The plan can be used again.
+    code, _ = run(ScriptedTerminal(), ["review-add", "--id", "add-plan"])
+    assert code == EXIT_CREATED
+
+
 def test_value_travels_only_in_the_submission_body(broker, tmp_path):
     log = tmp_path / "broker-calls.jsonl"
     wrapper = tmp_path / "wrapper.py"

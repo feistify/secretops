@@ -4506,3 +4506,214 @@ def test_execute_plan_fails_cleanly_when_the_plan_lock_cannot_be_taken(tmp_path)
     assert not (tmp_path / "infisical-rotate-order.txt").exists()
     assert not (plan_dir / ".unlockable-rotate.lock").exists()
     assert_no_secret_leak(result, plan_path, audit_path)
+
+
+# approve-plan and reject-plan decide under the plan lock
+
+DECISIONS = [("approve-plan", "approved"), ("reject-plan", "rejected")]
+
+
+def decide_in_process(monkeypatch, tmp_path, command, plan_id):
+    """Run approve-plan or reject-plan in this process, so a lock left behind would show."""
+    import io
+
+    import typer
+    from rich.console import Console
+
+    from secretops.plan_lifecycle import transition_planned_plan
+
+    monkeypatch.setenv("SECRETOPS_PLAN_DIR", str(tmp_path / "plans"))
+    monkeypatch.setenv("SECRETOPS_AUDIT_PATH", str(tmp_path / "audit.jsonl"))
+    monkeypatch.setenv(DUMMY_SECRET_NAME, DUMMY_SECRET_VALUE)
+    status = dict(DECISIONS)[command]
+    buffer = io.StringIO()
+    exit_code = 0
+    try:
+        transition_planned_plan(plan_id, status, status, Console(file=buffer, width=200))
+    except typer.Exit as error:
+        exit_code = error.exit_code
+    return exit_code, buffer.getvalue()
+
+
+def written_plan_with_status(plan_id, status):
+    """A plan as approve-plan and then execute-plan would leave it."""
+    plan = bind_plan(rotate_plan(plan_id, status="approved"))
+    plan["status"] = status
+    return plan
+
+
+@pytest.mark.parametrize("command,status", DECISIONS)
+def test_decision_is_refused_while_the_plan_is_in_use(tmp_path, command, status):
+    audit_path = tmp_path / "audit.jsonl"
+    plan_dir = tmp_path / "plans"
+    plan_path = write_plan(plan_dir, rotate_plan("busy-decision"))
+    plan_bytes = plan_path.read_bytes()
+
+    with hold_plan_lock(plan_dir, "busy-decision"):
+        result = run_secretops(
+            command, "--id", "busy-decision", audit_path=audit_path, plan_dir=plan_dir
+        )
+    assert plan_path.read_bytes() == plan_bytes
+    # The lock is free again once its holder ends.
+    after = run_secretops(command, "--id", "busy-decision", audit_path=audit_path, plan_dir=plan_dir)
+
+    assert result.returncode == 1
+    assert result.stdout.strip().splitlines() == [
+        "FAIL plan is in use by another command; try again later",
+    ]
+    assert "Traceback" not in result.stdout + result.stderr
+    assert after.returncode == 0
+    assert after.stdout.splitlines()[0] == f"OK plan {status}: busy-decision"
+    assert read_plan(plan_path)["status"] == status
+    assert_no_secret_leak(result, plan_path, audit_path)
+    assert_no_secret_leak(after, plan_path, audit_path)
+
+
+@pytest.mark.parametrize("on_disk", ["executed", "failed", "approved"])
+@pytest.mark.parametrize("command,status", DECISIONS)
+def test_decision_uses_the_plan_read_under_the_lock(tmp_path, monkeypatch, command, status, on_disk):
+    # Another command finishes between the first read and the lock: the
+    # decision must see its result and must not write over it.
+    import secretops.plan_lifecycle
+
+    plan_dir = tmp_path / "plans"
+    plan_path = write_plan(plan_dir, rotate_plan("raced-decision"))
+    real_plan_lock = secretops.plan_lifecycle.plan_lock
+    entered = []
+
+    @contextlib.contextmanager
+    def finish_other_command_first(plan_id):
+        entered.append(plan_id)
+        plan_path.write_text(
+            json.dumps(written_plan_with_status(plan_id, on_disk)), encoding="utf-8"
+        )
+        with real_plan_lock(plan_id):
+            yield
+
+    monkeypatch.setattr(secretops.plan_lifecycle, "plan_lock", finish_other_command_first)
+
+    exit_code, output = decide_in_process(monkeypatch, tmp_path, command, "raced-decision")
+
+    assert entered == ["raced-decision"]
+    assert exit_code == 1
+    assert output.strip().splitlines() == [f"FAIL plan status is {on_disk}; expected planned"]
+    assert read_plan(plan_path)["status"] == on_disk
+    assert plan_path.read_text(encoding="utf-8") == json.dumps(
+        written_plan_with_status("raced-decision", on_disk)
+    )
+    assert_plan_lock_free("raced-decision")
+    assert DUMMY_SECRET_VALUE not in output
+
+
+@pytest.mark.parametrize("command,status", DECISIONS)
+def test_decision_releases_the_plan_lock(tmp_path, monkeypatch, command, status):
+    plan_path = write_plan(tmp_path / "plans", rotate_plan("decided-plan"))
+
+    exit_code, output = decide_in_process(monkeypatch, tmp_path, command, "decided-plan")
+
+    assert exit_code == 0
+    assert output.splitlines()[0] == f"OK plan {status}: decided-plan"
+    assert read_plan(plan_path)["status"] == status
+    assert_plan_lock_free("decided-plan")
+    # A refused decision releases it too.
+    exit_code, output = decide_in_process(monkeypatch, tmp_path, command, "decided-plan")
+    assert exit_code == 1
+    assert output.strip() == f"FAIL plan status is {status}; expected planned"
+    assert_plan_lock_free("decided-plan")
+    assert DUMMY_SECRET_VALUE not in output
+
+
+@pytest.mark.parametrize("plan_text", [None, "not json"], ids=["missing", "invalid_json"])
+@pytest.mark.parametrize("command,status", DECISIONS)
+def test_decision_for_a_missing_or_invalid_plan_leaves_no_lock_file(
+    tmp_path, command, status, plan_text
+):
+    audit_path = tmp_path / "audit.jsonl"
+    plan_dir = tmp_path / "plans"
+    plan_dir.mkdir()
+    if plan_text is not None:
+        (plan_dir / "broken-plan.json").write_text(plan_text, encoding="utf-8")
+
+    result = run_secretops(command, "--id", "broken-plan", audit_path=audit_path, plan_dir=plan_dir)
+
+    expected = "plan not found" if plan_text is None else "plan file is not valid JSON"
+    assert result.returncode == 1
+    assert result.stdout.strip().splitlines() == [
+        f"FAIL {expected}",
+        "secret values were not printed",
+    ]
+    assert not list(plan_dir.glob(".*.lock"))
+    assert_no_secret_leak(result, audit_path)
+
+
+@pytest.mark.parametrize("command,status", DECISIONS)
+def test_decision_for_an_invalid_plan_id_leaves_no_lock_file(tmp_path, command, status):
+    audit_path = tmp_path / "audit.jsonl"
+    plan_dir = tmp_path / "plans"
+    plan_dir.mkdir()
+
+    result = run_secretops(command, "--id", "bad.plan", audit_path=audit_path, plan_dir=plan_dir)
+
+    assert result.returncode == 1
+    assert result.stdout.strip().splitlines() == [
+        "FAIL plan not found",
+        "secret values were not printed",
+    ]
+    assert not list(plan_dir.glob(".*.lock"))
+    assert_no_secret_leak(result, audit_path)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permissions")
+@pytest.mark.parametrize("command,status", DECISIONS)
+def test_decision_fails_cleanly_when_the_plan_lock_cannot_be_taken(tmp_path, command, status):
+    audit_path = tmp_path / "audit.jsonl"
+    plan_dir = tmp_path / "plans"
+    plan_path = write_plan(plan_dir, rotate_plan("unlockable-decision"))
+    plan_bytes = plan_path.read_bytes()
+    # No lock file exists and none can be created.
+    plan_dir.chmod(0o500)
+    try:
+        result = run_secretops(
+            command, "--id", "unlockable-decision", audit_path=audit_path, plan_dir=plan_dir
+        )
+    finally:
+        plan_dir.chmod(0o700)
+
+    assert result.returncode == 1
+    assert result.stdout.strip().splitlines() == ["FAIL plan lock could not be taken"]
+    assert "Traceback" not in result.stdout + result.stderr
+    assert plan_path.read_bytes() == plan_bytes
+    assert not (plan_dir / ".unlockable-decision.lock").exists()
+    assert_no_secret_leak(result, plan_path, audit_path)
+
+
+@pytest.mark.parametrize("command", ["approve-plan", "reject-plan", "execute-plan"])
+def test_plan_file_with_an_id_outside_the_pattern_is_not_found_and_not_locked(tmp_path, command):
+    # load_plan only checks that the content's plan_id matches the id given,
+    # so a hand-named `x.y.json` saying `"plan_id": "x.y"` loads; the plan id
+    # pattern is checked before the lock.
+    audit_path = tmp_path / "audit.jsonl"
+    plan_dir = tmp_path / "plans"
+    saved = run_secretops("plan", "--file", ROTATE_RECIPE, "--save", audit_path=audit_path, plan_dir=plan_dir)
+    assert saved.returncode == 0, saved.stdout + saved.stderr
+    saved_path = saved_plan_file(plan_dir)
+    plan = read_plan(saved_path)
+    plan["plan_id"] = "x.y"
+    plan_path = plan_dir / "x.y.json"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+    saved_path.unlink()
+    plan_bytes = plan_path.read_bytes()
+    fake_bin = write_failing_external_commands(tmp_path)
+
+    result = run_secretops(command, "--id", "x.y", audit_path=audit_path, plan_dir=plan_dir, path_prefix=fake_bin)
+
+    assert result.returncode == 1
+    assert result.stdout.strip().splitlines() == [
+        "FAIL plan not found",
+        "secret values were not printed",
+    ]
+    assert "Traceback" not in result.stdout + result.stderr
+    assert plan_path.read_bytes() == plan_bytes
+    assert not (plan_dir / ".x.y.lock").exists()
+    assert not (tmp_path / "infisical-called").exists()
+    assert_no_secret_leak(result, plan_path, audit_path)

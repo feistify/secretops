@@ -10,6 +10,7 @@ These endpoints are not in the agent wrapper allowlist. The channel label
 "human" in audit events is set here, by the endpoint, never by the request.
 """
 
+import contextlib
 import json
 import os
 import re
@@ -27,6 +28,7 @@ from secretops.plans import (
     PLAN_ID_PATTERN,
     PlanBusyError,
     PlanFileError,
+    PlanLockError,
     build_plan_artifact,
     load_plan,
     parse_plan_json,
@@ -308,11 +310,13 @@ def submit_add(raw: bytes) -> dict[str, Any]:
         value = validate_entered_value(request["value"])
     except InvalidValueError as error:
         return _submit_response("refused", f"invalid value: {error}", plan_id)
-    try:
-        with plan_lock(plan_id):
-            return _submit_locked(plan_id, request["digest"], value)
-    except PlanBusyError:
-        return _submit_response("refused", "plan is in use by another command", plan_id)
+    with contextlib.ExitStack() as stack:
+        try:
+            stack.enter_context(plan_lock(plan_id))
+        except (PlanBusyError, PlanLockError) as error:
+            # Raised only while taking the lock: nothing was read or written.
+            return _submit_response("refused", str(error), plan_id)
+        return _submit_locked(plan_id, request["digest"], value)
 
 
 def _submit_locked(plan_id: str, reviewed_digest: str, value: str) -> dict[str, Any]:
