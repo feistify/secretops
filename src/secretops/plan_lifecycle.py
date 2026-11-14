@@ -1113,12 +1113,49 @@ def _approval_required_message(action: str) -> str:
     }.get(action, f"{action} plan requires approval")
 
 
+def _not_printed_lines(action: str) -> list[str]:
+    lines = []
+    if action in {"vault.secret.generate", "vault.secret.rotate"}:
+        lines.append("secret value was not generated")
+    if action == "vault.secret.import_file":
+        lines.append("source file contents were not read")
+    return [*lines, "secret value was not printed"]
+
+
+def _refuse_unapproved(plan_artifact, console: Console, *, secret_name: str | None = None) -> None:
+    """Refuse a plan that needs approval and is not approved.
+
+    A `planned` plan still waits for the human: it is left unchanged, so the
+    same plan can be approved and executed later. Any other status (only
+    `failed` reaches this point) is refused as before and stays `failed`.
+    """
+    pending = plan_artifact.status == "planned"
+    write_audit_event(
+        action=plan_artifact.action,
+        secret_name=secret_name or _secret_name_for_policy_audit(plan_artifact),
+        env=plan_artifact.source_env or plan_artifact.env,
+        status="failure",
+        plan_id=plan_artifact.plan_id,
+        details={"failure": "approval_pending"} if pending else {},
+    )
+    if not pending:
+        set_plan_status(plan_artifact, "failed")
+    console.print(f"[red]FAIL[/red] {_approval_required_message(plan_artifact.action)}")
+    if pending:
+        console.print("the plan is not approved yet; it stays planned and nothing was done")
+        console.print("no provider call was made")
+        console.print("wait until the human has approved it; do not retry to check")
+    for line in _not_printed_lines(plan_artifact.action):
+        console.print(line)
+    raise typer.Exit(1)
+
+
 def _require_plan_execution_allowed(plan_artifact, console: Console) -> None:
+    # Environment policy first: a plan the policy refuses can never run and
+    # is marked failed, also while it still waits for approval.
     try:
         for environment in _execution_policy_environments(plan_artifact):
             require_environment_allowed(plan_artifact.action, environment)
-        if requires_approval(plan_artifact.action) and plan_artifact.status != "approved":
-            raise PermissionError(_approval_required_message(plan_artifact.action))
     except PermissionError as error:
         write_audit_event(
             action=plan_artifact.action,
@@ -1129,12 +1166,11 @@ def _require_plan_execution_allowed(plan_artifact, console: Console) -> None:
         )
         set_plan_status(plan_artifact, "failed")
         console.print(f"[red]FAIL[/red] {error}")
-        if plan_artifact.action in {"vault.secret.generate", "vault.secret.rotate"}:
-            console.print("secret value was not generated")
-        if plan_artifact.action == "vault.secret.import_file":
-            console.print("source file contents were not read")
-        console.print("secret value was not printed")
+        for line in _not_printed_lines(plan_artifact.action):
+            console.print(line)
         raise typer.Exit(1) from error
+    if requires_approval(plan_artifact.action) and plan_artifact.status != "approved":
+        _refuse_unapproved(plan_artifact, console)
 
 
 def execute_saved_plan(plan_id: str, console: Console) -> None:
@@ -1332,18 +1368,7 @@ def _execute_plan(plan_artifact, console: Console) -> None:
     if plan_artifact.action == "vault.secret.rotate":
         target_secret = _required_secret_name_for_execution(plan_artifact, console)
         if plan_artifact.status != "approved":
-            write_audit_event(
-                action=plan_artifact.action,
-                secret_name=target_secret,
-                env=plan_artifact.env,
-                status="failure",
-                plan_id=plan_artifact.plan_id,
-            )
-            set_plan_status(plan_artifact, "failed")
-            console.print("[red]FAIL[/red] vault.secret.rotate plan requires approval")
-            console.print("secret value was not generated")
-            console.print("secret value was not printed")
-            raise typer.Exit(1)
+            _refuse_unapproved(plan_artifact, console, secret_name=target_secret)
 
         vault = _bound_vault(plan_artifact)
         if not vault.secret_exists(target_secret, plan_artifact.env):
@@ -1390,17 +1415,7 @@ def _execute_plan(plan_artifact, console: Console) -> None:
 
     if plan_artifact.action == "vault.secret.copy_many":
         if plan_artifact.status != "approved":
-            write_audit_event(
-                action=plan_artifact.action,
-                secret_name="multiple",
-                env=plan_artifact.source_env or plan_artifact.env,
-                status="failure",
-                plan_id=plan_artifact.plan_id,
-            )
-            set_plan_status(plan_artifact, "failed")
-            console.print("[red]FAIL[/red] vault.secret.copy_many plan requires approval")
-            console.print("secret values were not printed")
-            raise typer.Exit(1)
+            _refuse_unapproved(plan_artifact, console)
 
         vault = _bound_vault(plan_artifact)
         mappings = plan_artifact.secret_mappings or []
@@ -1466,16 +1481,7 @@ def _execute_plan(plan_artifact, console: Console) -> None:
     if plan_artifact.action == "vault.secret.generate":
         target_secret = _required_secret_name_for_execution(plan_artifact, console)
         if plan_artifact.status != "approved":
-            write_audit_event(
-                action=plan_artifact.action,
-                secret_name=target_secret,
-                env=plan_artifact.env,
-                status="failure",
-                plan_id=plan_artifact.plan_id,
-            )
-            set_plan_status(plan_artifact, "failed")
-            console.print("[red]FAIL[/red] vault.secret.generate plan requires approval")
-            raise typer.Exit(1)
+            _refuse_unapproved(plan_artifact, console, secret_name=target_secret)
 
         vault = _bound_vault(plan_artifact)
         create_mode = plan_artifact.create_mode or "create_only"
@@ -1621,16 +1627,7 @@ def _execute_plan(plan_artifact, console: Console) -> None:
             raise typer.Exit(1)
     elif plan_artifact.action == "github.env_secret.sync_many":
         if plan_artifact.status != "approved":
-            console.print("[red]FAIL[/red] GitHub sync_many plan requires approval")
-            write_audit_event(
-                action=plan_artifact.action,
-                secret_name="multiple",
-                env=plan_artifact.env,
-                status="failure",
-                plan_id=plan_artifact.plan_id,
-            )
-            set_plan_status(plan_artifact, "failed")
-            raise typer.Exit(1)
+            _refuse_unapproved(plan_artifact, console)
 
         github_target = _github_target(plan_artifact, console)
         vault = _bound_vault(plan_artifact)
@@ -1644,16 +1641,7 @@ def _execute_plan(plan_artifact, console: Console) -> None:
         )
     elif plan_artifact.action == "github.env_secret.write":
         if plan_artifact.status != "approved":
-            console.print("[red]FAIL[/red] GitHub write plan requires approval")
-            write_audit_event(
-                action=plan_artifact.action,
-                secret_name=plan_artifact.secret_name,
-                env=plan_artifact.env,
-                status="failure",
-                plan_id=plan_artifact.plan_id,
-            )
-            set_plan_status(plan_artifact, "failed")
-            raise typer.Exit(1)
+            _refuse_unapproved(plan_artifact, console)
 
         target = plan_artifact.target or {}
         github_target = _github_target(plan_artifact, console)

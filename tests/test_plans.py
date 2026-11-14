@@ -967,9 +967,11 @@ def test_github_saved_plan_cannot_execute_unless_approved(tmp_path):
     )
 
     output = result.stdout + result.stderr
-    assert result.returncode != 0
+    assert result.returncode == 1
     assert "GitHub plan requires approval" in output
-    assert read_plan(plan_path)["status"] == "failed"
+    assert "the plan is not approved yet; it stays planned and nothing was done" in output
+    assert "no provider call was made" in output
+    assert read_plan(plan_path)["status"] == "planned"
     assert not (tmp_path / "infisical-called").exists()
     assert not (tmp_path / "gh-called").exists()
     assert_no_secret_leak(result, plan_path, audit_path)
@@ -1386,9 +1388,11 @@ def test_github_write_plan_cannot_execute_unless_approved(tmp_path):
     )
 
     output = result.stdout + result.stderr
-    assert result.returncode != 0
+    assert result.returncode == 1
     assert "GitHub write plan requires approval" in output
-    assert read_plan(plan_path)["status"] == "failed"
+    assert "the plan is not approved yet; it stays planned and nothing was done" in output
+    assert "no provider call was made" in output
+    assert read_plan(plan_path)["status"] == "planned"
     assert not (tmp_path / "infisical-called").exists()
     assert not (tmp_path / "gh-called").exists()
     assert_no_secret_leak(result, plan_path, audit_path)
@@ -1792,9 +1796,11 @@ def test_unapproved_generate_plan_cannot_execute(tmp_path):
     )
 
     output = result.stdout + result.stderr
-    assert result.returncode != 0
+    assert result.returncode == 1
     assert "vault.secret.generate plan requires approval" in output
-    assert read_plan(plan_path)["status"] == "failed"
+    assert "the plan is not approved yet; it stays planned and nothing was done" in output
+    assert "no provider call was made" in output
+    assert read_plan(plan_path)["status"] == "planned"
     assert not (tmp_path / "infisical-called").exists()
     assert not (tmp_path / "gh-called").exists()
     assert_no_secret_leak(result, plan_path, audit_path)
@@ -1977,9 +1983,11 @@ def test_unapproved_rotate_plan_cannot_execute(tmp_path):
     )
 
     output = result.stdout + result.stderr
-    assert result.returncode != 0
+    assert result.returncode == 1
     assert "vault.secret.rotate plan requires approval" in output
-    assert read_plan(plan_path)["status"] == "failed"
+    assert "the plan is not approved yet; it stays planned and nothing was done" in output
+    assert "no provider call was made" in output
+    assert read_plan(plan_path)["status"] == "planned"
     assert not (tmp_path / "infisical-called").exists()
     assert not (tmp_path / "gh-called").exists()
     assert_no_secret_leak(result, plan_path, audit_path)
@@ -2655,9 +2663,11 @@ def test_unapproved_copy_many_cannot_execute(tmp_path):
     )
 
     output = result.stdout + result.stderr
-    assert result.returncode != 0
+    assert result.returncode == 1
     assert "vault.secret.copy_many plan requires approval" in output
-    assert read_plan(plan_path)["status"] == "failed"
+    assert "the plan is not approved yet; it stays planned and nothing was done" in output
+    assert "no provider call was made" in output
+    assert read_plan(plan_path)["status"] == "planned"
     assert not (tmp_path / "infisical-called").exists()
     assert not (tmp_path / "gh-called").exists()
     assert_no_secret_leak(result, plan_path, audit_path)
@@ -3444,9 +3454,11 @@ def test_unapproved_sync_many_cannot_execute(tmp_path):
     )
 
     output = result.stdout + result.stderr
-    assert result.returncode != 0
+    assert result.returncode == 1
     assert "GitHub sync_many plan requires approval" in output
-    assert read_plan(plan_path)["status"] == "failed"
+    assert "the plan is not approved yet; it stays planned and nothing was done" in output
+    assert "no provider call was made" in output
+    assert read_plan(plan_path)["status"] == "planned"
     assert not (tmp_path / "infisical-called").exists()
     assert not (tmp_path / "gh-called").exists()
     assert_no_secret_leak(result, plan_path, audit_path)
