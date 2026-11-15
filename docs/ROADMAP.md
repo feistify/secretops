@@ -6,34 +6,50 @@ This document records product goals and evidence of progress. [TODO.md](../TODO.
 
 Agents should be able to carry out explicitly authorized credential workflows while a trusted broker holds credentials, enforces policy, and keeps secret values outside the agent's view. Humans decide permissions and destinations rather than manually moving credentials between systems.
 
+A runtime credential proxy lets an agent *use* a secret; secretops lets an agent *manage* secrets: enter, generate, rotate, copy, and sync them through saved plans, human approval, and an audit log. It complements proxies and vaults and replaces neither.
+
+Over time the human moves from approving each operation to setting the boundaries: policy and limited grants define what an agent may do alone, and anything outside them becomes an approval request with a record.
+
 External vaults remain the source of truth. Keep the product focused on a small number of useful workflows and verifiable security boundaries.
 
-## Short term — one complete daily-use workflow
+## Short term — proven in real use, then announced
 
-A human enters an externally created API key through a hidden prompt, the broker stores it in Infisical, and an agent transfers it to GitHub through a separately approved plan.
+The first complete workflow is reached and released: a human enters an externally created API key through a hidden prompt, the broker stores it in Infisical, and an agent transfers it to GitHub through a separately approved plan. It is repeatable from a clean installation ([entry](validation/interactive-secret-entry.md), [GitHub sync](validation/github-target-reliability.md), [installation](validation/local-broker-installation.md), [first install by a new user](validation/onboarding-first-install.md)).
 
-Success means:
+Next:
 
-- Saved approvals are bound to the intended vault destination.
-- Human input, broker execution, and GitHub sync work without revealing values to the agent, output, plans, audit, or command arguments.
-- Failures and unknown outcomes are reported accurately, without automatic retries of unconfirmed writes.
-- A clean installation can reproduce the synthetic workflow using maintained installation and operating instructions, without undocumented temporary helpers.
+- Use the published release for a real project and record where it is hard. Fix what the record shows before adding features.
+- Confirm the two parts that were only tested in isolation: a fresh agent hands a plan to the human correctly from the documented instructions alone, and the vault connection check reports real provider failures correctly.
+- Lower the cost of a first try: a short demo recording and a trial that needs no root and no existing vault.
+- Announce once, with an accurate description of tested guarantees and limits.
 
-Destination binding is completed and validated; see [the validation record](design/plan-destination-binding.md#manual-validation-result--2026-10-18). Interactive entry and GitHub reliability are implemented, and the complete local-sudo workflow has passed [live validation](validation/github-target-reliability.md). A clean installation from the maintained [installation](INSTALL.md) and [operating](OPERATIONS.md) guides reproduced the workflow on a fresh VM ([record](validation/local-broker-installation.md)). The recorded remaining manual checks are still open. TODO P1 tracks them, broker token handling, and public repository preparation.
+Success means: the owner's real project uses secretops for its secret operations, and a new user reaches a first approved operation from the documentation alone.
 
 ## Medium term — independently usable and reliable
 
 ### External users can succeed without our assistance
 
-Publish a small, documented early-stage project and validate installation, secret entry, approval, and GitHub sync with initial external users. Use observed difficulties to choose improvements rather than expanding the feature list in advance.
+Validate installation, secret entry, approval, and GitHub sync with initial external users. Use observed difficulties to choose improvements rather than expanding the feature list in advance.
 
 Evidence: people outside the original development setup complete the documented workflow; recurring setup and operating problems become reproducible issues and fixes.
 
 ### The broker is practical to operate every day
 
-Provide supported credential renewal, upgrades that preserve state, useful audit records, and documented recovery from interrupted operations. Make known provider limitations and unresolved outcomes visible without exposing values.
+Provide supported credential renewal, upgrades that preserve state, useful audit records, documented recovery from interrupted operations, and several vault projects per broker. Make known provider limitations and unresolved outcomes visible without exposing values.
 
 Evidence: routine expiry, upgrade, and failure/recovery scenarios can be handled through documented procedures rather than ad hoc intervention.
+
+### Policy distinguishes secrets by name
+
+Add secret-name patterns as a policy dimension beside action and environment ([design](design/name-pattern-policy.md)), so that low-risk names can be handled differently from sensitive ones. This is the base for grants.
+
+Evidence: the same action in the same environment is allowed, sent to approval, or denied according to the name, and the decision is visible in the plan before execution.
+
+### Approval does not need the broker's terminal
+
+Let the human review and decide a plan outside the shell: first a page served on the broker host, later a notification on another device. The decision must be authenticated by something the agent cannot reach, show exactly what is approved, and be bound to the plan content like a terminal approval. The terminal path stays.
+
+Evidence: a plan is approved or rejected without a shell session; an agent on the same host cannot produce or replay a decision; the audit records which channel was used.
 
 ### A second vault proves provider independence
 
