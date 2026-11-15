@@ -194,6 +194,9 @@ check "bundle upgrade with the pinned wheel" pass bash "$bdir/install.sh" --upgr
 mkdir /tmp/other && cp "$WHEEL" /tmp/other/ && printf x >> "/tmp/other/$(basename "$WHEEL")"
 check "bundle refuses a wheel with another hash" deny bash "$bdir/install.sh" --upgrade --wheel "/tmp/other/$(basename "$WHEEL")"
 # The published release from PyPI, pinned like a real bundle.
+# It can be older than the wheel under test, whose default policy may use
+# keys that release does not know; use a policy every version accepts.
+printf 'allowed_actions:\n  - vault.read.check\n' > /opt/secretops/policy.yaml
 python3 - > /tmp/pypi-pin.txt <<'PY'
 import json, urllib.request
 info = json.load(urllib.request.urlopen("https://pypi.org/pypi/secretops/json", timeout=30))
