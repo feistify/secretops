@@ -33,7 +33,7 @@ secretops is a CLI-first SecretOps broker. It is not a vault: external vaults re
 
 The Infisical adapter hardening is implemented and verified against the NAS instance. The dedicated local SSH broker separates agent access from vault credentials and human approval.
 
-**Short-term goal:** first real-project use (section 7): use the published release for a real project (ExposeGPU dev/staging) and record where it is hard.
+**Short-term goal:** first real-project use (section 7): use the published release for a real project and record where it is hard.
 
 The previous goal is reached: a human enters an externally created API key through a hidden prompt, the broker stores it in Infisical, and an agent transfers it to GitHub through a separately approved plan, documented and repeatable from a clean installation.
 
@@ -150,12 +150,28 @@ A person should understand from one short page what secretops does, what it can 
 
 ### 7. First real-project use — before the next feature
 
-The clean-VM validation proved the workflow with synthetic values. Next, use the published version for a real project (for example ExposeGPU in dev/staging) and record where it is hard.
+The tests so far showed that each step works with made-up values. They did not show whether secretops is still used when there is real work to do, or whether the human goes around it to the web UIs. The main measure is therefore how often it was bypassed, and why.
 
-- [ ] A human enters an existing API key with `secretops add`.
-- [ ] The agent prepares a GitHub sync plan; the human reviews and approves it; the agent executes it and verifies the name.
-- [ ] The project uses the secret, and its agent instructions say how to work through the broker from now on.
-- [ ] Record where it is hard: installation, finding commands, approval, messages or maintenance. Choose one small UX fix from that record.
+The project: any real one with at least three real secrets, a `dev` and a `staging` environment, a consumer that visibly fails without a secret (CI, a deployment, the application), and work that lasts at least a week with the usual coding agent. Before starting, finish 4g to 4i in the plan above, so that known obstacles are not measured again.
+
+First round:
+
+- [ ] S1. The human enters two or three existing secrets with `secretops add`.
+- [ ] S2. The agent syncs them to GitHub through an approved plan and verifies the names, and a real workflow of the project uses them. The project's own agent instructions carry the consumer template (4i).
+- [ ] S3. During ordinary work the agent needs a new secret and generates it, without the human leading it through the steps.
+- [ ] S4. The paths not tried so far, here in real work (first with a fresh agent in 4h): the human rejects a plan; an approval is left unused for more than 24 hours, or with a shorter `approval_valid_hours` for the test, until it expires; the agent's session is interrupted and continued later.
+
+Later rounds:
+
+- [ ] S5. Promote secrets from `dev` to `staging`: copy in the vault (the names must not exist in `staging` yet), then sync.
+- [ ] S6. Rotate one secret in `dev` or `staging` and sync it again; the consumer keeps working.
+- [ ] S7. Check names before a deployment as a routine, with the checks that need no approval.
+- [ ] S8. The agent plans a write to a production environment name; the policy refuses it, even if the plan is approved.
+
+What to record, one line per operation, without values: what was asked, how many actions the human needed, whether the agent needed a correction, whether the human really read the plan, and where it was hard (installation, finding commands, approval, messages, maintenance). Record every bypass (a secret changed in a web UI instead) with its reason.
+
+Done when, after one to two weeks, all secrets of the project go through the broker and the record names the three largest obstacles. They choose the next work, starting with one small UX fix. The record goes to `docs/validation/`.
+
 - [ ] Ideally, another person follows the installation guide without help.
 
 If one project per broker blocks this work, named destinations (section 8) come first.
