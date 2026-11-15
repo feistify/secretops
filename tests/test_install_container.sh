@@ -98,6 +98,7 @@ check "agent: write-recipe" pass sh -c 'runuser -u agent -- env HOME=/home/agent
 check "agent: plan --save" pass as_agent secretops-local plan --file verify.yaml --save
 check "agent: approve-plan denied" deny as_agent secretops-local approve-plan --id abc
 check "agent: reject-plan denied" deny as_agent secretops-local reject-plan --id abc
+check "agent: pending-plans denied" deny as_agent secretops-local pending-plans
 check "agent: add endpoints denied" deny as_agent secretops-local prepare-add
 check "agent: shell denied" deny as_agent secretops-local sh -c id
 check "agent: interactive shell denied" deny as_agent sh -c 'ssh -F /dev/null -i ~/.ssh/secretops_local_agent_ed25519 -o BatchMode=yes -o UserKnownHostsFile=~/.ssh/secretops_local_known_hosts -tt -p 22222 secretops-broker@127.0.0.1 </dev/null'
@@ -111,6 +112,7 @@ sed -i 's/^\(\[127.0.0.1\]:22222 ssh-ed25519 \).*/\1AAAAC3NzaC1lZDI1NTE5AAAAIOMq
 check "agent: changed host key refused" deny as_agent secretops-local version
 
 check "configure refuses without a terminal" deny sh -c 'echo x | secretops-configure --token-only'
+check "broker: pending-plans runs" pass runuser -u secretops-broker -- /usr/local/bin/secretops-broker pending-plans
 check "vault read fails safely without a token" deny runuser -u secretops-broker -- /usr/local/bin/secretops-broker check-vault-read --name DEMO --env dev
 # Answers each prompt only after it appears, as a person would, so the
 # hidden token prompt has turned echo off before the token is typed.

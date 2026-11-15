@@ -38,6 +38,7 @@ from secretops.targets import (
     GitHubLaunchError,
     GitHubWriteOutcome,
 )
+from secretops.validation import safe_text
 from secretops.vaults import (
     Vault,
     VaultError,
@@ -670,6 +671,181 @@ def _plan_time_lines(plan_artifact) -> list[str]:
             expires = _approval_expires_at(plan_artifact.approved_at, hours)
             lines.append(f"approval_expires_at: {format_timestamp(expires)}")
         lines.append(f"approval_valid: {'no; ' + refusal if refusal else 'yes'}")
+    return lines
+
+
+# pending-plans: the fixed broker prefix of the local broker, as in the docs.
+HUMAN_BROKER_COMMAND = "sudo -u secretops-broker /usr/local/bin/secretops-broker"
+PENDING_PLANS_SHOWN = 50
+PENDING_NAMES_SHOWN = 10
+# Layout for an 80-column terminal: every line with plan-derived text holds
+# one free-text field, at the end, after a fixed label, and is at most
+# PENDING_LINE_CHARS long, so no field can start a terminal row of its own.
+PENDING_LINE_CHARS = 79
+PENDING_CUT_MARK = "..."
+# Only this much of a field is examined, so a huge field costs no more.
+PENDING_FIELD_SCAN_CHARS = 4096
+
+
+def _human_action_needed(plan_artifact) -> str | None:
+    """What a planned plan waits for from the human, or None."""
+    if plan_artifact.action in HUMAN_ENTRY_ACTIONS:
+        return "your entry"
+    if _needs_approval(plan_artifact):
+        return "approval"
+    return None
+
+
+def _age_words(planned_at: str, now: datetime) -> str:
+    seconds = int((now - parse_timestamp(planned_at)).total_seconds())
+    if seconds < 0:
+        return "in the future; check the clock"
+    for unit, size in (("day", 86400), ("hour", 3600), ("minute", 60)):
+        if seconds >= size:
+            count = seconds // size
+            return f"{count} {unit}{'' if count == 1 else 's'} ago"
+    return "just now"
+
+
+def _field(value, limit: int) -> str:
+    """One plan field for the listing: printable ASCII on one line, at most
+    `limit` characters. Every plan-derived value goes through this, so no
+    field can add lines, control sequences, wide or combining characters,
+    padding that wraps into a fake line, or unbounded output."""
+    raw = str(value)
+    cut = len(raw) > PENDING_FIELD_SCAN_CHARS
+    text = safe_text(raw[:PENDING_FIELD_SCAN_CHARS])
+    text = " ".join("".join(c if c.isascii() else "?" for c in text).split())
+    if cut or len(text) > limit:
+        return text[: limit - len(PENDING_CUT_MARK)] + PENDING_CUT_MARK
+    return text
+
+
+def _labelled(label: str, value) -> str:
+    """A fixed label followed by one field, the whole line within budget."""
+    return label + _field(value, PENDING_LINE_CHARS - len(label))
+
+
+def _pending_name_lines(plan_artifact) -> list[str]:
+    pairs = []
+    for mapping in plan_artifact.secret_mappings or []:
+        if "name" in mapping:
+            pairs.append((mapping["name"], None))
+        else:
+            pairs.append((mapping["source"], mapping["target"]))
+    if not pairs and plan_artifact.secret_name is not None:
+        pairs.append(
+            (plan_artifact.secret_name, (plan_artifact.target or {}).get("target_secret_name"))
+        )
+    label = "   name: "
+    # A renamed pair holds two fields; each gets half of what is left.
+    side = (PENDING_LINE_CHARS - len(label) - len(" -> ")) // 2
+    lines = []
+    for source, target in pairs[:PENDING_NAMES_SHOWN]:
+        if target is None or target == source:
+            lines.append(_labelled(label, source))
+        else:
+            lines.append(f"{label}{_field(source, side)} -> {_field(target, side)}")
+    if len(pairs) > PENDING_NAMES_SHOWN:
+        hidden = len(pairs) - PENDING_NAMES_SHOWN
+        lines.append(f"   and {hidden} more name{'' if hidden == 1 else 's'}")
+    return lines
+
+
+def _pending_where_lines(plan_artifact) -> list[str]:
+    # Environments and GitHub target only: the vault URL, project and folder
+    # stay in show-plan.
+    target = plan_artifact.target
+    if target is not None:
+        lines = []
+        if plan_artifact.action in VAULT_ACTIONS:
+            lines.append(_labelled("   from: vault ", plan_artifact.env))
+        repository = (
+            f"{target['target_host']}/{target['target_owner']}/{target['target_repo']}"
+        )
+        lines.append(_labelled("   to: ", repository))
+        lines.append(_labelled("   github environment: ", target["target_environment"]))
+        return lines
+    if plan_artifact.target_env is not None:
+        return [
+            _labelled("   from: vault ", plan_artifact.source_env or plan_artifact.env),
+            _labelled("   to: vault ", plan_artifact.target_env),
+        ]
+    return [_labelled("   in: vault ", plan_artifact.env)]
+
+
+def _environment_policy_refuses(plan_artifact) -> bool:
+    # The same check execute-plan applies before any provider call.
+    try:
+        for environment in _execution_policy_environments(plan_artifact):
+            require_environment_allowed(plan_artifact.action, environment)
+    except PermissionError:
+        return True
+    return False
+
+
+def pending_plan_lines(plans, unreadable: int, now: datetime) -> list[str]:
+    """Plain lines listing planned plans that wait for the human.
+
+    Every plan field is agent-prepared text and passes through _field.
+    """
+    waiting = [
+        (plan, needed)
+        for plan in plans
+        if plan.status == "planned" and (needed := _human_action_needed(plan)) is not None
+    ]
+    # Plans without a planning time (older versions) first, then oldest to
+    # newest, so the newest is closest to the prompt.
+    waiting.sort(
+        key=lambda item: (item[0].planned_at is not None, item[0].planned_at or "", item[0].plan_id)
+    )
+    lines = []
+    if not waiting:
+        lines.append("No plans wait for you.")
+    else:
+        lines.append(f"Plans waiting for you: {len(waiting)}")
+        hidden = len(waiting) - PENDING_PLANS_SHOWN
+        if hidden > 0:
+            lines.append(
+                f"{hidden} older plan{'' if hidden == 1 else 's'} not shown; "
+                f"the {PENDING_PLANS_SHOWN} newest follow."
+            )
+            waiting = waiting[hidden:]
+    for number, (plan, needed) in enumerate(waiting, start=1):
+        # The plan id and action of a loaded plan are pattern-checked and
+        # from a fixed set (load_plan), so the header, action and command
+        # lines hold no free text; _field still bounds them for plans that
+        # did not come from the loader. Command lines may exceed the line
+        # budget: their only plan-derived part is the plan id.
+        plan_id = _field(plan.plan_id, 64)
+        lines.append("")
+        lines.append(f"{number}. {plan_id}")
+        if plan.planned_at is None:
+            lines.append("   planned: not recorded (older version)")
+        else:
+            planned_at = _field(plan.planned_at, 20)
+            lines.append(f"   planned: {planned_at} ({_age_words(plan.planned_at, now)})")
+        lines.append(f"   action: {_field(plan.action, 40)}   needs: {needed}")
+        lines.extend(_pending_where_lines(plan))
+        lines.extend(_pending_name_lines(plan))
+        if _environment_policy_refuses(plan):
+            lines.append("   note: the policy denies this environment; approval will not make it run")
+        if needed == "approval":
+            lines.append(f"   review:  {HUMAN_BROKER_COMMAND} show-plan --id {plan_id}")
+            lines.append(f"   approve: {HUMAN_BROKER_COMMAND} approve-plan --id {plan_id}")
+        else:
+            lines.append(f"   enter:   secretops add --plan {plan_id}")
+    if unreadable:
+        lines.append("")
+        if unreadable == 1:
+            lines.append(
+                "1 plan file could not be read; inspect it with show-plan or remove it."
+            )
+        else:
+            lines.append(
+                f"{unreadable} plan files could not be read; "
+                "inspect them with show-plan or remove them."
+            )
     return lines
 
 

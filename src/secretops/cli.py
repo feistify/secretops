@@ -34,6 +34,7 @@ from secretops.human_entry import (
 from secretops.import_file import ImportFileError
 from secretops.plan_lifecycle import (
     execute_saved_plan,
+    pending_plan_lines,
     preflight_saved_plan,
     show_saved_plan,
     transition_planned_plan,
@@ -41,8 +42,11 @@ from secretops.plan_lifecycle import (
 from secretops.plans import (
     PLAN_ID_PATTERN,
     VAULT_ACTIONS,
+    PlanDirectoryError,
     build_plan_artifact,
+    load_planned_plans,
     save_plan_artifact,
+    utc_now,
 )
 from secretops.policy import (
     PolicyError,
@@ -152,6 +156,23 @@ def plan(
 @app.command("show-plan", help="Show a saved plan and its status.", rich_help_panel="Plans")
 def show_plan(plan_id: str = typer.Option(..., "--id")):
     show_saved_plan(plan_id, console)
+
+
+@app.command(
+    "pending-plans",
+    help="List the plans that wait for your approval or entry (human only).",
+    rich_help_panel="Plans",
+)
+def pending_plans():
+    # Read-only, like show-plan: no lock, no status change, no audit event.
+    # Plain text without Rich: every plan field is agent-prepared text.
+    try:
+        plans, unreadable = load_planned_plans()
+    except PlanDirectoryError as error:
+        typer.echo("FAIL plan directory could not be read")
+        raise typer.Exit(1) from error
+    for line in pending_plan_lines(plans, unreadable, utc_now()):
+        typer.echo(line)
 
 
 @app.command("approve-plan", help="Approve a saved plan (human only).", rich_help_panel="Plans")

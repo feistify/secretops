@@ -86,6 +86,14 @@ agent "plan --file import.yaml --save --extra x" </dev/null; check "plan extra a
 echo "== secretops-agent: approval + traversal + injection =="
 agent "approve-plan --id deadbeef" </dev/null; check "approve-plan denied" 1 $?
 agent "reject-plan --id deadbeef" </dev/null; check "reject-plan denied" 1 $?
+: > "$CALLLOG"
+agent "pending-plans" </dev/null; check "pending-plans denied" 1 $?
+agent "secretops pending-plans" </dev/null; check "pending-plans with prefix denied" 1 $?
+if [ -s "$CALLLOG" ]; then
+    check "pending-plans does not call the broker" 0 1
+else
+    check "pending-plans does not call the broker" 0 0
+fi
 agent "prepare-add --name DUMMY_SECRET --env dev" </dev/null; check "prepare-add (human endpoint) denied" 1 $?
 agent "review-add --id deadbeef" </dev/null; check "review-add (human endpoint) denied" 1 $?
 echo '{"value":"x"}' | agent "submit-add"; check "submit-add (human endpoint) denied" 1 $?

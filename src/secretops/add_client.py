@@ -30,6 +30,7 @@ from secretops.terminal_input import (
     TerminalUnavailable,
     input_received_line,
 )
+from secretops.validation import safe_text
 
 CLIENT_CONFIG_ENV = "SECRETOPS_CLIENT_CONFIG"
 DEFAULT_BROKER_COMMAND = "/usr/local/bin/secretops-broker"
@@ -152,13 +153,6 @@ def load_broker_access(selected: str | None) -> BrokerAccess:
     if name not in brokers:
         raise ClientError(f"broker {name} is not configured")
     return _access_from_entry(str(name), brokers[name])
-
-
-def safe_text(value: Any) -> str:
-    """Render broker text without control characters that could alter the terminal."""
-    return "".join(
-        character if character.isprintable() else "?" for character in str(value)
-    )
 
 
 def _parse_response(stdout: bytes) -> dict[str, Any]:

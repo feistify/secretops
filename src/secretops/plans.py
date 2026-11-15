@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import tempfile
 import uuid
 from collections.abc import Iterator
@@ -513,6 +514,74 @@ def load_plan(plan_id: str) -> PlanArtifact:
     data = _read_plan_json(plan_id)
     validate_plan_content(data, plan_id)
     return _artifact_from_content(data)
+
+
+class PlanDirectoryError(Exception):
+    """The plan directory exists but cannot be listed."""
+
+
+def load_planned_plans() -> tuple[list[PlanArtifact], int]:
+    """Load every valid plan with status `planned`, without taking locks.
+
+    Returns the plans and the number of plan files that could not be read
+    or did not validate. Hidden files (plan locks, temporary files) and
+    files not ending in `.json` are not plan files and are ignored. A
+    missing plan directory holds no plans. Raises PlanDirectoryError when
+    the directory cannot be listed.
+    """
+    try:
+        names = sorted(entry.name for entry in os.scandir(plan_dir()))
+    except FileNotFoundError:
+        return [], 0
+    except OSError as error:
+        raise PlanDirectoryError("plan directory could not be read") from error
+    plans: list[PlanArtifact] = []
+    unreadable = 0
+    for name in names:
+        if name.startswith(".") or not name.endswith(".json"):
+            continue
+        plan_id = name[: -len(".json")]
+        if not PLAN_ID_PATTERN.fullmatch(plan_id):
+            unreadable += 1
+            continue
+        try:
+            data = parse_plan_json(_read_listed_plan_file(plan_id).decode("utf-8"))
+            validate_plan_content(data, plan_id)
+        except (PlanFileError, OSError, ValueError, RecursionError):
+            unreadable += 1
+            continue
+        plan = _artifact_from_content(data)
+        if plan.status == "planned":
+            plans.append(plan)
+    return plans, unreadable
+
+
+# The listing reads every file in the plan directory, so it accepts only
+# small regular files: no symlinks, FIFOs, devices or directories.
+MAX_LISTED_PLAN_BYTES = 1024 * 1024
+
+
+def _read_listed_plan_file(plan_id: str) -> bytes:
+    """Raises OSError or PlanFileError for anything but a small regular file."""
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+    file_descriptor = os.open(_plan_path(plan_id), flags)
+    try:
+        status = os.fstat(file_descriptor)
+        if not stat.S_ISREG(status.st_mode) or status.st_size > MAX_LISTED_PLAN_BYTES:
+            raise PlanFileError("invalid_json")
+        chunks = []
+        size = 0
+        while size <= MAX_LISTED_PLAN_BYTES:
+            chunk = os.read(file_descriptor, MAX_LISTED_PLAN_BYTES + 1 - size)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            size += len(chunk)
+        if size > MAX_LISTED_PLAN_BYTES:
+            raise PlanFileError("invalid_json")
+        return b"".join(chunks)
+    finally:
+        os.close(file_descriptor)
 
 
 def load_legacy_plan_for_display(plan_id: str) -> PlanArtifact:
