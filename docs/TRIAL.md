@@ -43,4 +43,14 @@ Also in `recipes/` for the agent: `generate.yaml` creates a new secret that the 
 
 `sh trial/check.sh` builds the image and runs the same flow without a person.
 
+## Without Docker
+
+Both scripts take another Docker-compatible program in `DOCKER`, for example on a machine with containerd, `nerdctl` and BuildKit:
+
+```sh
+DOCKER=nerdctl sh trial/run.sh            # or DOCKER="sudo nerdctl"
+```
+
+Then use the same program in the second terminal (`nerdctl exec ...`). Docker and nerdctl 2.4 are checked by `trial/check.sh` every week; other programs are not tested.
+
 Next: [prepare a vault](PREPARE.md) and [install](INSTALL.md).

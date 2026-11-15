@@ -52,3 +52,37 @@ jobs:
 
       - name: Build the trial container and run its flow
         run: sh trial/check.sh
+
+  trial-nerdctl:
+    # The same flow through nerdctl and BuildKit on the runner's containerd,
+    # for machines without Docker.
+    runs-on: ubuntu-latest
+    env:
+      NERDCTL_VERSION: 2.4.2
+      NERDCTL_SHA256: 1f12c1a5840744fdf7029483c55a69813d44aa2ec1ef879d52d81ff6a3049ecd
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install nerdctl and BuildKit
+        run: |
+          file="nerdctl-full-${NERDCTL_VERSION}-linux-amd64.tar.gz"
+          curl -fsSLO "https://github.com/containerd/nerdctl/releases/download/v${NERDCTL_VERSION}/${file}"
+          echo "${NERDCTL_SHA256}  ${file}" | sha256sum -c
+          mkdir "$RUNNER_TEMP/nerdctl"
+          tar -C "$RUNNER_TEMP/nerdctl" -xzf "$file"
+          sudo install -m 0755 "$RUNNER_TEMP"/nerdctl/bin/nerdctl "$RUNNER_TEMP"/nerdctl/bin/buildkitd \
+              "$RUNNER_TEMP"/nerdctl/bin/buildctl /usr/local/bin/
+          sudo mkdir -p /usr/local/libexec/cni
+          sudo install -m 0755 "$RUNNER_TEMP"/nerdctl/libexec/cni/* /usr/local/libexec/cni/
+          sudo sh -c 'nohup buildkitd >/var/log/buildkitd.log 2>&1 &'
+          for _ in $(seq 30); do sudo buildctl debug workers >/dev/null 2>&1 && break; sleep 1; done
+          sudo buildctl debug workers
+
+      - name: Build the trial container and run its flow
+        env:
+          DOCKER: sudo nerdctl
+        run: sh trial/check.sh

@@ -5,15 +5,20 @@
 set -eu
 # shellcheck disable=SC1007  # deliberate: empty CDPATH for this cd only
 REPO=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+# Another Docker-compatible CLI can be named, for example DOCKER=nerdctl.
+# Deliberately unquoted below, so it can hold a command with arguments.
+DOCKER=${DOCKER:-docker}
 if [ ! -t 0 ]; then
     echo "trial/run.sh needs a terminal; for a run without a person use: sh trial/check.sh" >&2
     exit 1
 fi
-if [ -n "$(docker ps -q -f name='^secretops-trial$')" ]; then
-    echo "The trial container is already running. Open another shell in it with:" >&2
-    echo "  docker exec -it -u you -w /home/you secretops-trial bash" >&2
+if $DOCKER container inspect secretops-trial >/dev/null 2>&1; then
+    echo "A trial container already exists. Open another shell in it with:" >&2
+    echo "  $DOCKER exec -it -u you -w /home/you secretops-trial bash" >&2
+    echo "or remove it with: $DOCKER rm -f secretops-trial" >&2
     exit 1
 fi
 echo "Building the trial image (the first time takes a few minutes) ..."
-docker build -q -t secretops-trial -f "$REPO/trial/Dockerfile" "$REPO" >/dev/null
-exec docker run --rm -it --init --name secretops-trial --hostname trial secretops-trial
+$DOCKER build -q -t secretops-trial -f "$REPO/trial/Dockerfile" "$REPO" >/dev/null
+# shellcheck disable=SC2086  # DOCKER may hold a command with arguments
+exec $DOCKER run --rm -it --name secretops-trial --hostname trial secretops-trial

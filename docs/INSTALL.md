@@ -2,6 +2,8 @@
 
 This guide installs secretops as a local broker on one Linux machine: the human and the coding agent use the same machine, the broker runs as its own account, and the agent reaches it only through a restricted loopback SSH key. Daily use, renewal, upgrade and backup are in [OPERATIONS.md](OPERATIONS.md). The model and its reasons are in [BROKER_HOST.md](BROKER_HOST.md).
 
+To see the whole flow before installing anything, try the [trial container](TRIAL.md); it needs only Docker.
+
 Every command block says who runs it. "Human" means your own terminal, not a terminal or tool session of the agent: never run `sudo` or enter a token through an agent (for example Claude Code's `!` prefix).
 
 Tested: Ubuntu 24.04 with its Python 3.12; installer checks in clean Ubuntu 24.04, Debian 12 and Ubuntu 22.04 (with Python 3.12 from the deadsnakes PPA) containers (`tests/test_install_container.sh`). A clean-VM run with a self-hosted Infisical and GitHub is recorded in [local-broker-installation.md](validation/local-broker-installation.md). Other distributions are not tested.
