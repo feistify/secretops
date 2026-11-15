@@ -162,7 +162,7 @@ cd /
 sudo -u secretops-broker gh auth login --hostname github.com
 ```
 
-Choose HTTPS and browser login. If the browser does not open, open `https://github.com/login/device` and enter the code yourself. Never give the code to the agent. The login must allow writing environment secrets of the target repository; details are in [BROKER_HOST.md](BROKER_HOST.md#github-authentication-human-only).
+This login belongs to the broker account and is separate from your own `gh` login. `cd /` first, because the broker account cannot enter your home directory. Choose HTTPS and browser login. GitHub may ask you to confirm your identity in the browser (password, two-factor code or its mobile app); that is GitHub's own check, which GitHub calls "sudo mode"; it is unrelated to the Linux `sudo` command. If the browser does not open, open `https://github.com/login/device` and enter the code yourself. Never give the code to the agent. The login must allow writing environment secrets of the target repository; details are in [BROKER_HOST.md](BROKER_HOST.md#github-authentication-human-only).
 
 ## Set up the agent
 

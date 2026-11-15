@@ -69,4 +69,47 @@ secretops-local execute-plan --id VERIFY_PLAN_ID
 # present names: DEMO_API_KEY
 ```
 
-Replace `VERIFY_PLAN_ID` with the second plan's ID. Verification needs no approval under the default policy and confirms only that the name exists, not value equality. The human deletes the demo secrets from Infisical and GitHub when finished. See [OPERATIONS.md](OPERATIONS.md) for failure handling and daily use.
+Replace `VERIFY_PLAN_ID` with the second plan's ID. Verification needs no approval under the default policy and confirms only that the name exists, not value equality. The human deletes the demo secrets from Infisical and GitHub when finished, after the optional section below if you do it. See [OPERATIONS.md](OPERATIONS.md) for failure handling and daily use.
+
+## Optional: use the secret in a workflow
+
+The verification above shows that the name exists in GitHub. To see that a job really receives the value, add a workflow that only checks that the secret is not empty. It never prints the value, its length or a hash. For a clear result, add the workflow and run it once after `secretops add` and before the sync plan, then return to the sync.
+
+**Agent** (with its own access to the test repository, never the broker's GitHub login): propose this file as `.github/workflows/secretops-smoke.yml`, show the change, and publish it only after the human agrees. Look at the repository's other workflows first: a push can start them, and `[skip ci]` in the commit message prevents that. Do not add shell tracing. The workflow must be on the default branch before it can be started.
+
+```yaml
+name: secretops smoke test
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  check-secret:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    environment: dev
+    steps:
+      - name: Check that the secret is available
+        shell: bash
+        env:
+          SMOKE_VALUE: ${{ secrets.DEMO_API_KEY }}
+        run: |
+          if [[ -z "$SMOKE_VALUE" ]]; then
+            printf '%s\n' '::error::DEMO_API_KEY is missing or empty.'
+            exit 1
+          fi
+          printf '%s\n' 'OK DEMO_API_KEY is available.'
+```
+
+**Human:** run it from the Actions tab once it is on the default branch, or let the agent start it with its own repository access.
+
+| When | Expected |
+| --- | --- |
+| Before the sync | The job fails with `DEMO_API_KEY is missing or empty.` If it passes, a secret of that name already exists (in the environment, the repository or the organization); stop and find out why |
+| After the sync | `OK DEMO_API_KEY is available.` |
+
+Only the failing run shows that the later success comes from the sync. Before the second run, check that the workflow file on the default branch is still the reviewed one. A passing job proves that a non-empty value reached the job, not that it equals the value in the vault. If the environment has protection rules, the job waits for the required approval; that is not a missing secret. GitHub documents environment secrets for public repositories on every plan and for private repositories on paid plans; check yours ([managing environments](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)).
+
+One run of this, in a private repository where it worked on the Free plan for a reason not known, is recorded in [validation/github-actions-consumer.md](validation/github-actions-consumer.md).
