@@ -1,34 +1,63 @@
-# Onboarding follow-up: v0.1.10
+# Upgrade, fresh-agent handoff and vault failures: v0.1.10
 
 Date: 2026-11-15
-System: Ubuntu 22.04 laptop, system Python 3.12, Infisical CLI 0.44.2, existing self-hosted vault, separate agent account.
-Status: broker upgraded, local policy updated and live vault connection check passed; fresh-agent handoff test is pending.
+Release: v0.1.10 installer bundle, checked against the SHA-256 in the release notes
+System: Ubuntu 22.04, Python 3.12, Infisical CLI 0.44.2
+Vault: an existing self-hosted Infisical
+Agent: a coding agent in a fresh session under a separate account; `sudo -l` lists `use_pty`, so the documented `sudo -iu` start can be used
 
-Record results and remarks from this run here. Keep credentials, values and private deployment identifiers out of this file. Earlier installation evidence: [first installation](onboarding-first-install.md).
+Follows the [first installation](onboarding-first-install.md). All values were synthetic. The human reports deleting the test secret; the test token was revoked.
 
-## Results
+## Upgrade
 
-| Step | Evidence | Result |
+| Step | Who | Result |
 | --- | --- | --- |
-| Terminal separation | Human-provided `sudo -l` output lists `use_pty`. | The documented `sudo -iu agent` route can be used. |
-| Release preparation | Agent downloaded the public v0.1.10 installer, checked its SHA-256 against release notes, validated archive paths/types and extracted it. | Installer prepared before the human ran it. |
-| Upgrade from v0.1.7 | Human ran the installer with `--upgrade`; output reports v0.1.10 and preserved configuration, policy, plans, audit, SSH service and keys. Agent independently read installed package metadata. | Upgrade succeeded; installed version is 0.1.10. |
-| Policy update | Human copied the existing policy to `policy.before-v0.1.10.yaml`, then installed the agent-prepared replacement. Agent compared the installed file with the prepared file and loaded it through v0.1.10's policy validator. | Only `prod` was added to the allowed environments of `vault.read.check`, `vault.secret.diff_envs` and `github.env_secret.verify_many`. Other policy fields were preserved. Checks confirmed production write denial. No provider operation was used for this validation. |
-| Valid vault configuration | Human ran `sudo secretops-configure --check` for `dev`. | `OK vault connection works: URL, token, project and environment dev answered.` Nothing was written; provider output and secret values were suppressed. Folder existence is not established by this check, as its output explicitly states. |
+| `install.sh --upgrade` from v0.1.7 | human | v0.1.10 installed; configuration, policy, plans, audit, SSH service and keys kept. An agent confirmed the installed version from the package metadata |
+| Policy: `prod` added to the three metadata checks | human, file prepared by an agent | The new version accepts the file and production writes stay denied, checked with the policy validator without any provider operation. The old file was copied aside first |
+| `sudo secretops-configure --check` | human | `OK vault connection works: URL, token, project and environment dev answered.` |
+| New token through `secretops-configure --token-only` | human | `Input received` with a character count, no value shown; the check after saving passed. The `secretops add` prompt was not tried here |
 
-## Remarks and follow-up proposals
+## Fresh-agent handoff
 
-- The human asked why a separate manual policy backup was necessary and whether an important step like this belongs in scripts. The backup provides recovery before a manual policy change; it is separate from the upgrade, which deliberately preserves custom policy. If a policy-update helper is introduced, it should include backup, validation and safe replacement rather than require the human to assemble these steps. Do not replace custom policy with packaged defaults automatically. No such helper was implemented in this run.
-- The human asked where to find step-by-step documentation. Upgrade, agent setup and validation instructions are still spread across OPERATIONS, INSTALL, AGENT_USAGE and TODO. The guided onboarding entry and role/host outline remain the follow-up tracked in TODO section 6.
-- Existing project instructions must never be overwritten by default. The human explicitly rejected replacement of an existing `AGENTS.md` and found the explanation of how the template fits into a real repository unclear. The `install -D` command used in this run was intended only for the new, empty test directory; it can overwrite a destination file and must not be presented as the general integration command. For an existing repository, inspect its applicable instructions, show a proposed diff adding the configured Secret operations section, and preserve unrelated content. If the section already exists, update that section through a reviewed diff without duplicating it; identify conflicting instructions rather than silently choosing or rewriting them. Creating a new file must check that it does not already exist. Include an existing `AGENTS.md` case in onboarding validation, not only an empty directory.
+The agent's project held only the consumer template from [AGENT_USAGE.md](../AGENT_USAGE.md), with the broker command and `HUMAN_BROKER` filled in. The task was one sentence: generate a named 32-character password in `dev` without overwriting.
 
-## Fresh-agent test preparation
+| Step | Result |
+| --- | --- |
+| Plan and preflight | Create-only plan saved, preflight passed |
+| Handoff | Without a corrective prompt, the agent gave ready `show-plan` and `approve-plan` commands with the real plan ID, named a separate terminal under the human's account, listed what to review, and waited |
+| Approval | The human reviewed and approved; matching digest, 24-hour validity |
+| Continuation | After the single word "done" from the human, the agent reported that it executed the plan and checked that the name exists, without asking for the plan ID again |
 
-- The agent extracted the consumer template from the v0.1.10 release, substituting only `ssh BROKER_ALIAS` with `secretops-local` and `HUMAN_BROKER` with the local human broker command. The human reports installing it as `AGENTS.md` in the new test directory under the separate agent account. Launching a fresh coding-agent session and validating its handoff remain pending.
+No corrective prompt was given. Two things in the agent's answer were wrong: the alternative `reject-plan` command was shortened and lacked the human broker command, and it said the value is generated in the vault (the broker generates it and stores it in the vault).
 
-## Next checks
+## Vault failures
 
-- Replan and approve any still-needed operations whose approvals predate this upgrade; do not replay executed plans.
-- Test a fresh coding-agent session with only the current consumer-project instructions, without corrective prompts (TODO 4a).
-- Validate failure classification with deliberately wrong URL, revoked test token, wrong project, environment and folder (TODO 4f); use disposable test credentials and restore valid configuration afterwards.
-- First real-project use in dev/staging, with friction recorded.
+The human caused each case on purpose. Where the saved configuration was changed, the human restored it afterwards and the check reported a working connection again.
+
+| Case | How | Result of `secretops-configure --check` |
+| --- | --- | --- |
+| Environment that does not exist | `--check --env NAME` | `FAIL project, environment or folder not found, or not permitted for this machine identity.` |
+| Folder that does not exist | saved through `secretops-configure` | the same message |
+| Project that does not exist | a made-up project ID | the same message |
+| Unreachable URL | a local port that refuses connections | `FAIL vault not reachable at the configured URL (connection, DNS or TLS failed).` |
+| Revoked token | a separate test token, revoked after a passing check | `FAIL the vault refused the access token (expired, revoked or wrong).` |
+
+Every message came with its next step, and no provider output or value was shown. After a failing check that followed a save, the output said that the configuration was saved but the check failed. No correction of the classification was needed.
+
+## What was hard
+
+- Copy and paste between the two accounts still does not work (`Authorization required, but no authorization protocol specified`), so the handoff commands were carried by screenshot. The agent account must not get access to the human's graphical session.
+- The policy change at upgrade was manual: copy the old file aside, replace it, check it. It is easy to get wrong.
+- The steps for an upgrade, the agent setup and these checks are spread over several documents.
+- Adding the template to a project that already has an `AGENTS.md` is not described; replacing the file would lose the project's own instructions.
+- The working-connection message warns that a folder path that does not exist may look like an empty folder. With this vault and CLI a missing folder was reported as not found, so the warning may not apply.
+
+These are tracked in [TODO.md](../../TODO.md).
+
+## Evidence limits
+
+- One machine, one self-hosted vault, one CLI version, one coding agent.
+- Results are as reported by the human, from terminal output and screenshots; the broker's audit log and the agent's own commands were not inspected. No credential or value was given to any agent.
+- Only the approval path was exercised: not rejection, an expired approval, or an interrupted session.
+- The unreachable case is one observation of a refused connection. DNS and TLS failures and a permission error were not caused. The provider's raw output was not collected, so which pattern matched is not known.
+- GitHub sync was not exercised.
