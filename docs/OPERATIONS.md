@@ -21,6 +21,8 @@ sudo -u secretops-broker /usr/local/bin/secretops-broker
 
 Recipes contain names and target metadata only, never values; examples are in [`examples/recipes/`](../examples/recipes/). Vault rotation and GitHub sync are separate plans: rotating a secret does not update GitHub until a sync plan is approved and executed. Production writes are blocked by the default policy, even with approval.
 
+To find what waits for you without copying a plan ID from the agent's terminal, run `sudo -u secretops-broker /usr/local/bin/secretops-broker pending-plans` (local broker). It lists the plans that need your approval or entry, newest last, each with the commands to review and approve it (or `secretops add --plan PLAN_ID`). It changes nothing; the agent cannot run it. The printed commands are for the local broker; with a remote broker, use your own broker access with the same subcommands. Plans without a recorded planning time (from older versions) are listed first and count as the oldest.
+
 Before approving, read the whole `show-plan` output: action, environment, vault destination, every source and target name, and the GitHub repository and environment. Do not approve a plan whose preflight failed. Check `planned_at` too: a plan has no age limit before approval, only after it.
 
 ## When something fails

@@ -43,7 +43,7 @@ ssh BROKER_ALIAS preflight-plan --id <plan_id>
 ssh BROKER_ALIAS execute-plan --id <plan_id>
 ```
 
-The agent cannot approve or reject plans. See [the broker operating flow](BROKER_HOST.md#operating-flow) for human approval commands and [agent instructions](AGENT_USAGE.md#instructions-for-agents-in-consumer-projects) for the consumer-project template.
+The agent cannot approve or reject plans. The human does not need to copy the plan ID from the agent: on the broker, `pending-plans` lists the plans that wait for approval or entry, with ready-to-run commands (local broker: `sudo -u secretops-broker /usr/local/bin/secretops-broker pending-plans`). The printed `review:` and `approve:` commands are for the local broker; with a remote broker the human uses their own broker access with the same subcommands. Plans without a recorded planning time (from older versions) are listed first and count as the oldest. See [the broker operating flow](BROKER_HOST.md#operating-flow) for human approval commands and [agent instructions](AGENT_USAGE.md#instructions-for-agents-in-consumer-projects) for the consumer-project template.
 
 The normal lifecycle is:
 

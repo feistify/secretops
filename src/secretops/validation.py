@@ -135,3 +135,10 @@ def validate_plan_secret_fields(
         validated_target,
         validate_secret_mappings(secret_mappings),
     )
+
+
+def safe_text(value: Any) -> str:
+    """Render untrusted text without control characters that could alter the terminal."""
+    return "".join(
+        character if character.isprintable() else "?" for character in str(value)
+    )
