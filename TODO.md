@@ -194,6 +194,16 @@ Found by reading the code; none is reproduced with a test yet. The execution loc
 - [x] `check-vault-read` checks only that the action is allowed, not the environment policy, so it accepts an environment that `execute-plan` refuses. It is a human-only command; make it consistent with plans.
 - [ ] Check the Infisical CLI commands the adapter uses (`infisical run`, `secrets set`) against the current CLI reference and a current CLI version. The cold-reader work did not find `secrets set` in the current reference; this is not confirmed as a break.
 
+Left over from the reviews of the changes above (2026-11-14). Each was confirmed by reading the code on 2026-11-15; none is reproduced with a test yet:
+
+- [ ] `vault.secret.diff_envs` and `github.env_secret.verify_many` plans can be executed again after they ended as `failed`. Decide whether a failed check may be repeated or needs a new plan, and make it explicit.
+- [ ] Vault environment names in recipes (`env`, `source_env`, `target_env`) have no pattern check, so a name such as `"prod "` (with a space) is planned and compared as a different environment. Validate them like the environment names in `secretops-configure`.
+- [ ] `approve-plan` and `reject-plan` end in a traceback when the plan status cannot be saved, and the audit writes made before a provider write (refusals, diff and verify results) end in one when the audit log cannot be written. Print a fixed message and exit 1, as the vault paths do.
+- [ ] `preflight-plan` and `execute-plan` write the same `approval_expired` audit event; add a field that says which step wrote it.
+- [ ] Lock files of plans are never removed and accumulate in the plan directory.
+- [ ] Action names under `actions` in the policy file are not checked against the known actions, so a misspelled action is accepted and never applies.
+- [ ] `vault.secret.copy_many` records a different `env` in its audit event depending on the outcome; record source and target the same way in every outcome.
+
 ### 10. CI and maintenance — one small pull request, no behaviour change
 
 - [x] Run the tests on Python 3.11 and 3.12. CI uses only 3.11, while Ubuntu 24.04, the main supported system, ships 3.12.
