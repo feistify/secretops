@@ -20,5 +20,7 @@ if $DOCKER container inspect secretops-trial >/dev/null 2>&1; then
 fi
 echo "Building the trial image (the first time takes a few minutes) ..."
 $DOCKER build -q -t secretops-trial -f "$REPO/trial/Dockerfile" "$REPO" >/dev/null
-# shellcheck disable=SC2086  # DOCKER may hold a command with arguments
-exec $DOCKER run --rm -it --name secretops-trial --hostname trial secretops-trial
+# --init only with Docker itself: other programs may need extra setup for it.
+init=
+[ "$DOCKER" != docker ] || init=--init
+exec $DOCKER run --rm -it $init --name secretops-trial --hostname trial secretops-trial

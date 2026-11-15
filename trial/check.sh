@@ -14,8 +14,11 @@ VALUE=made-up-trial-value-0123456789
 DOCKER=${DOCKER:-docker}
 $DOCKER build -q -t secretops-trial -f "$REPO/trial/Dockerfile" "$REPO" >/dev/null
 $DOCKER rm -f "$NAME" >/dev/null 2>&1 || true
-$DOCKER run -d --name "$NAME" secretops-trial sleep 600 >/dev/null
+# No --rm: some programs refuse it with -d. The traps remove the container,
+# also after Ctrl-C (sh does not run the EXIT trap on a signal by itself).
 trap '$DOCKER rm -f "$NAME" >/dev/null 2>&1' EXIT
+trap 'exit 130' INT TERM
+$DOCKER run -d --name "$NAME" secretops-trial sleep 600 >/dev/null
 sleep 1
 
 OUT=$(mktemp)

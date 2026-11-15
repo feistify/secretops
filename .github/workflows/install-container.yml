@@ -69,6 +69,7 @@ jobs:
 
       - name: Install nerdctl and BuildKit
         run: |
+          cd "$RUNNER_TEMP"
           file="nerdctl-full-${NERDCTL_VERSION}-linux-amd64.tar.gz"
           curl -fsSLO "https://github.com/containerd/nerdctl/releases/download/v${NERDCTL_VERSION}/${file}"
           echo "${NERDCTL_SHA256}  ${file}" | sha256sum -c
@@ -86,3 +87,8 @@ jobs:
         env:
           DOCKER: sudo nerdctl
         run: sh trial/check.sh
+
+      - name: Confirm that nerdctl built the image, not Docker
+        run: |
+          sudo nerdctl image inspect secretops-trial >/dev/null
+          ! docker image inspect secretops-trial >/dev/null 2>&1
