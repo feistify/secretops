@@ -1,8 +1,9 @@
 name: Installer in containers
 
 # Runs tests/test_install_container.sh (the installer in throwaway containers,
-# with a fake vault CLI) on release tags and weekly. It needs Docker and
-# network access and is too slow for every pull request.
+# with a fake vault CLI) and trial/check.sh (the trial container's whole flow)
+# on release tags and weekly. Both need Docker and network access and are too
+# slow for every pull request.
 
 on:
   push:
@@ -39,3 +40,15 @@ jobs:
         env:
           IMAGE: ${{ matrix.image }}
         run: sh tests/test_install_container.sh
+
+  trial:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the trial container and run its flow
+        run: sh trial/check.sh

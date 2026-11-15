@@ -1,0 +1,28 @@
+#!/usr/bin/python3 -I
+"""Shows which names the stand-in vault and the stand-in GitHub hold.
+Names only; values are never read into the output. Run: sudo trial-status"""
+
+import json
+import sys
+
+
+def names(path):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return {env: sorted(entries) for env, entries in json.load(handle).items()}
+    except FileNotFoundError:
+        return {}
+    except PermissionError:
+        sys.exit("run it as: sudo trial-status")
+
+
+for title, path in (
+    ("Stand-in vault", "/var/lib/secretops-trial/vault.json"),
+    ("Stand-in GitHub (trial-owner/trial-repo)", "/var/lib/secretops-trial/github.json"),
+):
+    print(f"{title}:")
+    found = names(path)
+    if not found:
+        print("  (empty)")
+    for env, listed in sorted(found.items()):
+        print(f"  {env}: {', '.join(listed)}")

@@ -1,0 +1,10 @@
+#!/bin/sh
+# Starts the broker's SSH service and the stand-in vault status server,
+# then opens a shell as the human account. With arguments, runs them.
+set -eu
+mkdir -p /run/sshd
+runuser -u nobody -- /usr/local/lib/secretops-trial/status-server &
+/usr/sbin/sshd -f /opt/secretops/ssh/sshd_config
+[ $# -eq 0 ] || exec "$@"
+cat /usr/local/lib/secretops-trial/guide.txt
+exec runuser -l you

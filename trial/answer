@@ -1,0 +1,61 @@
+#!/usr/bin/python3 -I
+"""Types answers at a terminal prompt, as a person would.
+
+  answer 'PROMPT TEXT=ANSWER' ... -- COMMAND ARGS
+
+Each answer is sent only after its prompt text has appeared, so a hidden
+prompt has turned echo off first. Like a real terminal, it confirms
+bracketed paste when asked, which secret entry requires. Prints the command's output and exits
+with its status. Used to build the trial image and by trial/check.sh.
+"""
+
+import os
+import pty
+import select
+import sys
+import time
+
+split = sys.argv.index("--")
+steps = [step.split("=", 1) for step in sys.argv[1:split]]
+command = sys.argv[split + 1 :]
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp(command[0], command)
+seen = b""
+position = 0
+confirmed = False
+
+
+def read():
+    global seen
+    if not select.select([fd], [], [], 60)[0]:
+        sys.stdout.write(seen.decode(errors="replace"))
+        sys.exit("answer: timeout waiting for the command")
+    try:
+        chunk = os.read(fd, 1024)
+    except OSError:
+        chunk = b""
+    seen += chunk
+    # DECRQM for mode 2004 (bracketed paste): answer "set", once.
+    global confirmed
+    if not confirmed and b"\x1b[?2004$p" in seen:
+        confirmed = True
+        os.write(fd, b"\x1b[?2004;1$y")
+    return chunk
+
+
+for prompt, reply in steps:
+    while True:
+        found = seen.find(prompt.encode(), position)
+        if found >= 0:
+            position = found + len(prompt)
+            break
+        if not read():
+            sys.stdout.write(seen.decode(errors="replace"))
+            sys.exit(f"answer: the command ended before: {prompt}")
+    time.sleep(0.3)
+    os.write(fd, reply.encode() + b"\r")
+while read():
+    pass
+sys.stdout.write(seen.decode(errors="replace"))
+sys.exit(os.waitstatus_to_exitcode(os.waitpid(pid, 0)[1]))

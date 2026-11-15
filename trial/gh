@@ -1,0 +1,64 @@
+#!/usr/bin/python3 -I
+"""Stand-in for the gh CLI in the trial container. Not GitHub.
+
+Accepts the two calls secretops makes and keeps only secret names and the
+time they were set, as GitHub shows them; the value read from stdin is
+discarded:
+
+  gh secret set NAME --repo OWNER/REPO --env ENVIRONMENT   (value on stdin)
+  gh secret list --repo OWNER/REPO --env ENVIRONMENT
+"""
+
+import json
+import os
+import sys
+from datetime import datetime, timezone
+
+STORE = "/var/lib/secretops-trial/github.json"
+REPOSITORY = "github.com/trial-owner/trial-repo"
+ENVIRONMENTS = ("dev", "staging")
+
+
+def fail(message):
+    sys.stderr.write(f"stand-in gh: {message}\n")
+    sys.exit(1)
+
+
+def load():
+    try:
+        with open(STORE, encoding="utf-8") as handle:
+            return json.load(handle)
+    except FileNotFoundError:
+        return {}
+
+
+def main(args):
+    if args[:2] == ["secret", "set"] and len(args) == 7:
+        name, rest = args[2], args[3:]
+    elif args[:2] == ["secret", "list"] and len(args) == 6:
+        name, rest = None, args[2:]
+    else:
+        fail("unsupported call")
+    if rest[0] != "--repo" or rest[2] != "--env":
+        fail("unsupported call")
+    if rest[1] != REPOSITORY or rest[3] not in ENVIRONMENTS:
+        fail("repository or environment not found")
+    environment = rest[3]
+
+    store = load()
+    if name is None:
+        for listed, updated in sorted(store.get(environment, {}).items()):
+            sys.stdout.write(f"{listed}\t{updated}\n")
+        return
+    if not sys.stdin.read():
+        fail("empty value")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    store.setdefault(environment, {})[name] = now
+    temporary = f"{STORE}.new"
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        json.dump(store, handle)
+    os.replace(temporary, STORE)
+
+
+main(sys.argv[1:])

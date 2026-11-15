@@ -1,0 +1,7 @@
+action: vault.secret.generate
+env: dev
+secret_name: TRIAL_GENERATED_PASSWORD
+create_mode: create_only
+generator:
+  type: password
+  length: 32

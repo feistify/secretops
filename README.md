@@ -74,7 +74,9 @@ The complete walkthrough, with verification and cleanup, is in the [demo](https:
 
 ## Get started
 
-First prepare the vault: an Infisical project, a machine identity and its token ([PREPARE](https://github.com/feistify/secretops/blob/main/docs/PREPARE.md)).
+To try the whole flow first, without a vault or a GitHub account, start the [trial container](https://github.com/feistify/secretops/blob/main/docs/TRIAL.md) (needs only Docker).
+
+For a real installation, first prepare the vault: an Infisical project, a machine identity and its token ([PREPARE](https://github.com/feistify/secretops/blob/main/docs/PREPARE.md)).
 
 Then, on Ubuntu 24.04 or Debian 12, with `curl`, `python3-venv`, `openssh-server` and a root-owned `infisical` CLI installed (the GitHub CLI `gh` is needed only for syncing to GitHub), in your own terminal:
 
