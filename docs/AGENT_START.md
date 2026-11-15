@@ -97,4 +97,4 @@ So that later sessions use the broker too, add the [project instructions](AGENT_
 
 ## Try it first
 
-With a test Infisical project, a test GitHub repository and made-up values, walk through the [demo](DEMO.md) with the human before touching real secrets.
+With a test Infisical project, a test GitHub repository and made-up values, walk through the [demo](DEMO.md) with the human before touching real secrets. A human who wants to see the flow before installing can use the [trial container](TRIAL.md), which needs Docker or a compatible program.

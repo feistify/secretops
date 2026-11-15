@@ -1,6 +1,6 @@
 # Try secretops in a container
 
-One command starts a container with an installed broker, a human account, an agent account, and stand-in programs in place of the vault and GitHub. You can walk through the whole flow (enter, plan, review, approve, execute, audit) in a few minutes. It needs only Docker (23.0 or newer, which builds with BuildKit): nothing is installed on your machine, and no vault or GitHub account is used.
+One command starts a container with an installed broker, a human account, an agent account, and stand-in programs in place of the vault and GitHub. You can walk through the whole flow (enter, plan, review, approve, execute, audit) in a few minutes. It needs Docker (23.0 or newer, which builds with BuildKit) or a [compatible program](#without-docker): nothing is installed on your machine, and no vault or GitHub account is used.
 
 **For trying only.** The stand-ins keep what you type in a plain file inside the container. Never enter a real secret. Leaving the container removes it; the image stays until you run `docker image rm secretops-trial`.
 
@@ -42,5 +42,15 @@ Also in `recipes/` for the agent: `generate.yaml` creates a new secret that the 
 - **Different from a real installation:** `you` has `sudo` without a password, and the broker's keys are created when the image is built. The stand-in token is public and guards nothing; only file permissions keep the agent account away from the stand-in vault file. Nothing here says how a real vault or GitHub behaves on failure.
 
 `sh trial/check.sh` builds the image and runs the same flow without a person.
+
+## Without Docker
+
+Both scripts take another Docker-compatible program in `DOCKER`, for example on a machine with containerd, `nerdctl` and BuildKit:
+
+```sh
+DOCKER=nerdctl sh trial/run.sh            # or DOCKER="sudo nerdctl"
+```
+
+Then use the same program wherever this page or the guide in the container says `docker`. Docker and nerdctl 2.4 run as root are checked by `trial/check.sh` every week; rootless nerdctl and other programs are not tested.
 
 Next: [prepare a vault](PREPARE.md) and [install](INSTALL.md).

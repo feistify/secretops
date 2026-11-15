@@ -74,7 +74,7 @@ The complete walkthrough, with verification and cleanup, is in the [demo](https:
 
 ## Get started
 
-To try the whole flow first, without a vault or a GitHub account, start the [trial container](https://github.com/feistify/secretops/blob/main/docs/TRIAL.md) (needs only Docker).
+To try the whole flow first, without a vault or a GitHub account, start the [trial container](https://github.com/feistify/secretops/blob/main/docs/TRIAL.md) (needs Docker or a compatible program).
 
 For a real installation, first prepare the vault: an Infisical project, a machine identity and its token ([PREPARE](https://github.com/feistify/secretops/blob/main/docs/PREPARE.md)).
 
