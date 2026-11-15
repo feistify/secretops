@@ -1,0 +1,31 @@
+
+secretops trial container. For trying only: the vault and GitHub here are
+stand-in programs. Never enter a real secret.
+
+You are "you", the human. Open a second terminal for the agent:
+
+    docker exec -it -u agent -w /home/agent secretops-trial bash
+
+1. you:    secretops add DEMO_API_KEY --env dev
+           (type any made-up value; it is hidden)
+
+2. agent:  secretops-local write-recipe sync.yaml < recipes/sync.yaml
+           secretops-local plan --file sync.yaml --save
+           secretops-local show-plan --id PLAN_ID
+           secretops-local execute-plan --id PLAN_ID      (refused: not approved)
+           secretops-local approve-plan --id PLAN_ID      (denied: human only)
+
+3. you:    sudo -u secretops-broker /usr/local/bin/secretops-broker show-plan --id PLAN_ID
+           sudo -u secretops-broker /usr/local/bin/secretops-broker approve-plan --id PLAN_ID
+
+4. agent:  secretops-local execute-plan --id PLAN_ID
+
+5. you:    sudo trial-status                              (names only, never values)
+           sudo tail /opt/secretops/audit/secretops.jsonl
+
+More to try as the agent: recipes/generate.yaml (a new secret the agent never
+sees) and recipes/verify.yaml (a check that needs no approval). Upload each
+first, as in step 2:
+    secretops-local write-recipe generate.yaml < recipes/generate.yaml
+Show this again: trial-guide.   Leave: exit (the container is removed).
+

@@ -1,0 +1,10 @@
+*
+!pyproject.toml
+!README.md
+!LICENSE
+!NOTICE
+!src
+!scripts
+!tests/fake_infisical.py
+!trial
+**/__pycache__

@@ -1,0 +1,7 @@
+action: github.env_secret.verify_many
+github_owner: trial-owner
+github_repo: trial-repo
+github_environment: dev
+
+secrets:
+  - name: DEMO_API_KEY

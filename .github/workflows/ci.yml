@@ -66,4 +66,4 @@ jobs:
       - name: Lint shell scripts
         # shellcheck is preinstalled on ubuntu-latest. Warnings and errors fail;
         # style and info notes do not.
-        run: shellcheck --severity=warning scripts/*.sh scripts/secretops-* tests/*.sh
+        run: shellcheck --severity=warning scripts/*.sh scripts/secretops-* tests/*.sh trial/*.sh trial/entrypoint trial/trial-guide

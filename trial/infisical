@@ -1,0 +1,96 @@
+#!/opt/secretops/venv/bin/python -I
+"""Stand-in for the infisical CLI in the trial container. Not a vault.
+
+It keeps names and values in one JSON file that only the broker account
+can read, and accepts exactly the two calls secretops makes:
+
+  infisical --domain URL run --env=E --projectId=P --path=/ ... -- COMMAND
+  infisical --domain URL secrets set --file=F --env E --projectId=P ...
+
+`secrets set` follows tests/fake_infisical.py, which mirrors the real CLI
+with a machine token. Everything else exits 1. For trying secretops only:
+never put a real secret in it.
+"""
+
+import json
+import os
+import sys
+
+sys.path.insert(0, "/usr/local/lib/secretops-trial")
+from fake_infisical import SetRejected, parse_set_args  # noqa: E402
+
+STORE = "/var/lib/secretops-trial/vault.json"
+DOMAIN = "http://127.0.0.1:8086"
+TOKEN = "trial-token-not-a-secret"
+PROJECT = "trial-project"
+ENVIRONMENTS = ("dev", "staging", "prod")
+
+
+def fail(message):
+    sys.stderr.write(f"stand-in infisical: {message}\n")
+    sys.exit(1)
+
+
+def option(args, name):
+    """Value of --name=V or --name V; None when absent."""
+    for index, arg in enumerate(args):
+        if arg.startswith(f"--{name}="):
+            return arg.split("=", 1)[1]
+        if arg == f"--{name}" and index + 1 < len(args):
+            return args[index + 1]
+    return None
+
+
+def load():
+    try:
+        with open(STORE, encoding="utf-8") as handle:
+            return json.load(handle)
+    except FileNotFoundError:
+        return {}
+    except PermissionError:
+        fail("the stand-in store is readable only by the broker account")
+
+
+def save(store):
+    temporary = f"{STORE}.new"
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        json.dump(store, handle)
+    os.replace(temporary, STORE)
+
+
+def main(argv):
+    if len(argv) < 3 or argv[0] != "--domain":
+        fail("unsupported call")
+    if argv[1] != DOMAIN:
+        fail(f"no vault at this URL; the stand-in answers only {DOMAIN}")
+    args = argv[2:]
+    if os.environ.get("INFISICAL_TOKEN") != TOKEN:
+        fail("status 401: the access token was refused")
+    if args[:1] == ["run"] and "--" in args:
+        split = args.index("--")
+        options, command = args[1:split], args[split + 1 :]
+    elif args[:2] == ["secrets", "set"]:
+        options, command = args[2:], None
+    else:
+        fail("unsupported call")
+    env = option(options, "env")
+    if option(options, "projectId") != PROJECT or env not in ENVIRONMENTS:
+        fail("status 404: project or environment not found")
+    if option(options, "path") != "/":
+        fail("status 404: folder not found")
+
+    store = load()
+    if command is not None:
+        if not command:
+            fail("no command")
+        os.execvpe(command[0], command, {**os.environ, **store.get(env, {})})
+    try:
+        values, _ = parse_set_args(options)
+    except (SetRejected, OSError, ValueError):
+        fail("secrets set rejected the input")
+    store.setdefault(env, {}).update(values)
+    save(store)
+
+
+main(sys.argv[1:])

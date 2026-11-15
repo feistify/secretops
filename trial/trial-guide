@@ -1,0 +1,2 @@
+#!/bin/sh
+exec cat /usr/local/lib/secretops-trial/guide.txt
