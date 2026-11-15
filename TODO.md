@@ -64,6 +64,7 @@ Design: [GitHub target reliability](docs/design/github-target-reliability.md), m
 - [x] Distinguish failures before a write starts from unconfirmed outcomes after launch. Do not claim a target was unchanged after a timeout, and do not automatically retry. Unknown outcomes exit 3 for GitHub and vault writes.
 - [x] Preserve useful partial results for multi-secret sync in safe output and audit records. Implemented per the [design](docs/design/github-target-reliability.md); automated tests only.
 - [x] Validate the complete human-entry → broker → Infisical → separately approved GitHub sync workflow on the current broker with synthetic dev/staging values. Passed through local sudo on `d0d17aa`: human entry/read-back, approved sync, metadata verification, and human UI name-presence check. [Evidence and remaining limits](docs/validation/github-target-reliability.md); SSH entry and tmux remain untested.
+- [x] A workflow job receives a synced secret: a manual workflow that only checks for a non-empty value failed before the sync and passed after it ([record](docs/validation/github-actions-consumer.md), procedure in [DEMO](docs/DEMO.md#optional-use-the-secret-in-a-workflow)). One private test repository; not the first real-project use (section 7).
 - Define success according to the target's capabilities. GitHub metadata presence alone does not prove byte-exact equality with the intended value; do not promise secret read-back where it is unavailable.
 
 ### 3. secretops installation and operating guides
@@ -230,6 +231,7 @@ The topic is current and larger vendors now ship runtime credential proxies for 
 - [ ] OpenBao operational trial, then a narrow adapter and conditional-write contract (create-only/versioned replace). First confirm actual install, authentication, restart/unseal, backup, and restore behavior. Preserve the Infisical adapter and document its non-atomic existence-check/write limitation.
 - [ ] Stronger policy rules for action, environment, target, approval, name patterns, and production. Use the reviewed `docs/design/name-pattern-policy.md` when needed; production enablement requires deliberate controls and tests. Include the strict policy-file validation from section 9.
 - [ ] Refactor large CLI/lifecycle code into handlers/services where changes justify it, preserving output, plan state, audit, and adapter contracts.
+- [ ] Delete a secret through an approved plan, in the vault and at the GitHub target. Cleaning up after a test or retiring a secret today needs the two web UIs. Deletion is destructive: always approved by the human, names listed explicitly, denied in production by default, and an unknown outcome is reported like an unknown write.
 - [ ] Improve brokered metadata verification UX using existing actions; do not require agents to run raw provider listing commands.
 - [ ] Policy-gated reads of explicitly non-secret connection metadata; no general secret-reveal surface.
 - [ ] Brokered constrained SSH operations using a vault-held key, without exposing the key to the agent.
