@@ -213,7 +213,7 @@ Found by reading the code; none is reproduced with a test yet. The execution loc
 Left over from the reviews of the changes above (2026-11-14). Each was confirmed by reading the code on 2026-11-15; none is reproduced with a test yet:
 
 - [ ] `vault.secret.diff_envs` and `github.env_secret.verify_many` plans can be executed again after they ended as `failed`. Decide whether a failed check may be repeated or needs a new plan, and make it explicit.
-- [ ] Vault environment names in recipes (`env`, `source_env`, `target_env`) have no pattern check, so a name such as `"prod "` (with a space) is planned and compared as a different environment. Validate them like the environment names in `secretops-configure`.
+- [x] Vault environment names in recipes (`env`, `source_env`, `target_env`) have no pattern check, so a name such as `"prod "` (with a space) is planned and compared as a different environment. Validate them like the environment names in `secretops-configure`. Done: one pattern shared with `secretops-configure`, checked in recipes, `--env` options, saved plans and the policy (lists that also name GitHub environments keep spaces).
 - [ ] `approve-plan` and `reject-plan` end in a traceback when the plan status cannot be saved, and the audit writes made before a provider write (refusals, diff and verify results) end in one when the audit log cannot be written. Print a fixed message and exit 1, as the vault paths do.
 - [ ] `preflight-plan` and `execute-plan` write the same `approval_expired` audit event; add a field that says which step wrote it.
 - [ ] Lock files of plans are never removed and accumulate in the plan directory.

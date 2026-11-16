@@ -38,7 +38,7 @@ from secretops.targets import (
     GitHubLaunchError,
     GitHubWriteOutcome,
 )
-from secretops.validation import safe_text
+from secretops.validation import safe_text, shown
 from secretops.vaults import (
     Vault,
     VaultError,
@@ -85,10 +85,10 @@ def _diff_envs_result(plan_artifact, vault: Vault) -> dict[str, list[str]]:
 
 def _print_diff_envs_summary(console: Console, result: dict[str, list[str]]) -> None:
     console.print(f"expected count: {len(result['expected'])}")
-    console.print(f"present in source: {_format_names(result['present_source'])}", soft_wrap=True)
-    console.print(f"missing in source: {_format_names(result['missing_source'])}", soft_wrap=True)
-    console.print(f"present in target: {_format_names(result['present_target'])}", soft_wrap=True)
-    console.print(f"missing in target: {_format_names(result['missing_target'])}", soft_wrap=True)
+    console.print(f"present in source: {shown(_format_names(result['present_source']))}", soft_wrap=True)
+    console.print(f"missing in source: {shown(_format_names(result['missing_source']))}", soft_wrap=True)
+    console.print(f"present in target: {shown(_format_names(result['present_target']))}", soft_wrap=True)
+    console.print(f"missing in target: {shown(_format_names(result['missing_target']))}", soft_wrap=True)
     console.print("secret values were not read")
     console.print("secret values were not printed")
 
@@ -117,9 +117,9 @@ def _fail_plan(
     )
     if mark_failed:
         set_plan_status(plan_artifact, "failed")
-    console.print(f"[red]FAIL[/red] {message}")
+    console.print(f"[red]FAIL[/red] {shown(message)}")
     for line in extra_lines or []:
-        console.print(line)
+        console.print(shown(line))
     raise typer.Exit(1)
 
 
@@ -324,12 +324,12 @@ def _print_github_results(
     if single:
         entry = results[0]
         if entry["outcome"] == "acknowledged":
-            console.print(f"OK GitHub write acknowledged: {entry['target']}")
+            console.print(f"OK GitHub write acknowledged: {shown(entry['target'])}")
         elif entry["outcome"] == "unknown":
-            console.print(f"[red]FAIL[/red] GitHub write outcome unknown: {entry['target']}")
+            console.print(f"[red]FAIL[/red] GitHub write outcome unknown: {shown(entry['target'])}")
         else:
-            console.print(f"[red]FAIL[/red] GitHub write not started: {entry['target']}")
-            console.print(entry.get("detail") or GITHUB_FAILURE_TEXT[entry["failure"]])
+            console.print(f"[red]FAIL[/red] GitHub write not started: {shown(entry['target'])}")
+            console.print(shown(entry.get("detail") or GITHUB_FAILURE_TEXT[entry["failure"]]))
     elif len(categories["acknowledged"]) == len(results):
         console.print(f"OK GitHub writes acknowledged: {len(results)}")
     else:
@@ -340,14 +340,14 @@ def _print_github_results(
             ("not_written", "Not written"),
             ("not_attempted", "Not attempted"),
         ):
-            console.print(f"{label}: {len(categories[category])}")
+            console.print(f"{shown(label)}: {len(categories[category])}")
         for category in GITHUB_RESULT_CATEGORIES:
             if categories[category]:
-                console.print(f"{category}: {pairs(category)}", soft_wrap=True)
+                console.print(f"{shown(category)}: {shown(pairs(category))}", soft_wrap=True)
         for entry in results:
             if entry.get("failure"):
                 reason = entry.get("detail") or GITHUB_FAILURE_TEXT[entry["failure"]]
-                console.print(f"{entry['target']}: {reason}")
+                console.print(f"{shown(entry['target'])}: {shown(reason)}")
         if categories["acknowledged"]:
             console.print("acknowledged writes were not rolled back")
     if unknown:
@@ -364,8 +364,8 @@ def _fail_unknown_write(plan_artifact, console: Console, secret_name: str, label
         plan_id=plan_artifact.plan_id,
     )
     status_saved = _try_save_status(plan_artifact, "failed")
-    console.print(f"[red]FAIL[/red] {label} write outcome unknown: {secret_name}")
-    console.print(f"the write was not confirmed; check {secret_name} before any retry")
+    console.print(f"[red]FAIL[/red] {shown(label)} write outcome unknown: {shown(secret_name)}")
+    console.print(f"the write was not confirmed; check {shown(secret_name)} before any retry")
     console.print("no automatic retry was attempted")
     _warn_unrecorded(console, audited=audited, status_saved=status_saved)
     console.print("secret value was not printed")
@@ -401,14 +401,14 @@ def _finish_confirmed_write(
     )
     status_saved = _try_save_status(plan_artifact, "executed" if audited else "failed")
     for line in ok_lines:
-        console.print(line, soft_wrap=True)
+        console.print(shown(line), soft_wrap=True)
     _warn_unrecorded(console, audited=audited, status_saved=status_saved)
     if not audited and status_saved:
         console.print(
             "the writes above were made; the plan is marked failed only because the audit "
             "record is incomplete; do not plan the same names again"
         )
-    console.print(not_printed)
+    console.print(shown(not_printed))
     if not (audited and status_saved):
         raise typer.Exit(EXIT_FAILED)
 
@@ -465,13 +465,13 @@ def _stop_partial_write(
     )
     status_saved = _try_save_status(plan_artifact, "failed")
     if unknown:
-        console.print(f"[red]FAIL[/red] {label} write outcome unknown: {name}")
-        console.print(f"the write was not confirmed; check {name} before any retry")
+        console.print(f"[red]FAIL[/red] {shown(label)} write outcome unknown: {shown(name)}")
+        console.print(f"the write was not confirmed; check {shown(name)} before any retry")
     else:
-        console.print(f"[red]FAIL[/red] {label} was not written: {name}")
-        console.print(reason)
-    console.print(f"written and confirmed: {_format_names(names[:index])}", soft_wrap=True)
-    console.print(f"not written: {_format_names(not_written)}", soft_wrap=True)
+        console.print(f"[red]FAIL[/red] {shown(label)} was not written: {shown(name)}")
+        console.print(shown(reason))
+    console.print(f"written and confirmed: {shown(_format_names(names[:index]))}", soft_wrap=True)
+    console.print(f"not written: {shown(_format_names(not_written))}", soft_wrap=True)
     console.print("no automatic rollback or retry was attempted")
     _warn_unrecorded(console, audited=audited, status_saved=status_saved)
     console.print("secret values were not printed")
@@ -512,7 +512,7 @@ def _fail_plan_file(plan_id: str, command: str, console: Console, error: PlanFil
         plan_id=plan_id,
         details={"failure": error.category},
     )
-    console.print(f"[red]FAIL[/red] {error}", soft_wrap=True)
+    console.print(f"[red]FAIL[/red] {shown(error)}", soft_wrap=True)
     console.print("secret values were not printed")
     raise typer.Exit(1) from error
 
@@ -601,7 +601,7 @@ def show_saved_plan(plan_id: str, console: Console) -> None:
         if key in printed_fields:
             return
         printed_fields.add(key)
-        console.print(f"{key}: {value}")
+        console.print(f"{shown(key)}: {shown(value)}")
 
     print_field_once("plan_id", plan_artifact.plan_id)
     print_field_once("status", plan_artifact.status)
@@ -617,45 +617,45 @@ def show_saved_plan(plan_id: str, console: Console) -> None:
     if plan_artifact.secret_mappings:
         for mapping in plan_artifact.secret_mappings:
             if "name" in mapping:
-                console.print(f"expected_secret: {mapping['name']}")
+                console.print(f"expected_secret: {shown(mapping['name'])}")
             else:
-                console.print(f"secret_mapping: {mapping['source']} -> {mapping['target']}")
+                console.print(f"secret_mapping: {shown(mapping['source'])} -> {shown(mapping['target'])}")
     if plan_artifact.generator:
         for key in sorted(plan_artifact.generator):
-            console.print(f"generator_{key}: {plan_artifact.generator[key]}")
+            console.print(f"generator_{shown(key)}: {shown(plan_artifact.generator[key])}")
 
     if plan_artifact.action == "vault.secret.generate":
-        console.print(f"create_mode: {plan_artifact.create_mode or 'create_only'}")
+        console.print(f"create_mode: {shown(plan_artifact.create_mode or 'create_only')}")
 
     if plan_artifact.action == "vault.secret.rotate":
-        console.print(f"rotation_mode: {plan_artifact.rotation_mode or 'replace_existing'}")
+        console.print(f"rotation_mode: {shown(plan_artifact.rotation_mode or 'replace_existing')}")
 
     if plan_artifact.action == "vault.secret.import_file":
-        console.print(f"source_file: {plan_artifact.source_file}")
-        console.print(f"create_mode: {plan_artifact.create_mode or 'create_only'}")
+        console.print(f"source_file: {shown(plan_artifact.source_file)}")
+        console.print(f"create_mode: {shown(plan_artifact.create_mode or 'create_only')}")
     if plan_artifact.action == "vault.secret.copy_many":
-        console.print(f"source_env: {plan_artifact.source_env or plan_artifact.env}")
-        console.print(f"target_env: {plan_artifact.target_env}")
-        console.print(f"create_mode: {plan_artifact.create_mode or 'create_only'}")
+        console.print(f"source_env: {shown(plan_artifact.source_env or plan_artifact.env)}")
+        console.print(f"target_env: {shown(plan_artifact.target_env)}")
+        console.print(f"create_mode: {shown(plan_artifact.create_mode or 'create_only')}")
     if plan_artifact.action == "vault.secret.diff_envs":
-        console.print(f"source_env: {plan_artifact.source_env or plan_artifact.env}")
-        console.print(f"target_env: {plan_artifact.target_env}")
+        console.print(f"source_env: {shown(plan_artifact.source_env or plan_artifact.env)}")
+        console.print(f"target_env: {shown(plan_artifact.target_env)}")
     if plan_artifact.action in HUMAN_ENTRY_ACTIONS:
-        console.print(f"create_mode: {plan_artifact.create_mode}")
-        console.print(f"value_source: {plan_artifact.value_source}")
-    console.print(f"secret_value_included: {plan_artifact.secret_value_included}")
+        console.print(f"create_mode: {shown(plan_artifact.create_mode)}")
+        console.print(f"value_source: {shown(plan_artifact.value_source)}")
+    console.print(f"secret_value_included: {shown(plan_artifact.secret_value_included)}")
     if legacy:
         console.print("[red]plan was created before destination binding; replan required[/red]")
         return
-    console.print(f"contract_version: {plan_artifact.contract_version}")
+    console.print(f"contract_version: {shown(plan_artifact.contract_version)}")
     if plan_artifact.vault_destination:
         for key in ("backend", "domain", "project_id", "path"):
-            console.print(f"vault_{key}: {plan_artifact.vault_destination[key]}")
-    console.print(f"plan_digest: {plan_digest(plan_artifact.loaded_content)}", soft_wrap=True)
+            console.print(f"vault_{shown(key)}: {shown(plan_artifact.vault_destination[key])}")
+    console.print(f"plan_digest: {shown(plan_digest(plan_artifact.loaded_content))}", soft_wrap=True)
     if plan_artifact.approval_digest is not None:
-        console.print(f"approval_digest: {plan_artifact.approval_digest}", soft_wrap=True)
+        console.print(f"approval_digest: {shown(plan_artifact.approval_digest)}", soft_wrap=True)
     for line in _plan_time_lines(plan_artifact):
-        console.print(line)
+        console.print(shown(line))
 
 
 def _plan_time_lines(plan_artifact) -> list[str]:
@@ -896,7 +896,7 @@ def transition_planned_plan(
             stack.enter_context(plan_lock(plan_id))
         except (PlanBusyError, PlanLockError) as error:
             message = f"{error}; try again later" if isinstance(error, PlanBusyError) else str(error)
-            console.print(f"[red]FAIL[/red] {message}")
+            console.print(f"[red]FAIL[/red] {shown(message)}")
             raise typer.Exit(1) from error
         plan_artifact = _load_plan_or_exit(plan_id, command, console)
         if status == "approved" and plan_artifact.action in HUMAN_ENTRY_ACTIONS:
@@ -907,8 +907,8 @@ def transition_planned_plan(
 def _refuse_human_entry_approval(plan_artifact, console: Console) -> None:
     # Approval of a human-entry plan is recorded only together with the
     # value, by the human submission endpoint.
-    console.print(f"[red]FAIL[/red] {plan_artifact.action} is approved while entering the value")
-    console.print(f"use: secretops add --plan {plan_artifact.plan_id}")
+    console.print(f"[red]FAIL[/red] {shown(plan_artifact.action)} is approved while entering the value")
+    console.print(f"use: secretops add --plan {shown(plan_artifact.plan_id)}")
     raise typer.Exit(1)
 
 
@@ -916,7 +916,7 @@ def _transition_loaded_plan(plan_artifact, status: str, label: str, console: Con
     plan_id = plan_artifact.plan_id
     if plan_artifact.status != "planned":
         console.print(
-            f"[red]FAIL[/red] plan status is {plan_artifact.status}; expected planned"
+            f"[red]FAIL[/red] plan status is {shown(plan_artifact.status)}; expected planned"
         )
         raise typer.Exit(1)
 
@@ -940,17 +940,17 @@ def _transition_loaded_plan(plan_artifact, status: str, label: str, console: Con
             **({"approval_digest": digest} if digest is not None else {}),
         },
     )
-    console.print(f"OK plan {label}: {plan_id}")
+    console.print(f"OK plan {shown(label)}: {shown(plan_id)}")
     if digest is not None:
-        console.print(f"approval_digest: {digest}", soft_wrap=True)
+        console.print(f"approval_digest: {shown(digest)}", soft_wrap=True)
         hours = load_policy().approval_valid_hours
-        console.print(f"approved_at: {approved_at}")
+        console.print(f"approved_at: {shown(approved_at)}")
         console.print(
-            f"approval_expires_at: {format_timestamp(_approval_expires_at(approved_at, hours))}"
+            f"approval_expires_at: {shown(format_timestamp(_approval_expires_at(approved_at, hours)))}"
         )
     if not audit_written:
         console.print("[red]WARNING[/red] the audit record could not be written")
-        console.print(f"the decision was saved and stands; the plan is {status}")
+        console.print(f"the decision was saved and stands; the plan is {shown(status)}")
         console.print("ask the operator to check the audit log")
         raise typer.Exit(EXIT_FAILED)
 
@@ -985,8 +985,8 @@ def _preflight_approval_validity(plan_artifact, console: Console) -> None:
         plan_id=plan_artifact.plan_id,
         details={"failure": "approval_expired"},
     )
-    console.print(f"[red]FAIL[/red] preflight failed: {plan_artifact.action}")
-    console.print(f"approval_valid: no; {refusal}")
+    console.print(f"[red]FAIL[/red] preflight failed: {shown(plan_artifact.action)}")
+    console.print(f"approval_valid: no; {shown(refusal)}")
     console.print("no provider call was made")
     console.print("save a new plan and ask the human to review and approve it")
     console.print("secret value was not printed")
@@ -999,7 +999,7 @@ def _preflight_plan(plan_artifact, console: Console) -> None:
     if plan_artifact.action in {"vault.read.check", "github.env_secret.write"}:
         source_secret = plan_artifact.secret_name
         if source_secret is None:
-            console.print(f"[red]unsupported plan action: {plan_artifact.action}[/red]")
+            console.print(f"[red]unsupported plan action: {shown(plan_artifact.action)}[/red]")
             raise typer.Exit(1)
         secret_exists = vault.secret_exists(source_secret, plan_artifact.env)
         if secret_exists:
@@ -1010,9 +1010,9 @@ def _preflight_plan(plan_artifact, console: Console) -> None:
                 status="success",
                 plan_id=plan_artifact.plan_id,
             )
-            console.print(f"OK preflight passed: {plan_artifact.action}")
-            console.print(f"environment: {plan_artifact.env}")
-            console.print(f"source secret exists: {source_secret}")
+            console.print(f"OK preflight passed: {shown(plan_artifact.action)}")
+            console.print(f"environment: {shown(plan_artifact.env)}")
+            console.print(f"source secret exists: {shown(source_secret)}")
             if plan_artifact.action == "github.env_secret.write":
                 console.print("GitHub API call was not made")
             console.print("secret value was not printed")
@@ -1025,9 +1025,9 @@ def _preflight_plan(plan_artifact, console: Console) -> None:
             status="failure",
             plan_id=plan_artifact.plan_id,
         )
-        console.print(f"[red]FAIL[/red] preflight failed: {plan_artifact.action}")
-        console.print(f"environment: {plan_artifact.env}")
-        console.print(f"missing source secret: {source_secret}")
+        console.print(f"[red]FAIL[/red] preflight failed: {shown(plan_artifact.action)}")
+        console.print(f"environment: {shown(plan_artifact.env)}")
+        console.print(f"missing source secret: {shown(source_secret)}")
         if plan_artifact.action == "github.env_secret.write":
             console.print("GitHub API call was not made")
         raise typer.Exit(1)
@@ -1043,9 +1043,9 @@ def _preflight_plan(plan_artifact, console: Console) -> None:
             plan_id=plan_artifact.plan_id,
         )
         console.print("OK preflight passed: github.env_secret.verify_many")
-        console.print(f"target_owner: {target.get('target_owner')}")
-        console.print(f"target_repo: {target.get('target_repo')}")
-        console.print(f"target_environment: {target.get('target_environment')}")
+        console.print(f"target_owner: {shown(target.get('target_owner'))}")
+        console.print(f"target_repo: {shown(target.get('target_repo'))}")
+        console.print(f"target_environment: {shown(target.get('target_environment'))}")
         console.print(f"expected secrets configured: {len(expected_names)}")
         console.print("GitHub API call was not made")
         console.print("secret values were not printed")
@@ -1067,10 +1067,10 @@ def _preflight_plan(plan_artifact, console: Console) -> None:
             plan_id=plan_artifact.plan_id,
         )
         if missing_sources:
-            console.print(f"[red]FAIL[/red] preflight failed: {plan_artifact.action}")
+            console.print(f"[red]FAIL[/red] preflight failed: {shown(plan_artifact.action)}")
         else:
-            console.print(f"OK preflight passed: {plan_artifact.action}")
-        console.print(f"environment: {plan_artifact.env}")
+            console.print(f"OK preflight passed: {shown(plan_artifact.action)}")
+        console.print(f"environment: {shown(plan_artifact.env)}")
         console.print(f"mappings checked: {len(mappings)}")
         console.print(
             "missing source secrets: "
@@ -1097,8 +1097,8 @@ def _preflight_plan(plan_artifact, console: Console) -> None:
             console.print("[red]FAIL[/red] preflight failed: vault.secret.diff_envs")
         else:
             console.print("OK preflight passed: vault.secret.diff_envs")
-        console.print(f"source_env: {source_env}")
-        console.print(f"target_env: {plan_artifact.target_env or ''}")
+        console.print(f"source_env: {shown(source_env)}")
+        console.print(f"target_env: {shown(plan_artifact.target_env or '')}")
         _print_diff_envs_summary(console, result)
         if failed:
             raise typer.Exit(1)
@@ -1133,9 +1133,9 @@ def _preflight_plan(plan_artifact, console: Console) -> None:
             console.print("[red]FAIL[/red] preflight failed: vault.secret.copy_many")
         else:
             console.print("OK preflight passed: vault.secret.copy_many")
-        console.print(f"source_env: {source_env}")
-        console.print(f"target_env: {target_env}")
-        console.print(f"create_mode: {create_mode}")
+        console.print(f"source_env: {shown(source_env)}")
+        console.print(f"target_env: {shown(target_env)}")
+        console.print(f"create_mode: {shown(create_mode)}")
         console.print(f"mappings checked: {len(mappings)}")
         console.print(
             "missing source secrets: "
@@ -1172,14 +1172,14 @@ def _preflight_plan(plan_artifact, console: Console) -> None:
             console.print("[red]FAIL[/red] preflight failed: vault.secret.generate")
         else:
             console.print("OK preflight passed: vault.secret.generate")
-        console.print(f"environment: {plan_artifact.env}")
-        console.print(f"target secret: {target_secret}")
-        console.print(f"create_mode: {create_mode}")
-        console.print(f"target secret exists: {target_exists}")
+        console.print(f"environment: {shown(plan_artifact.env)}")
+        console.print(f"target secret: {shown(target_secret)}")
+        console.print(f"create_mode: {shown(create_mode)}")
+        console.print(f"target secret exists: {shown(target_exists)}")
         if "type" in generator:
-            console.print(f"generator type: {generator['type']}")
+            console.print(f"generator type: {shown(generator['type'])}")
         if "length" in generator:
-            console.print(f"generator length: {generator['length']}")
+            console.print(f"generator length: {shown(generator['length'])}")
         if target_exists:
             console.print("execution would not overwrite existing secret")
         else:
@@ -1201,17 +1201,17 @@ def _preflight_plan(plan_artifact, console: Console) -> None:
             plan_id=plan_artifact.plan_id,
         )
         if target_exists:
-            console.print(f"[red]FAIL[/red] preflight failed: {plan_artifact.action}")
+            console.print(f"[red]FAIL[/red] preflight failed: {shown(plan_artifact.action)}")
         else:
-            console.print(f"OK preflight passed: {plan_artifact.action}")
-        console.print(f"environment: {plan_artifact.env}")
-        console.print(f"target secret: {target_secret}")
-        console.print(f"create_mode: {plan_artifact.create_mode}")
-        console.print(f"target secret exists: {target_exists}")
+            console.print(f"OK preflight passed: {shown(plan_artifact.action)}")
+        console.print(f"environment: {shown(plan_artifact.env)}")
+        console.print(f"target secret: {shown(target_secret)}")
+        console.print(f"create_mode: {shown(plan_artifact.create_mode)}")
+        console.print(f"target secret exists: {shown(target_exists)}")
         if target_exists:
             console.print("the secret would not be created")
         else:
-            console.print(f"a human can enter the value with: secretops add --plan {plan_artifact.plan_id}")
+            console.print(f"a human can enter the value with: secretops add --plan {shown(plan_artifact.plan_id)}")
         console.print("secret value was not printed")
         if target_exists:
             raise typer.Exit(1)
@@ -1234,14 +1234,14 @@ def _preflight_plan(plan_artifact, console: Console) -> None:
             console.print("OK preflight passed: vault.secret.rotate")
         else:
             console.print("[red]FAIL[/red] preflight failed: vault.secret.rotate")
-        console.print(f"environment: {plan_artifact.env}")
-        console.print(f"target secret: {target_secret}")
-        console.print(f"rotation_mode: {rotation_mode}")
-        console.print(f"target secret exists: {target_exists}")
+        console.print(f"environment: {shown(plan_artifact.env)}")
+        console.print(f"target secret: {shown(target_secret)}")
+        console.print(f"rotation_mode: {shown(rotation_mode)}")
+        console.print(f"target secret exists: {shown(target_exists)}")
         if "type" in generator:
-            console.print(f"generator type: {generator['type']}")
+            console.print(f"generator type: {shown(generator['type'])}")
         if "length" in generator:
-            console.print(f"generator length: {generator['length']}")
+            console.print(f"generator length: {shown(generator['length'])}")
         if target_exists:
             console.print("rotation can proceed later")
         else:
@@ -1305,28 +1305,28 @@ def _preflight_plan(plan_artifact, console: Console) -> None:
             console.print("[red]FAIL[/red] preflight failed: vault.secret.import_file")
         else:
             console.print("OK preflight passed: vault.secret.import_file")
-        console.print(f"environment: {plan_artifact.env}")
-        console.print(f"source_file: {source_file}")
-        console.print(f"source file exists: {source_exists}")
-        console.print(f"source file is file: {source_is_file}")
-        console.print(f"source file permissions restricted: {permissions_restricted}")
-        console.print(f"create_mode: {create_mode}")
+        console.print(f"environment: {shown(plan_artifact.env)}")
+        console.print(f"source_file: {shown(source_file)}")
+        console.print(f"source file exists: {shown(source_exists)}")
+        console.print(f"source file is file: {shown(source_is_file)}")
+        console.print(f"source file permissions restricted: {shown(permissions_restricted)}")
+        console.print(f"create_mode: {shown(create_mode)}")
         console.print(f"secret count: {len(import_names)}")
-        console.print(f"secret names: {_format_names(import_names)}", soft_wrap=True)
+        console.print(f"secret names: {shown(_format_names(import_names))}", soft_wrap=True)
         console.print(
             "existing target secrets: "
             + (", ".join(existing_targets) if existing_targets else "none")
         )
         if parse_error:
-            console.print(parse_error)
+            console.print(shown(parse_error))
         if not import_names:
-            console.print(f"missing required secret name for {plan_artifact.action}")
+            console.print(f"missing required secret name for {shown(plan_artifact.action)}")
         if not planned_names:
             console.print("saved plan has no imported secret names")
         if names_changed:
             console.print("source file names do not match saved plan")
         if create_mode != "create_only":
-            console.print(f"unsupported create_mode: {create_mode}")
+            console.print(f"unsupported create_mode: {shown(create_mode)}")
         if existing_targets:
             console.print("execution would not overwrite existing secrets")
         elif not failed:
@@ -1336,7 +1336,7 @@ def _preflight_plan(plan_artifact, console: Console) -> None:
             raise typer.Exit(1)
         return
 
-    console.print(f"[red]unsupported plan action: {plan_artifact.action}[/red]")
+    console.print(f"[red]unsupported plan action: {shown(plan_artifact.action)}[/red]")
     write_audit_event(
         action=plan_artifact.action,
         secret_name=plan_artifact.secret_name or "multiple",
@@ -1394,13 +1394,13 @@ def _refuse_unapproved(plan_artifact, console: Console, *, secret_name: str | No
     )
     if not pending:
         set_plan_status(plan_artifact, "failed")
-    console.print(f"[red]FAIL[/red] {_approval_required_message(plan_artifact.action)}")
+    console.print(f"[red]FAIL[/red] {shown(_approval_required_message(plan_artifact.action))}")
     if pending:
         console.print("the plan is not approved yet; it stays planned and nothing was done")
         console.print("no provider call was made")
         console.print("wait until the human has approved it; do not retry to check")
     for line in _not_printed_lines(plan_artifact.action):
-        console.print(line)
+        console.print(shown(line))
     raise typer.Exit(1)
 
 
@@ -1440,9 +1440,9 @@ def _require_environment_policy(plan_artifact, console: Console) -> None:
             plan_id=plan_artifact.plan_id,
         )
         set_plan_status(plan_artifact, "failed")
-        console.print(f"[red]FAIL[/red] {error}", soft_wrap=True)
+        console.print(f"[red]FAIL[/red] {shown(error)}", soft_wrap=True)
         for line in _not_printed_lines(plan_artifact.action):
-            console.print(line)
+            console.print(shown(line))
         raise typer.Exit(1) from error
 
 
@@ -1464,11 +1464,11 @@ def _refuse_expired_approval(plan_artifact, console: Console) -> None:
         details={"failure": "approval_expired"},
     )
     set_plan_status(plan_artifact, "failed")
-    console.print(f"[red]FAIL[/red] {refusal}")
+    console.print(f"[red]FAIL[/red] {shown(refusal)}")
     console.print("no provider call was made; the plan is now failed")
     console.print("save a new plan and ask the human to review and approve it")
     for line in _not_printed_lines(plan_artifact.action):
-        console.print(line)
+        console.print(shown(line))
     raise typer.Exit(1)
 
 
@@ -1491,7 +1491,7 @@ def execute_saved_plan(plan_id: str, console: Console) -> None:
     except (PlanBusyError, PlanLockError) as error:
         # Raised only while taking the lock, before anything else ran.
         message = f"{error}; try again later" if isinstance(error, PlanBusyError) else str(error)
-        console.print(f"[red]FAIL[/red] {message}")
+        console.print(f"[red]FAIL[/red] {shown(message)}")
         console.print("no provider call was made")
         raise typer.Exit(1) from error
 
@@ -1520,8 +1520,8 @@ def _execute_loaded_plan(plan_artifact, console: Console) -> None:
             plan_id=plan_artifact.plan_id,
             details={"failure": "human_completion_required"},
         )
-        console.print(f"[red]FAIL[/red] {plan_artifact.action} requires human completion")
-        console.print(f"a human runs: secretops add --plan {plan_artifact.plan_id}")
+        console.print(f"[red]FAIL[/red] {shown(plan_artifact.action)} requires human completion")
+        console.print(f"a human runs: secretops add --plan {shown(plan_artifact.plan_id)}")
         console.print("no provider call was made")
         console.print("secret value was not printed")
         raise typer.Exit(1)
@@ -1577,8 +1577,8 @@ def _execute_plan(plan_artifact, console: Console) -> None:
             console.print(
                 f"OK vault environment secret names match: {len(result['expected'])}"
             )
-        console.print(f"source_env: {source_env}")
-        console.print(f"target_env: {plan_artifact.target_env or ''}")
+        console.print(f"source_env: {shown(source_env)}")
+        console.print(f"target_env: {shown(plan_artifact.target_env or '')}")
         _print_diff_envs_summary(console, result)
         if failed:
             raise typer.Exit(1)
@@ -1644,12 +1644,12 @@ def _execute_plan(plan_artifact, console: Console) -> None:
             )
             set_plan_status(plan_artifact, "failed")
             console.print("[red]FAIL[/red] vault.secret.import_file safety check failed")
-            console.print(f"environment: {plan_artifact.env}")
-            console.print(f"source_file: {source_file}")
+            console.print(f"environment: {shown(plan_artifact.env)}")
+            console.print(f"source_file: {shown(source_file)}")
             console.print(f"secret count: {len(import_names)}")
-            console.print(f"secret names: {_format_names(import_names)}", soft_wrap=True)
+            console.print(f"secret names: {shown(_format_names(import_names))}", soft_wrap=True)
             for line in failure_lines:
-                console.print(line)
+                console.print(shown(line))
             console.print("secret values were not printed")
             raise typer.Exit(1)
 
@@ -1691,7 +1691,7 @@ def _execute_plan(plan_artifact, console: Console) -> None:
                 plan_id=plan_artifact.plan_id,
             )
             set_plan_status(plan_artifact, "failed")
-            console.print(f"[red]FAIL[/red] rotated secret target is missing: {target_secret}")
+            console.print(f"[red]FAIL[/red] rotated secret target is missing: {shown(target_secret)}")
             console.print("use vault.secret.generate instead")
             console.print("secret value was not generated")
             console.print("secret value was not printed")
@@ -1805,7 +1805,7 @@ def _execute_plan(plan_artifact, console: Console) -> None:
                 plan_id=plan_artifact.plan_id,
             )
             set_plan_status(plan_artifact, "failed")
-            console.print(f"[red]FAIL[/red] unsupported create_mode: {create_mode}")
+            console.print(f"[red]FAIL[/red] unsupported create_mode: {shown(create_mode)}")
             console.print("secret value was not generated")
             console.print("secret value was not printed")
             raise typer.Exit(1)
@@ -1819,8 +1819,8 @@ def _execute_plan(plan_artifact, console: Console) -> None:
                 plan_id=plan_artifact.plan_id,
             )
             set_plan_status(plan_artifact, "failed")
-            console.print(f"[red]FAIL[/red] generated secret already exists: {target_secret}")
-            console.print(f"create_mode: {create_mode}")
+            console.print(f"[red]FAIL[/red] generated secret already exists: {shown(target_secret)}")
+            console.print(f"create_mode: {shown(create_mode)}")
             console.print("secret value was not generated")
             console.print("secret value was not printed")
             raise typer.Exit(1)
@@ -1867,7 +1867,7 @@ def _execute_plan(plan_artifact, console: Console) -> None:
             )
             set_plan_status(plan_artifact, "failed")
             console.print("[red]FAIL[/red] GitHub environment secret verification failed")
-            console.print(str(error))
+            console.print(shown(str(error)))
             console.print(f"expected count: {len(expected_names)}")
             console.print("provider output was not printed")
             console.print("secret values were not printed")
@@ -1896,8 +1896,8 @@ def _execute_plan(plan_artifact, console: Console) -> None:
                 f"OK GitHub environment secrets verified: {len(expected_names)}"
             )
         console.print(f"expected count: {len(expected_names)}")
-        console.print(f"present names: {_format_names(present_names)}", soft_wrap=True)
-        console.print(f"missing names: {_format_names(missing_names)}", soft_wrap=True)
+        console.print(f"present names: {shown(_format_names(present_names))}", soft_wrap=True)
+        console.print(f"missing names: {shown(_format_names(missing_names))}", soft_wrap=True)
         console.print("secret values were not printed")
         if failed:
             raise typer.Exit(1)
@@ -1906,7 +1906,7 @@ def _execute_plan(plan_artifact, console: Console) -> None:
     if plan_artifact.action == "vault.read.check":
         if plan_artifact.status not in {"planned", "approved"}:
             console.print(
-                f"[red]FAIL[/red] vault read plan cannot execute with status: {plan_artifact.status}"
+                f"[red]FAIL[/red] vault read plan cannot execute with status: {shown(plan_artifact.status)}"
             )
             raise typer.Exit(1)
 
@@ -1921,7 +1921,7 @@ def _execute_plan(plan_artifact, console: Console) -> None:
                 plan_id=plan_artifact.plan_id,
             )
             set_plan_status(plan_artifact, "executed")
-            console.print(f"OK secret exists: {source_secret}")
+            console.print(f"OK secret exists: {shown(source_secret)}")
             console.print("secret value was not printed")
         else:
             write_audit_event(
@@ -1933,7 +1933,7 @@ def _execute_plan(plan_artifact, console: Console) -> None:
             )
             set_plan_status(plan_artifact, "failed")
             console.print(
-                f"[red]FAIL[/red] secret missing or inaccessible: {source_secret}"
+                f"[red]FAIL[/red] secret missing or inaccessible: {shown(source_secret)}"
             )
             raise typer.Exit(1)
     elif plan_artifact.action == "github.env_secret.sync_many":
@@ -1967,7 +1967,7 @@ def _execute_plan(plan_artifact, console: Console) -> None:
             single=True,
         )
     else:
-        console.print(f"[red]unsupported plan action: {plan_artifact.action}[/red]")
+        console.print(f"[red]unsupported plan action: {shown(plan_artifact.action)}[/red]")
         write_audit_event(
             action=plan_artifact.action,
             secret_name=plan_artifact.secret_name,

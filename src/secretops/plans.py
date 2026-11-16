@@ -17,6 +17,8 @@ from secretops.import_file import parse_import_source_file
 from secretops.targets import GitHubEnvSecretTarget
 from secretops.validation import (
     DEFAULT_GITHUB_HOST,
+    is_github_environment_name,
+    is_vault_environment_name,
     validate_github_host,
     validate_github_target_metadata,
     validate_plan_secret_fields,
@@ -137,6 +139,7 @@ GITHUB_TARGET_FIELD_TYPES = {
 
 
 PLAN_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,64}")
+VAULT_ENVIRONMENT_FIELDS = ("env", "source_env", "target_env")
 
 
 def utc_now() -> datetime:
@@ -383,6 +386,9 @@ def validate_plan_content(data: Any, expected_plan_id: str | None = None) -> Non
         raise PlanFileError("invalid_schema")
     if data["status"] not in PLAN_STATUSES or data["secret_value_included"] is not False:
         raise PlanFileError("invalid_schema")
+    for key in VAULT_ENVIRONMENT_FIELDS:
+        if key in data and not is_vault_environment_name(data[key]):
+            raise PlanFileError("invalid_schema")
     if "approval_digest" in data and not data["approval_digest"].startswith(DIGEST_PREFIX):
         raise PlanFileError("invalid_schema")
     for key in ("planned_at", "approved_at"):
@@ -591,6 +597,17 @@ def load_legacy_plan_for_display(plan_id: str) -> PlanArtifact:
     """
     data = _read_plan_json(plan_id)
     if not isinstance(data, dict) or "contract_version" in data:
+        raise PlanFileError("invalid_schema")
+    # The same environment checks as current plans; a GitHub environment
+    # recorded as target_environment keeps the GitHub pattern.
+    for key in VAULT_ENVIRONMENT_FIELDS:
+        if data.get(key) is not None and not is_vault_environment_name(data[key]):
+            raise PlanFileError("invalid_schema")
+    if not is_vault_environment_name(data.get("env")):
+        raise PlanFileError("invalid_schema")
+    if data.get("target_environment") is not None and not is_github_environment_name(
+        data["target_environment"]
+    ):
         raise PlanFileError("invalid_schema")
     try:
         secret_name, target, secret_mappings = validate_plan_secret_fields(

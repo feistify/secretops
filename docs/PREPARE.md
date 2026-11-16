@@ -33,12 +33,12 @@ You do not need to create a test secret by hand: the first check in [INSTALL.md]
 
 ## Environment names
 
-`--env` (for example `secretops add NAME --env dev`) and the recipe field `env` name an Infisical environment by its **slug**; secretops passes the value unchanged to the Infisical CLI's `--env`. Use the slug as shown in your own project, not the display name. Slugs are typically `dev`, `staging` and `prod` ([Infisical: GitHub Actions](https://infisical.com/docs/integrations/cicd/githubactions)).
+`--env` (for example `secretops add NAME --env dev`) and the recipe field `env` name an Infisical environment by its **slug**; secretops passes the value unchanged to the Infisical CLI's `--env`. Use the slug as shown in your own project, not the display name. secretops accepts names that start with a letter or digit and contain only letters, digits, `.`, `-` and `_`, at most 64 characters, the same form `secretops-configure --env` accepts. Slugs are typically `dev`, `staging` and `prod` ([Infisical: GitHub Actions](https://infisical.com/docs/integrations/cicd/githubactions)).
 
 - The environment must exist in the project, and the machine identity must have access to it.
 - The default policy allows writes only in `dev` and `staging`. Names are compared exactly, so `Dev` or `development` is refused. Start with `dev`.
 - Which names count as production is set in the policy, not by the vault: `production` and `prod` always (in any case), plus any names in `production_environments`. Writes there are refused, even with approval; with the packaged default policy the read-only checks (`vault.read.check`, `vault.secret.diff_envs`, `github.env_secret.verify_many`) work in both. An upgraded installation keeps its own policy file: add `prod` to `allowed_environments` of those three actions there. If your production environment has another name, add it to `production_environments` ([policy file](CONFIGURATION.md#policy-file)).
-- In a GitHub sync recipe, `env` is the Infisical environment to read from and `github_environment` is the GitHub environment to write to. If `env` is omitted, it is the same name as `github_environment`. Both names must be allowed by the policy; when they differ (for example GitHub `staging` from Infisical `dev`), set `env` explicitly. See [RECIPES.md](RECIPES.md).
+- In a GitHub sync recipe, `env` is the Infisical environment to read from and `github_environment` is the GitHub environment to write to. If `env` is omitted, it is the same name as `github_environment`, which must then also have the form above (no spaces). Both names must be allowed by the policy; when they differ (for example GitHub `staging` from Infisical `dev`), set `env` explicitly. See [RECIPES.md](RECIPES.md).
 
 ## Web UI over plain HTTP
 

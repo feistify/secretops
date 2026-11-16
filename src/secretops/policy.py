@@ -5,6 +5,12 @@ from pathlib import Path
 
 import yaml
 
+from secretops.validation import (
+    VAULT_ENVIRONMENT_RULE,
+    is_github_environment_name,
+    is_vault_environment_name,
+)
+
 POLICY_PATH_ENV = "SECRETOPS_POLICY_PATH"
 DEFAULT_POLICY_RESOURCE_PACKAGE = "secretops.policies"
 DEFAULT_POLICY_RESOURCE_NAME = "default.yaml"
@@ -101,14 +107,41 @@ def _check_mapping(mapping, allowed: tuple[str, ...], location: str, source: str
                 )
 
 
+GITHUB_ENVIRONMENT_RULE = "a letter or digit first, then letters, digits, spaces, '.', '-' or '_'"
+
+
+def _check_environment_names(names, github: bool, key: str, location: str, source: str) -> None:
+    # The message names the list and the position, never the name itself.
+    check = is_github_environment_name if github else is_vault_environment_name
+    rule = GITHUB_ENVIRONMENT_RULE if github else VAULT_ENVIRONMENT_RULE
+    for number, name in enumerate(names, start=1):
+        if not check(name):
+            _fail(
+                source,
+                f"entry {number} of {key} in {location} is not a valid environment name",
+                f"use {rule}",
+            )
+
+
 def validate_policy_data(data, source: str) -> None:
     """Refuse unknown keys and wrongly typed values at the top level and in
     each `actions` entry.
 
     Action names under `actions` are not checked: any name is accepted and
     an entry for an action that is not allowed has no effect.
+
+    Environment names must be vault environment names. The policy does not
+    separate vault from GitHub environments: lists that can also name a
+    GitHub environment (`production_environments`, and `allowed_environments`
+    of `github.` actions) accept GitHub environment names, which may contain
+    spaces.
     """
     _check_mapping(data, POLICY_KEYS, "the top level", source)
+    if "production_environments" in data:
+        _check_environment_names(
+            data["production_environments"], True,
+            "production_environments", "the top level", source,
+        )
     actions = data.get("actions")
     if actions is None:
         return
@@ -116,8 +149,11 @@ def validate_policy_data(data, source: str) -> None:
         _fail(source, "actions must be a mapping of action names to settings", "correct its layout")
     for action, metadata in actions.items():
         if metadata is not None:
-            _check_mapping(
-                metadata, ACTION_POLICY_KEYS, f"actions entry {_key_name(action)}", source
+            location = f"actions entry {_key_name(action)}"
+            _check_mapping(metadata, ACTION_POLICY_KEYS, location, source)
+            _check_environment_names(
+                metadata.get("allowed_environments", []), str(action).startswith("github."),
+                "allowed_environments", location, source,
             )
 
 

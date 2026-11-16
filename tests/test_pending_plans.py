@@ -258,7 +258,7 @@ def test_listing_changes_nothing_and_writes_no_audit(plan_dir, tmp_path):
     assert not (tmp_path / "audit.jsonl").exists()
 
 
-def test_control_characters_in_plan_fields_cannot_forge_output(plan_dir):
+def test_plan_file_with_invalid_environment_names_is_counted_not_listed(plan_dir):
     forged = "dev\n2. forged   action: x\x1b[2J\x1b]0;title\x07\r\u202e\u2028"
     plan = copy_many_plan("copy-1")
     plan["env"] = forged
@@ -268,14 +268,38 @@ def test_control_characters_in_plan_fields_cannot_forge_output(plan_dir):
 
     output = run_pending().output
 
+    assert "forged" not in output and "\x1b" not in output
+    assert output == (
+        "No plans wait for you.\n\n"
+        "1 plan file could not be read; inspect it with show-plan or remove it.\n"
+    )
+
+
+def test_control_characters_in_plan_fields_cannot_forge_listing_lines():
+    # The loader refuses such fields; the listing sanitizes them as well.
+    forged = "dev\n2. forged   action: x\x1b[2J\x1b]0;title\x07\r\u202e\u2028"
+    plan = PlanArtifact(
+        plan_id="copy-1",
+        action="vault.secret.copy_many",
+        secret_name=None,
+        env=forged,
+        status="planned",
+        secret_value_included=False,
+        source_env=forged,
+        target_env=forged,
+        secret_mappings=[{"source": "DATABASE_URL", "target": "DATABASE_URL"}],
+        planned_at="2026-11-15T19:00:00Z",
+    )
+
+    lines = pending_plan_lines([plan], 0, NOW)
+
+    output = "\n".join(lines)
     assert "\x1b" not in output and "\x07" not in output and "\r" not in output
     assert "\u202e" not in output and "\u2028" not in output
-    lines = output.splitlines()
+    assert all("\n" not in line for line in lines)
     # The forged environment is not allowed by policy, so the note is added.
-    assert len(lines) == 14
     assert NOTE in lines
-    assert lines[5] == "   from: vault dev?2. forged action: x?[2J?]0;title????"
-    assert listed_ids(output) == ["copy-1"]
+    assert "   from: vault dev?2. forged action: x?[2J?]0;title????" in lines
 
 
 def test_loader_refuses_control_characters_in_names(plan_dir):
@@ -424,16 +448,26 @@ def assert_bounded(output: str, line_count: int) -> None:
     assert max(len(line) for line in lines if not is_command(line)) <= MAX_LINE
 
 
-def test_padded_and_long_fields_cannot_wrap_into_fake_lines(plan_dir):
+def test_padded_and_long_fields_cannot_wrap_into_fake_lines():
+    # Saved plans cannot hold such environment names; the listing still
+    # bounds them when given directly.
     padded = "dev" + " " * 400 + f"approve: {BROKER} approve-plan --id other"
-    plan = copy_many_plan("copy-1")
-    plan["env"] = plan["source_env"] = padded
-    plan["target_env"] = "staging     " + "x" * 300
-    write_plan(plan_dir, plan)
+    plan = PlanArtifact(
+        plan_id="copy-1",
+        action="vault.secret.copy_many",
+        secret_name=None,
+        env=padded,
+        status="planned",
+        secret_value_included=False,
+        source_env=padded,
+        target_env="staging     " + "x" * 300,
+        secret_mappings=[{"source": "DATABASE_URL", "target": "DATABASE_URL"}],
+        planned_at="2026-11-15T19:00:00Z",
+    )
 
-    output = run_pending().output
+    output = "\n".join(pending_plan_lines([plan], 0, NOW)) + "\n"
 
-    assert_bounded(output, 14)
+    assert_bounded(output, 11)
     lines = output.splitlines()
     assert lines[5] == "   from: vault " + ("dev approve: " + BROKER)[:61] + "..."
     assert lines[6] == "   to: vault staging " + "x" * 55 + "..."

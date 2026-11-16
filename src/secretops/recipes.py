@@ -6,6 +6,8 @@ from typing import Any
 import yaml
 from secretops.policy import require_allowed
 from secretops.validation import (
+    VAULT_ENVIRONMENT_RULE,
+    is_vault_environment_name,
     validate_github_host,
     validate_github_target_metadata,
     validate_optional_secret_name,
@@ -88,6 +90,7 @@ TEXT_FIELDS = (
     "secret_name", "env", "source_env", "target_env", "source_file", "create_mode", "rotation_mode",
     "value_source", "github_host", "github_owner", "github_repo", "github_environment", "github_secret_name",
 )
+VAULT_ENVIRONMENT_FIELDS = ("env", "source_env", "target_env")
 FIXED_VALUES = {"create_mode": "create_only", "rotation_mode": "replace_existing", "value_source": "human_prompt"}
 
 
@@ -143,6 +146,41 @@ def check_recipe_fields(data: dict[str, Any]) -> None:
                 raise RecipeError(f"secrets entry {number} must have exactly {example}")
 
 
+def check_vault_environment(field: str, value: Any) -> str:
+    """Return a valid vault environment name; the message never shows the value."""
+    if not isinstance(value, str):
+        raise RecipeError(f"{field} must be text: {VAULT_ENVIRONMENT_RULE}")
+    if not is_vault_environment_name(value):
+        raise RecipeError(f"{field} is not a valid vault environment name: {VAULT_ENVIRONMENT_RULE}")
+    return value
+
+
+def _load_vault_environments(
+    data: dict[str, Any], github_environment: str | None
+) -> tuple[str, str | None, str | None]:
+    """Check every vault environment field of every action, then derive env."""
+    checked = {
+        field: check_vault_environment(field, data[field])
+        for field in VAULT_ENVIRONMENT_FIELDS
+        if field in data
+    }
+    if "env" in checked:
+        env = checked["env"]
+    elif "source_env" in checked:
+        env = checked["source_env"]
+    elif github_environment:
+        # GitHub environment names may contain spaces; a vault name may not.
+        if not is_vault_environment_name(github_environment):
+            raise RecipeError(
+                "env is missing and github_environment is not a valid vault environment "
+                f"name; set env: {VAULT_ENVIRONMENT_RULE}"
+            )
+        env = github_environment
+    else:
+        env = ""
+    return env, checked.get("source_env"), checked.get("target_env")
+
+
 def _load_secret_mappings(data: dict[str, Any]) -> list[dict[str, str]] | None:
     raw_mappings = data.get("secrets")
     if raw_mappings is None:
@@ -196,12 +234,13 @@ def load_recipe(path: str | Path) -> Recipe:
     github_host = data.get("github_host")
     if github_host is not None:
         github_host = validate_github_host(github_host)
+    env, source_env, target_env = _load_vault_environments(data, github_environment)
     return Recipe(
         action=str(data["action"]),
         secret_name=validate_optional_secret_name(data.get("secret_name")),
-        env=str(data.get("env", data.get("source_env", github_environment or ""))),
-        source_env=str(data["source_env"]) if "source_env" in data else None,
-        target_env=str(data["target_env"]) if "target_env" in data else None,
+        env=env,
+        source_env=source_env,
+        target_env=target_env,
         github_host=github_host,
         github_owner=github_owner,
         github_repo=github_repo,
