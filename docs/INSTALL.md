@@ -175,7 +175,7 @@ secretops-local version
 secretops-local actions
 ```
 
-Copy the [consumer-project instructions](AGENT_USAGE.md#instructions-for-agents-in-consumer-projects) into the agent's project `AGENTS.md` (or `CLAUDE.md`) and replace `ssh BROKER_ALIAS` with `secretops-local` and `HUMAN_BROKER` with `sudo -u secretops-broker /usr/local/bin/secretops-broker`.
+Copy the [consumer-project instructions](AGENT_USAGE.md#instructions-for-agents-in-consumer-projects) into the agent's project `AGENTS.md` (or `CLAUDE.md`) and replace `ssh BROKER_ALIAS` with `secretops-local` and `HUMAN_BROKER` with `sudo -u secretops-broker /usr/local/bin/secretops-broker`. If the file already exists, [add the section](AGENT_USAGE.md#adding-the-section-to-a-project) rather than replacing the file.
 
 ## First workflow
 

@@ -167,6 +167,19 @@ blocked by policy; human approval does not override that restriction.
 
 The current integration surface is CLI over SSH. `help` prints the allowed commands, the lifecycle and exit codes as plain text. There is no HTTP API, MCP server, or machine-readable capability/schema discovery command. Installation-time generation of consumer instructions is not implemented; the template above is copied and configured manually.
 
+### Adding the section to a project
+
+The section goes into the instructions file the project's agent reads: `AGENTS.md`, or `CLAUDE.md` where that is the one in use. Put it in one file only; if both exist, use the one the other refers to, or ask the human.
+
+- **No instructions file yet:** create it with the section as its content.
+- **The file already exists:** add the section at the end and leave everything else as it is. Never replace the file. A command that writes a whole file (`install -D`, `cp`, a `>` redirect, or an editor tool that writes the whole file) overwrites what is there and suits only a new, empty project.
+- **The file already has a `## Secret operations` section** (for example from an earlier secretops version): update that section in place, keeping what the human added to it. Do not add a second one; two sections with different commands leave the agent guessing.
+- **The file already tells agents how to handle secrets** (calling `infisical` or `gh secret` directly, reading `.env` files): do not leave both rules standing. Tell the human which lines conflict and let them decide what stays. Do not add the section until they have decided.
+
+An agent making this change shows the human the diff before writing or committing it, and changes nothing else in the file. The filled-in section names commands and an SSH alias only; it must not contain tokens, keys or secret values, and no `BROKER_ALIAS` or `HUMAN_BROKER` placeholder may be left in it.
+
+A running agent session may not pick up the changed file. Start a new session and have it run the three "Start with" commands as a check that it reads and uses the section.
+
 ## Dummy-first rollout suggestion
 
 Start agent trials with dummy secret names such as `NAS_BACKUP_*` or `BACKUP_*` and non-production environments.
