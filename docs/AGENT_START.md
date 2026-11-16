@@ -93,7 +93,7 @@ Messages and what to do about them are in [OPERATIONS.md](OPERATIONS.md#when-som
 
 ## Set up the human's project
 
-So that later sessions use the broker too, add the [project instructions](AGENT_USAGE.md#instructions-for-agents-in-consumer-projects) to the project's `AGENTS.md` (or `CLAUDE.md`), with `ssh BROKER_ALIAS` replaced by `secretops-local` and `HUMAN_BROKER` by `sudo -u secretops-broker /usr/local/bin/secretops-broker`. Show the human the change before you commit it.
+So that later sessions use the broker too, add the [project instructions](AGENT_USAGE.md#instructions-for-agents-in-consumer-projects) to the project's `AGENTS.md` (or `CLAUDE.md`), with `ssh BROKER_ALIAS` replaced by `secretops-local` and `HUMAN_BROKER` by `sudo -u secretops-broker /usr/local/bin/secretops-broker`. If the file already exists, add the section and leave the rest as it is; never replace the file. The cases are in [Adding the section to a project](AGENT_USAGE.md#adding-the-section-to-a-project). Show the human the change before you write or commit it.
 
 ## Try it first
 
