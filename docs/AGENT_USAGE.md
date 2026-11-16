@@ -34,6 +34,7 @@ Agents must not run:
 ```bash
 approve-plan
 reject-plan
+pending-plans
 infisical
 infisical secrets
 gh secret
@@ -126,10 +127,17 @@ Human handoff: in one message, with the real plan ID filled in, tell the human:
   Check the action, environment, vault destination, every secret name, and any
   GitHub repository and environment.
 - Step 2, if it is right: HUMAN_BROKER approve-plan --id PLAN_ID
-  If not: HUMAN_BROKER reject-plan --id PLAN_ID
+- Step 2, if it is not right: HUMAN_BROKER reject-plan --id PLAN_ID
 - Step 3: tell me when it is done.
-Then wait. Never run approve-plan or reject-plan yourself, and never ask the
-human to run them through your shell tool.
+Write all three commands in full, each on its own line, starting with the
+human's broker command; never shorten one to its last words.
+For vault.secret.generate and vault.secret.rotate, also say that the broker
+generates the value and stores it in the vault, and that neither you nor the
+human sees or supplies it.
+If the human no longer has the plan ID, they can list the waiting plans with:
+HUMAN_BROKER pending-plans
+Then wait. Never run approve-plan, reject-plan or pending-plans yourself, and
+never ask the human to run them through your shell tool.
 
 For a new secret whose value only the human has, plan a vault.secret.add recipe
 and hand over the same way with one command instead of steps 1 and 2:
