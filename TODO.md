@@ -33,7 +33,7 @@ secretops is a CLI-first SecretOps broker. It is not a vault: external vaults re
 
 The Infisical adapter hardening is implemented and verified against the NAS instance. The dedicated local SSH broker separates agent access from vault credentials and human approval.
 
-**Short-term goal:** first real-project use (section 7): use the published release for a real project and record where it is hard.
+**Short-term goal:** first use (section 7), on a test repository first and then in a real project: use the published release for a real project and record where it is hard.
 
 The previous goal is reached: a human enters an externally created API key through a hidden prompt, the broker stores it in Infisical, and an agent transfers it to GitHub through a separately approved plan, documented and repeatable from a clean installation.
 
@@ -152,16 +152,15 @@ A person should understand from one short page what secretops does, what it can 
 
 The tests so far showed that each step works with made-up values. They did not show whether secretops is still used when there is real work to do, or whether the human goes around it to the web UIs. The main measure is therefore how often it was bypassed, and why.
 
-The project: any real one with at least three real secrets, a `dev` and a `staging` environment, a consumer that visibly fails without a secret (CI, a deployment, the application), and work that lasts at least a week with the usual coding agent. Before starting, finish 4g to 4i in the plan above, so that known obstacles are not measured again.
+First round, on a test repository with made-up secrets, a `dev` environment and a workflow that fails without the secret. It tries the scripted paths at no risk to a working project. The texts of 4g to 4i are done, so known obstacles are not measured again; what is left of 4h and 4i is tried in this round.
 
-First round:
+- [x] S1. The human enters a secret with `secretops add`. Done on 2026-11-15 with one made-up secret ([record](docs/validation/github-actions-consumer.md)).
+- [x] S2. The agent syncs it to GitHub through an approved plan and verifies the name, and a workflow uses it. Done in the same run: the workflow failed before the sync and passed after it.
+- [ ] S3. The agent gets a task that needs a new secret and generates it, without the human leading it through the steps.
+- [ ] S4. The paths not tried so far, with a fresh agent that has only the consumer template (4h): the human rejects a plan; an approval is left unused for more than 24 hours, or with a shorter `approval_valid_hours` for the test, until it expires; the agent's session is interrupted and continued later.
+- [ ] The agent adds the consumer template to the repository's existing `AGENTS.md` (4i).
 
-- [ ] S1. The human enters two or three existing secrets with `secretops add`.
-- [ ] S2. The agent syncs them to GitHub through an approved plan and verifies the names, and a real workflow of the project uses them. The project's own agent instructions carry the consumer template (4i).
-- [ ] S3. During ordinary work the agent needs a new secret and generates it, without the human leading it through the steps.
-- [ ] S4. The paths not tried so far, here in real work (first with a fresh agent in 4h): the human rejects a plan; an approval is left unused for more than 24 hours, or with a shorter `approval_valid_hours` for the test, until it expires; the agent's session is interrupted and continued later.
-
-Later rounds:
+Later rounds, in a real project with a `dev` and a `staging` environment and a consumer that visibly fails without a secret (CI, a deployment, the application). Existing secrets are not moved: each new secret the project needs is made through the broker, during ordinary work with the usual coding agent. Moving a working project's secrets first costs too much and puts that project at risk.
 
 - [ ] S5. Promote secrets from `dev` to `staging`: copy in the vault (the names must not exist in `staging` yet), then sync.
 - [ ] S6. Rotate one secret in `dev` or `staging` and sync it again; the consumer keeps working.
@@ -170,7 +169,7 @@ Later rounds:
 
 What to record, one line per operation, without values: what was asked, how many actions the human needed, whether the agent needed a correction, whether the human really read the plan, and where it was hard (installation, finding commands, approval, messages, maintenance). Record every bypass (a secret changed in a web UI instead) with its reason.
 
-Done when, after one to two weeks, all secrets of the project go through the broker and the record names the three largest obstacles. They choose the next work, starting with one small UX fix. The record goes to `docs/validation/`.
+Done when S1 to S4 are ticked, new secrets of one real project have gone through the broker for one to two weeks, and the record names the three largest obstacles. They choose the next work, starting with one small UX fix. The record goes to `docs/validation/`.
 
 - [ ] Ideally, another person follows the installation guide without help.
 
