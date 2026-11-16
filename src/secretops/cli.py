@@ -53,8 +53,8 @@ from secretops.policy import (
     load_policy,
     require_allowed,
 )
-from secretops.recipes import load_recipe
-from secretops.validation import validate_secret_name
+from secretops.recipes import check_vault_environment, load_recipe
+from secretops.validation import shown, validate_secret_name
 from secretops.vault_check import (
     CHECK_SECRET_NAME,
     CheckResult,
@@ -66,7 +66,8 @@ from secretops.vaults import VaultError, configured_vault_destination, get_vault
 app = typer.Typer(
     help="Safe secret operations for coding agents: agents plan, humans enter values and approve.",
 )
-console = Console()
+# emoji=False: ":name:" codes in printed values stay literal text.
+console = Console(emoji=False)
 
 
 @app.callback()
@@ -87,14 +88,26 @@ def _load_recipe(file: str):
     try:
         return load_recipe(file)
     except ValueError as error:
-        console.print(f"[red]FAIL[/red] invalid recipe: {error}", soft_wrap=True)
-        console.print("no plan was saved")
-        raise typer.Exit(1) from error
+        _refuse_recipe(error)
+
+
+def _refuse_recipe(error: ValueError) -> None:
+    console.print(f"[red]FAIL[/red] invalid recipe: {shown(error)}", soft_wrap=True)
+    console.print("no plan was saved")
+    raise typer.Exit(1) from error
+
+
+def _require_vault_environment(env: str) -> None:
+    # --env takes the place of a recipe's env field and gets the same check.
+    try:
+        check_vault_environment("env", env)
+    except ValueError as error:
+        _refuse_recipe(error)
 
 
 @app.command(help="Show the secretops version.", rich_help_panel="Information")
 def version():
-    console.print(f"secretops {package_version('secretops')}")
+    console.print(f"secretops {shown(package_version('secretops'))}")
 
 
 @app.command(
@@ -107,11 +120,11 @@ def actions():
 
     console.print("Allowed actions")
     for action in policy.allowed_actions:
-        console.print(f"- {action}")
+        console.print(f"- {shown(action)}")
 
     console.print("Denied actions")
     for action in policy.denied_actions:
-        console.print(f"- {action}")
+        console.print(f"- {shown(action)}")
 
 
 @app.command(
@@ -133,7 +146,7 @@ def plan(
                 configured_vault_destination() if recipe.action in VAULT_ACTIONS else None
             )
         except VaultError as error:
-            console.print(f"[red]FAIL[/red] vault destination is not configured: {error}")
+            console.print(f"[red]FAIL[/red] vault destination is not configured: {shown(error)}")
             console.print("no plan was saved")
             raise typer.Exit(1) from error
         try:
@@ -141,16 +154,16 @@ def plan(
         except (ImportFileError, ValueError) as error:
             if recipe.action == "vault.secret.import_file":
                 console.print("[red]FAIL[/red] import file plan is unsafe")
-                console.print(str(error))
+                console.print(shown(error))
                 console.print("secret values were not printed")
                 raise typer.Exit(1) from error
-            console.print(f"[red]FAIL[/red] plan is invalid: {error}")
+            console.print(f"[red]FAIL[/red] plan is invalid: {shown(error)}")
             console.print("no plan was saved")
             raise typer.Exit(1) from error
     plan_recipe_action(recipe, console)
     if save:
         save_plan_artifact(artifact)
-        console.print(f"- plan_id: {artifact.plan_id}")
+        console.print(f"- plan_id: {shown(artifact.plan_id)}")
 
 
 @app.command("show-plan", help="Show a saved plan and its status.", rich_help_panel="Plans")
@@ -215,14 +228,15 @@ def plan_vault_read(
     try:
         name = validate_secret_name(name)
     except ValueError as error:
-        console.print(f"[red]{error}[/red]")
+        console.print(f"[red]{shown(error)}[/red]")
         raise typer.Exit(1) from error
+    _require_vault_environment(env)
 
     require_allowed("vault.read.plan")
 
     console.print("[bold]Plan[/bold]")
-    console.print(f"- read secret: {name}")
-    console.print(f"- environment: {env}")
+    console.print(f"- read secret: {shown(name)}")
+    console.print(f"- environment: {shown(env)}")
     console.print("- secret value will NOT be printed")
     console.print("- execution required: no")
     write_audit_event(
@@ -245,8 +259,9 @@ def check_vault_read(
     try:
         name = validate_secret_name(name)
     except ValueError as error:
-        console.print(f"[red]{error}[/red]")
+        console.print(f"[red]{shown(error)}[/red]")
         raise typer.Exit(1) from error
+    _require_vault_environment(env)
 
     # The same action and environment policy as a vault.read.check plan.
     require_read_check_environment(
@@ -264,7 +279,7 @@ def check_vault_read(
             env=env,
             status="fail",
         )
-        console.print(f"[red]FAIL[/red] vault error: {error}")
+        console.print(f"[red]FAIL[/red] vault error: {shown(error)}")
         console.print("provider output was not printed")
         console.print("secret value was not printed")
         raise typer.Exit(1) from error
@@ -276,7 +291,7 @@ def check_vault_read(
             env=env,
             status="ok",
         )
-        console.print(f"[green]OK[/green] secret exists: {name}")
+        console.print(f"[green]OK[/green] secret exists: {shown(name)}")
         console.print("secret value was not printed")
     else:
         write_audit_event(
@@ -285,7 +300,7 @@ def check_vault_read(
             env=env,
             status="fail",
         )
-        console.print(f"[red]FAIL[/red] secret missing or inaccessible: {name}")
+        console.print(f"[red]FAIL[/red] secret missing or inaccessible: {shown(name)}")
         raise typer.Exit(1)
 
 
@@ -422,7 +437,7 @@ def plan_github_env_secret(file: str = typer.Option(..., "--file")):
         "github.env_secret.sync_many",
         "github.env_secret.verify_many",
     }:
-        console.print(f"[red]unsupported recipe action: {recipe.action}[/red]")
+        console.print(f"[red]unsupported recipe action: {shown(recipe.action)}[/red]")
         raise typer.Exit(1)
 
     plan_github_env_secret_recipe(recipe, console)

@@ -13,7 +13,6 @@ These endpoints are not in the agent wrapper allowlist. The channel label
 import contextlib
 import json
 import os
-import re
 import select
 import time
 import unicodedata
@@ -41,7 +40,7 @@ from secretops.plans import (
 )
 from secretops.policy import require_environment_allowed
 from secretops.recipes import Recipe
-from secretops.validation import validate_secret_name
+from secretops.validation import VAULT_ENVIRONMENT_PATTERN, validate_secret_name
 from secretops.vaults import (
     CreateOutcome,
     VaultError,
@@ -55,7 +54,7 @@ MAX_REQUEST_BYTES = 64 * 1024
 MAX_VALUE_BYTES = 16 * 1024
 RECEIVE_DEADLINE_SECONDS = 120
 CHANNEL = "human"
-ENV_PATTERN = re.compile(r"[A-Za-z0-9_.-]{1,64}")
+ENV_PATTERN = VAULT_ENVIRONMENT_PATTERN
 REQUEST_FIELDS = {"protocol": int, "plan_id": str, "digest": str, "value": str}
 # Line breaks other than CR/LF that a terminal or provider may treat as one.
 LINE_SEPARATORS = {"Zl", "Zp"}

@@ -1,19 +1,29 @@
 import re
 from typing import Any
 
+from rich.markup import escape
+
 SECRET_NAME_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*$")
 GITHUB_OWNER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*$")
 # Repos may start with "." or "_" (e.g. the org-level ".github" repo) but must
 # never start with "-" so values cannot be parsed as provider CLI flags.
 GITHUB_REPO_PATTERN = re.compile(r"^[A-Za-z0-9._][A-Za-z0-9._-]*$")
 GITHUB_RESERVED_REPO_NAMES = {".", ".."}
-GITHUB_ENVIRONMENT_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]*$")
+# GitHub allows spaces in environment names. Single spaces inside the name
+# only: none at the end and no runs, and at most 255 characters.
+GITHUB_ENVIRONMENT_PATTERN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]| (?! |\Z)){0,254}$")
 # Lowercase DNS host name without port. The host is passed to gh as part of
 # `--repo HOST/OWNER/REPO`, so it is never normalised, only accepted or rejected.
 GITHUB_HOST_PATTERN = re.compile(
     r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$"
 )
 DEFAULT_GITHUB_HOST = "github.com"
+# Vault environment names: in recipes, saved plans, the policy and
+# secretops-configure --env. Always applied with fullmatch.
+VAULT_ENVIRONMENT_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
+VAULT_ENVIRONMENT_RULE = (
+    "a letter or digit first, then letters, digits, '.', '-' or '_', at most 64 characters"
+)
 
 # Names the Infisical CLI drops from `infisical run` (packages/cmd/run.go),
 # plus variables secretops passes to the provider process. A vault secret with
@@ -69,6 +79,14 @@ def validate_github_target_metadata(
         repo_value,
         _validate_github_target_value(environment, GITHUB_ENVIRONMENT_PATTERN),
     )
+
+
+def is_vault_environment_name(value: Any) -> bool:
+    return isinstance(value, str) and VAULT_ENVIRONMENT_PATTERN.fullmatch(value) is not None
+
+
+def is_github_environment_name(value: Any) -> bool:
+    return isinstance(value, str) and GITHUB_ENVIRONMENT_PATTERN.fullmatch(value) is not None
 
 
 def validate_github_host(host: Any) -> str:
@@ -142,3 +160,9 @@ def safe_text(value: Any) -> str:
     return "".join(
         character if character.isprintable() else "?" for character in str(value)
     )
+
+
+def shown(value: Any) -> str:
+    """Untrusted text for Rich console output: control characters replaced
+    and Rich markup escaped, so the value prints literally."""
+    return escape(safe_text(value))

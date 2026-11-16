@@ -4,6 +4,7 @@ from rich.console import Console
 from secretops.audit import write_audit_event
 from secretops.policy import require_environment_allowed
 from secretops.targets import GitHubEnvSecretTarget
+from secretops.validation import shown
 from secretops.vaults import VaultError, get_vault
 
 
@@ -15,15 +16,15 @@ def require_recipe_allowed(recipe, console: Console) -> None:
     try:
         recipe.require_allowed()
     except PermissionError as error:
-        console.print(f"[red]{error}[/red]")
+        console.print(f"[red]{shown(error)}[/red]")
         raise typer.Exit(1) from error
 
 
 def plan_vault_read_recipe(recipe, console: Console) -> None:
     console.print("[bold]Recipe plan[/bold]")
-    console.print(f"- action: {recipe.action}")
-    console.print(f"- read secret: {recipe.secret_name}")
-    console.print(f"- environment: {recipe.env}")
+    console.print(f"- action: {shown(recipe.action)}")
+    console.print(f"- read secret: {shown(recipe.secret_name)}")
+    console.print(f"- environment: {shown(recipe.env)}")
     console.print("- secret value will NOT be printed")
     console.print("- execution required: no")
     write_audit_event(
@@ -37,13 +38,13 @@ def plan_vault_read_recipe(recipe, console: Console) -> None:
 def plan_github_env_secret_recipe(recipe, console: Console) -> None:
     if recipe.action == "github.env_secret.verify_many":
         console.print("[bold]GitHub environment secret verification dry-run plan[/bold]")
-        console.print(f"- action: {recipe.action}")
-        console.print(f"- target GitHub host: {recipe.github_host or 'github.com'}")
-        console.print(f"- target GitHub owner: {recipe.github_owner}")
-        console.print(f"- target GitHub repo: {recipe.github_repo}")
-        console.print(f"- target GitHub environment: {recipe.github_environment}")
+        console.print(f"- action: {shown(recipe.action)}")
+        console.print(f"- target GitHub host: {shown(recipe.github_host or 'github.com')}")
+        console.print(f"- target GitHub owner: {shown(recipe.github_owner)}")
+        console.print(f"- target GitHub repo: {shown(recipe.github_repo)}")
+        console.print(f"- target GitHub environment: {shown(recipe.github_environment)}")
         for secret in recipe.secrets or []:
-            console.print(f"- expected secret: {secret['name']}")
+            console.print(f"- expected secret: {shown(secret['name'])}")
         console.print("- no GitHub API call was made")
         console.print("- secret value will NOT be printed")
         write_audit_event(
@@ -56,15 +57,15 @@ def plan_github_env_secret_recipe(recipe, console: Console) -> None:
 
     if recipe.action == "github.env_secret.sync_many":
         console.print("[bold]GitHub environment secret multi-sync dry-run plan[/bold]")
-        console.print(f"- action: {recipe.action}")
-        console.print(f"- source environment: {recipe.env}")
-        console.print(f"- target GitHub host: {recipe.github_host or 'github.com'}")
-        console.print(f"- target GitHub owner: {recipe.github_owner}")
-        console.print(f"- target GitHub repo: {recipe.github_repo}")
-        console.print(f"- target GitHub environment: {recipe.github_environment}")
+        console.print(f"- action: {shown(recipe.action)}")
+        console.print(f"- source environment: {shown(recipe.env)}")
+        console.print(f"- target GitHub host: {shown(recipe.github_host or 'github.com')}")
+        console.print(f"- target GitHub owner: {shown(recipe.github_owner)}")
+        console.print(f"- target GitHub repo: {shown(recipe.github_repo)}")
+        console.print(f"- target GitHub environment: {shown(recipe.github_environment)}")
         for mapping in recipe.secrets or []:
             console.print(
-                f"- secret mapping: {mapping['source']} -> {mapping['target']}"
+                f"- secret mapping: {shown(mapping['source'])} -> {shown(mapping['target'])}"
             )
         console.print("- no GitHub API call was made")
         console.print("- secret value will NOT be printed")
@@ -86,14 +87,14 @@ def plan_github_env_secret_recipe(recipe, console: Console) -> None:
     plan = target.describe_write_plan()
 
     console.print("[bold]GitHub environment secret dry-run plan[/bold]")
-    console.print(f"- action: {recipe.action}")
-    console.print(f"- source vault secret: {recipe.secret_name}")
-    console.print(f"- source environment: {recipe.env}")
-    console.print(f"- target GitHub host: {plan['target_host']}")
-    console.print(f"- target GitHub owner: {plan['target_owner']}")
-    console.print(f"- target GitHub repo: {plan['target_repo']}")
-    console.print(f"- target GitHub environment: {plan['target_environment']}")
-    console.print(f"- target GitHub secret: {plan['target_secret_name']}")
+    console.print(f"- action: {shown(recipe.action)}")
+    console.print(f"- source vault secret: {shown(recipe.secret_name)}")
+    console.print(f"- source environment: {shown(recipe.env)}")
+    console.print(f"- target GitHub host: {shown(plan['target_host'])}")
+    console.print(f"- target GitHub owner: {shown(plan['target_owner'])}")
+    console.print(f"- target GitHub repo: {shown(plan['target_repo'])}")
+    console.print(f"- target GitHub environment: {shown(plan['target_environment'])}")
+    console.print(f"- target GitHub secret: {shown(plan['target_secret_name'])}")
     if plan["api_call_made"] is False:
         console.print("- no GitHub API call was made")
     if plan["secret_value_printed"] is False:
@@ -108,15 +109,15 @@ def plan_github_env_secret_recipe(recipe, console: Console) -> None:
 
 def plan_vault_secret_generate_recipe(recipe, console: Console) -> None:
     console.print("[bold]Vault generated secret dry-run plan[/bold]")
-    console.print(f"- action: {recipe.action}")
-    console.print(f"- generated secret name: {recipe.secret_name}")
-    console.print(f"- environment: {recipe.env}")
+    console.print(f"- action: {shown(recipe.action)}")
+    console.print(f"- generated secret name: {shown(recipe.secret_name)}")
+    console.print(f"- environment: {shown(recipe.env)}")
     generator = recipe.generator or {}
     if "type" in generator:
-        console.print(f"- generator type: {generator['type']}")
+        console.print(f"- generator type: {shown(generator['type'])}")
     if "length" in generator:
-        console.print(f"- generator length: {generator['length']}")
-    console.print(f"- create mode: {recipe.create_mode or 'create_only'}")
+        console.print(f"- generator length: {shown(generator['length'])}")
+    console.print(f"- create mode: {shown(recipe.create_mode or 'create_only')}")
     console.print("- secret value will NOT be generated during planning")
     console.print("- secret value will NOT be printed")
     write_audit_event(
@@ -129,15 +130,15 @@ def plan_vault_secret_generate_recipe(recipe, console: Console) -> None:
 
 def plan_vault_secret_rotate_recipe(recipe, console: Console) -> None:
     console.print("[bold]Vault secret rotation dry-run plan[/bold]")
-    console.print(f"- action: {recipe.action}")
-    console.print(f"- target secret name: {recipe.secret_name}")
-    console.print(f"- environment: {recipe.env}")
+    console.print(f"- action: {shown(recipe.action)}")
+    console.print(f"- target secret name: {shown(recipe.secret_name)}")
+    console.print(f"- environment: {shown(recipe.env)}")
     generator = recipe.generator or {}
     if "type" in generator:
-        console.print(f"- generator type: {generator['type']}")
+        console.print(f"- generator type: {shown(generator['type'])}")
     if "length" in generator:
-        console.print(f"- generator length: {generator['length']}")
-    console.print(f"- rotation mode: {recipe.rotation_mode or 'replace_existing'}")
+        console.print(f"- generator length: {shown(generator['length'])}")
+    console.print(f"- rotation mode: {shown(recipe.rotation_mode or 'replace_existing')}")
     console.print("- secret value will NOT be generated during planning")
     console.print("- secret value will NOT be printed")
     write_audit_event(
@@ -150,11 +151,11 @@ def plan_vault_secret_rotate_recipe(recipe, console: Console) -> None:
 
 def plan_vault_secret_import_file_recipe(recipe, console: Console) -> None:
     console.print("[bold]Vault secret import-file dry-run plan[/bold]")
-    console.print(f"- action: {recipe.action}")
-    console.print(f"- target secret name: {recipe.secret_name}")
-    console.print(f"- environment: {recipe.env}")
-    console.print(f"- source file: {recipe.source_file}")
-    console.print(f"- create mode: {recipe.create_mode or 'create_only'}")
+    console.print(f"- action: {shown(recipe.action)}")
+    console.print(f"- target secret name: {shown(recipe.secret_name)}")
+    console.print(f"- environment: {shown(recipe.env)}")
+    console.print(f"- source file: {shown(recipe.source_file)}")
+    console.print(f"- create mode: {shown(recipe.create_mode or 'create_only')}")
     console.print("- saved plans parse dotenv names only, never values")
     console.print("- source file contents will NOT be printed")
     console.print("- secret value will NOT be printed")
@@ -168,12 +169,12 @@ def plan_vault_secret_import_file_recipe(recipe, console: Console) -> None:
 
 def plan_vault_secret_copy_many_recipe(recipe, console: Console) -> None:
     console.print("[bold]Vault secret copy-many dry-run plan[/bold]")
-    console.print(f"- action: {recipe.action}")
-    console.print(f"- source_env: {recipe.source_env or recipe.env}")
-    console.print(f"- target_env: {recipe.target_env}")
-    console.print(f"- create_mode: {recipe.create_mode or 'create_only'}")
+    console.print(f"- action: {shown(recipe.action)}")
+    console.print(f"- source_env: {shown(recipe.source_env or recipe.env)}")
+    console.print(f"- target_env: {shown(recipe.target_env)}")
+    console.print(f"- create_mode: {shown(recipe.create_mode or 'create_only')}")
     for mapping in recipe.secrets or []:
-        console.print(f"- secret mapping: {mapping['source']} -> {mapping['target']}")
+        console.print(f"- secret mapping: {shown(mapping['source'])} -> {shown(mapping['target'])}")
     console.print("- source secret values will NOT be read during planning")
     console.print("- target secret values will NOT be written during planning")
     console.print("- secret values will NOT be printed")
@@ -187,11 +188,11 @@ def plan_vault_secret_copy_many_recipe(recipe, console: Console) -> None:
 
 def plan_vault_secret_diff_envs_recipe(recipe, console: Console) -> None:
     console.print("[bold]Vault secret env-diff dry-run plan[/bold]")
-    console.print(f"- action: {recipe.action}")
-    console.print(f"- source_env: {recipe.source_env or recipe.env}")
-    console.print(f"- target_env: {recipe.target_env}")
+    console.print(f"- action: {shown(recipe.action)}")
+    console.print(f"- source_env: {shown(recipe.source_env or recipe.env)}")
+    console.print(f"- target_env: {shown(recipe.target_env)}")
     for secret in recipe.secrets or []:
-        console.print(f"- expected secret: {secret['name']}")
+        console.print(f"- expected secret: {shown(secret['name'])}")
     console.print("- source secret values will NOT be read during planning")
     console.print("- target secret values will NOT be read during planning")
     console.print("- secret values will NOT be printed")
@@ -205,10 +206,10 @@ def plan_vault_secret_diff_envs_recipe(recipe, console: Console) -> None:
 
 def plan_vault_secret_add_recipe(recipe, console: Console) -> None:
     console.print("[bold]Vault secret add dry-run plan[/bold]")
-    console.print(f"- action: {recipe.action}")
-    console.print(f"- secret name: {recipe.secret_name}")
-    console.print(f"- environment: {recipe.env}")
-    console.print(f"- create mode: {recipe.create_mode or 'create_only'}")
+    console.print(f"- action: {shown(recipe.action)}")
+    console.print(f"- secret name: {shown(recipe.secret_name)}")
+    console.print(f"- environment: {shown(recipe.env)}")
+    console.print(f"- create mode: {shown(recipe.create_mode or 'create_only')}")
     console.print("- value source: human_prompt")
     console.print("- a human enters the value with: secretops add --plan <plan_id>")
     console.print("- secret value will NOT be printed")
@@ -239,7 +240,7 @@ def require_read_check_environment(
             )
         except OSError:
             console.print("[red]WARNING[/red] the audit record could not be written")
-        console.print(f"[red]FAIL[/red] {error}", soft_wrap=True)
+        console.print(f"[red]FAIL[/red] {shown(error)}", soft_wrap=True)
         console.print("no provider call was made")
         raise typer.Exit(1) from error
 
@@ -262,7 +263,7 @@ def execute_vault_read_check_recipe(recipe, console: Console) -> None:
             env=recipe.env,
             status="failure",
         )
-        console.print(f"[red]FAIL[/red] vault error: {error}")
+        console.print(f"[red]FAIL[/red] vault error: {shown(error)}")
         console.print("provider output was not printed")
         console.print("secret value was not printed")
         raise typer.Exit(1) from error
@@ -273,7 +274,7 @@ def execute_vault_read_check_recipe(recipe, console: Console) -> None:
             env=recipe.env,
             status="success",
         )
-        console.print(f"[green]OK[/green] secret exists: {recipe.secret_name}")
+        console.print(f"[green]OK[/green] secret exists: {shown(recipe.secret_name)}")
         console.print("secret value was not printed")
     else:
         write_audit_event(
@@ -282,7 +283,7 @@ def execute_vault_read_check_recipe(recipe, console: Console) -> None:
             env=recipe.env,
             status="failure",
         )
-        console.print(f"[red]FAIL[/red] secret missing or inaccessible: {recipe.secret_name}")
+        console.print(f"[red]FAIL[/red] secret missing or inaccessible: {shown(recipe.secret_name)}")
         raise typer.Exit(1)
 
 
@@ -300,7 +301,7 @@ def fail_github_env_secret_execute(recipe, console: Console) -> None:
 
 
 def fail_unsupported_recipe_action(recipe, console: Console) -> None:
-    console.print(f"[red]unsupported recipe action: {recipe.action}[/red]")
+    console.print(f"[red]unsupported recipe action: {shown(recipe.action)}[/red]")
     write_audit_event(
         action=recipe.action,
         secret_name=_audit_secret_name(recipe),

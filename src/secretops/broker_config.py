@@ -35,13 +35,14 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from secretops.terminal_input import input_received_line
+from secretops.validation import VAULT_ENVIRONMENT_PATTERN
 
 BROKER_ENV = Path("/opt/secretops/broker.env")
 BROKER_USER = "secretops-broker"
 BROKER_COMMAND = "/usr/local/bin/secretops-broker"
 CHECK_PATH = "/usr/bin:/bin"
 DEFAULT_CHECK_ENV = "dev"
-ENV_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
+ENV_NAME = VAULT_ENVIRONMENT_PATTERN
 # The check makes one provider call plus a short unauthenticated probe.
 DEFAULT_PROVIDER_TIMEOUT = 60
 PROBE_TIMEOUT = 10
