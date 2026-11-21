@@ -90,6 +90,7 @@ Every Infisical CLI call runs with an explicit environment instead of the inheri
 - `PATH` set to a fixed value controlled by secretops, not the caller's `PATH`
 - `HOME` set to a fresh, empty temporary directory with `0700` permissions, removed after the call
 - optional TLS trust settings (`SSL_CERT_FILE`, `SSL_CERT_DIR`) passed through only if set, for self-hosted instances with an internal CA
+- `SSL_CERT_FILE` set to `SECRETOPS_INFISICAL_CA_FILE` when that is configured (added later, in v0.1.12): a CA for the vault only, so `gh` keeps the system store; the file must be root-protected and is checked at every call ([Operations](../OPERATIONS.md#vault-behind-a-private-ca))
 - nothing else; in particular no `DBUS_SESSION_BUS_ADDRESS`, `XDG_*`, or other `INFISICAL_*` variables
 
 ### Helper process
