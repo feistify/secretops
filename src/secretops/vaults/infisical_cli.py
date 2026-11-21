@@ -66,6 +66,7 @@ def ca_file_problem(value: str) -> str | None:
         return "is not an absolute, normalised path"
     top = os.path.normpath(CA_CHECK_TOP)
     parent = os.path.dirname(value)
+    # Up to CA_CHECK_TOP, or to "/" when the path is not under it.
     while True:
         try:
             info = os.lstat(parent)
@@ -87,7 +88,7 @@ def ca_file_problem(value: str) -> str | None:
     finally:
         os.close(fd)
     if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
-        return "is not a regular file with a single link"
+        return "is not a regular file with a single link (hard links are refused)"
     if not _root_protected(info):
         return "must be owned by root and writable by nobody else"
     if not info.st_mode & 0o004:

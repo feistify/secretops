@@ -1,5 +1,6 @@
 import os
 import shlex
+import stat
 import subprocess
 
 import pytest
@@ -440,11 +441,38 @@ def test_ca_file_validation(ca_dir):
             broker_config.validate_ca_file(value)
 
 
-def test_ca_file_owned_by_another_account_is_refused(tmp_path):
-    # Production trusts only root; this file belongs to the test's account.
-    tmp_path.chmod(0o755)
-    with pytest.raises(ConfigError):
-        broker_config.validate_ca_file(str(write_ca(tmp_path)))
+def test_ca_file_owned_by_another_account_is_refused(ca_dir, monkeypatch):
+    # The directories are trusted; the file belongs to the test's account,
+    # which production does not trust.
+    from secretops.vaults import infisical_cli
+
+    ca = write_ca(ca_dir)
+    monkeypatch.setattr(infisical_cli, "CA_CHECK_TOP", str(ca_dir.parent))
+    monkeypatch.setattr(infisical_cli, "CA_TRUSTED_OWNERS", frozenset({0}))
+    monkeypatch.setattr(infisical_cli, "_root_protected", lambda info, real=infisical_cli._root_protected: (
+        stat.S_ISDIR(info.st_mode) or real(info)))
+    with pytest.raises(ConfigError, match=r"ca\.pem must be owned by root"):
+        broker_config.validate_ca_file(str(ca))
+
+
+def test_ca_file_that_is_a_fifo_is_refused(ca_dir):
+    fifo = ca_dir / "ca.pem"
+    os.mkfifo(fifo, 0o644)
+    with pytest.raises(ConfigError, match="regular file"):
+        broker_config.validate_ca_file(str(fifo))
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root can search any directory")
+def test_ca_file_under_an_unsearchable_directory_is_refused(ca_dir):
+    closed = ca_dir / "closed"
+    closed.mkdir()
+    ca = write_ca(closed)
+    closed.chmod(0o000)
+    try:
+        with pytest.raises(ConfigError, match="cannot be opened"):
+            broker_config.validate_ca_file(str(ca))
+    finally:
+        closed.chmod(0o755)
 
 
 def test_ca_file_option_sets_and_removes_only_that_key(interactive_root, ca_dir, capsys):
