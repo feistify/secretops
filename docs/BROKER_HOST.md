@@ -35,6 +35,7 @@ INFISICAL_TOKEN=...                             # machine identity token, human-
 SECRETOPS_INFISICAL_PROJECT_ID=...              # project this broker reads and writes
 SECRETOPS_INFISICAL_PATH=/                      # folder path inside the project
 SECRETOPS_INFISICAL_BIN=/usr/local/bin/infisical  # root-owned CLI the broker runs
+SECRETOPS_INFISICAL_CA_FILE=/etc/secretops/vault-ca.pem  # optional: private CA for the vault only
 SECRETOPS_GH_BIN=/usr/bin/gh                    # root-owned gh the broker runs (GitHub workflows)
 SECRETOPS_PLAN_DIR=/opt/secretops/plans
 SECRETOPS_AUDIT_PATH=/opt/secretops/audit/secretops.jsonl

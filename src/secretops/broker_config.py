@@ -36,6 +36,7 @@ from urllib.parse import urlsplit
 
 from secretops.terminal_input import input_received_line
 from secretops.validation import VAULT_ENVIRONMENT_PATTERN
+from secretops.vaults.infisical_cli import CA_FILE_KEY
 
 BROKER_ENV = Path("/opt/secretops/broker.env")
 BROKER_USER = "secretops-broker"
@@ -56,6 +57,7 @@ KNOWN_KEYS = (
     TOKEN_KEY,
     "SECRETOPS_INFISICAL_PROJECT_ID",
     "SECRETOPS_INFISICAL_PATH",
+    CA_FILE_KEY,
     "SECRETOPS_INFISICAL_BIN",
     "SECRETOPS_GH_BIN",
     "SECRETOPS_PROVIDER_TIMEOUT_SECONDS",
@@ -166,6 +168,64 @@ def validate_executable(value: str) -> str:
     path = Path(value)
     if not path.is_absolute() or not path.is_file() or not os.access(path, os.X_OK):
         raise ConfigError(f"{value} is not an absolute path to an executable file")
+    return value
+
+
+CA_MAX_BYTES = 1024 * 1024
+
+
+def _protected(info: os.stat_result, trusted_uids: set[int]) -> bool:
+    """Owned by root (or the test's own account) and not writable by others."""
+    if info.st_uid not in trusted_uids:
+        return False
+    if not info.st_mode & 0o022:
+        return True
+    # A world-writable sticky directory such as /tmp: others cannot replace
+    # an entry they do not own.
+    return stat.S_ISDIR(info.st_mode) and bool(info.st_mode & stat.S_ISVTX)
+
+
+def validate_ca_file(value: str, trusted_uid: int = 0) -> str:
+    """A PEM file with the CA that signed the vault's certificate.
+
+    Whoever can replace this file can make the broker trust a forged vault
+    and send it the token, so the file and every directory above it must be
+    owned by root and not writable by group or others.
+    """
+    trusted = {0, trusted_uid}
+    path = Path(value)
+    if not path.is_absolute():
+        raise ConfigError(f"{value} is not an absolute path; nothing was changed")
+    for parent in path.parents:
+        try:
+            info = os.lstat(parent)
+            if stat.S_ISLNK(info.st_mode):
+                raise ConfigError(f"{parent} is a symbolic link; give the real path; nothing was changed")
+            if not _protected(info, trusted):
+                raise ConfigError(
+                    f"{parent} must be owned by root and not writable by others; nothing was changed"
+                )
+        except OSError:
+            raise ConfigError(f"{parent} cannot be read; nothing was changed") from None
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        raise ConfigError(f"{value} cannot be opened (symlinks are refused); nothing was changed") from None
+    info = os.fstat(fd)
+    if not stat.S_ISREG(info.st_mode):
+        os.close(fd)
+        raise ConfigError(f"{value} is not a regular file; nothing was changed")
+    with os.fdopen(fd, "rb") as handle:
+        if not _protected(info, trusted):
+            raise ConfigError(f"{value} must be owned by root and not writable by others; nothing was changed")
+        if not info.st_mode & 0o004:
+            raise ConfigError(f"{value} must be readable by the broker account (mode o+r); nothing was changed")
+        try:
+            text = handle.read(CA_MAX_BYTES + 1).decode("ascii")
+        except (OSError, UnicodeDecodeError):
+            text = ""
+    if len(text) > CA_MAX_BYTES or "-----BEGIN CERTIFICATE-----" not in text:
+        raise ConfigError(f"{value} does not contain a PEM certificate; nothing was changed")
     return value
 
 
@@ -350,6 +410,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="only check the saved configuration against the vault; changes nothing")
     parser.add_argument("--env", default=DEFAULT_CHECK_ENV,
                         help="vault environment for the check (default: dev)")
+    ca = parser.add_mutually_exclusive_group()
+    ca.add_argument("--ca-file", metavar="PATH",
+                    help="trust this PEM file for the vault's certificate (a private CA)")
+    ca.add_argument("--no-ca-file", action="store_true",
+                    help="stop using a separate CA file for the vault")
     parser.add_argument("--init", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--domain", help=argparse.SUPPRESS)
     parser.add_argument("--infisical-bin", help=argparse.SUPPRESS)
@@ -360,11 +425,22 @@ def main(argv: list[str] | None = None) -> int:
             raise ConfigError("run with sudo from your own terminal, not from an agent session")
         account = pwd.getpwnam(BROKER_USER)
         env = validate_env_name(args.env)
+        changes_ca = args.ca_file is not None or args.no_ca_file
         if args.check:
-            if args.token_only or args.init:
-                raise ConfigError("--check cannot be combined with --token-only or --init")
+            if args.token_only or args.init or changes_ca:
+                raise ConfigError("--check cannot be combined with --token-only, --init or a CA option")
             return run_check(account, env, check_timeout(read_env(BROKER_ENV, account.pw_uid)))
-        if args.init:
+        if changes_ca:
+            if args.token_only or args.init:
+                raise ConfigError("a CA option cannot be combined with --token-only or --init")
+            values = read_env(BROKER_ENV, account.pw_uid)
+            updated = dict(values)
+            if args.no_ca_file:
+                updated.pop(CA_FILE_KEY, None)
+            else:
+                updated[CA_FILE_KEY] = validate_ca_file(args.ca_file)
+            write_env(BROKER_ENV, updated, account.pw_uid, account.pw_gid)
+        elif args.init:
             if BROKER_ENV.exists() or BROKER_ENV.is_symlink():
                 raise ConfigError(f"{BROKER_ENV} already exists")
             if not args.domain or not args.infisical_bin:
@@ -372,11 +448,12 @@ def main(argv: list[str] | None = None) -> int:
             write_env(BROKER_ENV, init_values(args.domain, args.infisical_bin, args.gh_bin),
                       account.pw_uid, account.pw_gid)
             return 0
-        if not (sys.stdin.isatty() and sys.stdout.isatty()):
-            raise ConfigError("an interactive terminal is required; do not pipe credentials")
-        values = read_env(BROKER_ENV, account.pw_uid)
-        updated = configure(values, token_only=args.token_only)
-        write_env(BROKER_ENV, updated, account.pw_uid, account.pw_gid)
+        else:
+            if not (sys.stdin.isatty() and sys.stdout.isatty()):
+                raise ConfigError("an interactive terminal is required; do not pipe credentials")
+            values = read_env(BROKER_ENV, account.pw_uid)
+            updated = configure(values, token_only=args.token_only)
+            write_env(BROKER_ENV, updated, account.pw_uid, account.pw_gid)
     except ConfigError as error:
         print(f"secretops-configure: {error}", file=sys.stderr)
         return 1
@@ -387,7 +464,7 @@ def main(argv: list[str] | None = None) -> int:
         print("\nsecretops-configure: cancelled; nothing was changed", file=sys.stderr)
         return 2
     print("Broker configuration saved. No credential was displayed.")
-    if is_unencrypted_remote(updated["INFISICAL_DOMAIN"]):
+    if is_unencrypted_remote(updated.get("INFISICAL_DOMAIN", "")):
         print("WARNING: the vault URL uses unencrypted HTTP to a non-loopback host.")
     # The exit status reports the save; a failed or interrupted check keeps it.
     code = run_check(account, env, check_timeout(updated))

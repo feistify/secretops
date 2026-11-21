@@ -37,6 +37,21 @@ DEFAULT_TIMEOUT_SECONDS = 60
 # which helpers the CLI or its child resolve.
 CHILD_PATH = "/usr/local/bin:/usr/bin:/bin"
 TLS_PASSTHROUGH_VARS = ("SSL_CERT_FILE", "SSL_CERT_DIR")
+# A CA file for the vault only. It reaches the Infisical CLI as SSL_CERT_FILE
+# and never the GitHub CLI, so a private root does not replace GitHub's trust.
+CA_FILE_KEY = "SECRETOPS_INFISICAL_CA_FILE"
+
+
+def configured_ca_file(environ: Mapping[str, str]) -> str | None:
+    """Return the vault CA file from the configuration, or None when unset."""
+    value = environ.get(CA_FILE_KEY, "")
+    if not value:
+        return None
+    if not (os.path.isabs(value) and os.path.isfile(value) and os.access(value, os.R_OK)):
+        raise VaultConfigurationError(
+            f"{CA_FILE_KEY} must be an absolute path to a readable certificate file"
+        )
+    return value
 
 # Runs inside `infisical run` with the fetched secrets in its environment.
 # argv: nonce, mode ("exists" or "read"), secret name (last, by convention).
@@ -307,6 +322,9 @@ class InfisicalCliVault(Vault):
             for name in TLS_PASSTHROUGH_VARS:
                 if self._environ.get(name):
                     env[name] = self._environ[name]
+            ca_file = configured_ca_file(self._environ)
+            if ca_file:
+                env["SSL_CERT_FILE"] = ca_file
             try:
                 return self.runner(
                     command,

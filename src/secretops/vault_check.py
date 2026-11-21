@@ -17,10 +17,11 @@ Provider output is classified in the adapter and never printed.
 """
 
 import json
+import os
 import ssl
 import urllib.error
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from enum import Enum
 
 from secretops.vaults import (
@@ -29,7 +30,7 @@ from secretops.vaults import (
     VaultTokenRefusedError,
     VaultUnreachableError,
 )
-from secretops.vaults.infisical_cli import InfisicalCliVault
+from secretops.vaults.infisical_cli import InfisicalCliVault, configured_ca_file
 
 CHECK_SECRET_NAME = "CONNECTION_CHECK_BY_SECRETOPS"
 PROBE_TIMEOUT_SECONDS = 10
@@ -57,7 +58,12 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def probe_server(domain: str, *, timeout: float = PROBE_TIMEOUT_SECONDS) -> Probe:
+def probe_server(
+    domain: str,
+    *,
+    timeout: float = PROBE_TIMEOUT_SECONDS,
+    environ: Mapping[str, str] | None = None,
+) -> Probe:
     """Ask the vault URL whether an Infisical API answers. Sends no token.
 
     Proxies from the environment are not used, as for the provider CLI,
@@ -66,7 +72,18 @@ def probe_server(domain: str, *, timeout: float = PROBE_TIMEOUT_SECONDS) -> Prob
     """
     base = domain if domain.endswith("/api") else f"{domain}/api"
     request = urllib.request.Request(f"{base}/status", headers={"Accept": "application/json"})
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect)
+    try:
+        ca_file = configured_ca_file(os.environ if environ is None else environ)
+    except VaultError:
+        return Probe.INCONCLUSIVE
+    handlers: list[urllib.request.BaseHandler] = [urllib.request.ProxyHandler({}), _NoRedirect()]
+    if ca_file:
+        try:
+            context = ssl.create_default_context(cafile=ca_file)
+        except (ssl.SSLError, OSError, ValueError):
+            return Probe.INCONCLUSIVE
+        handlers.append(urllib.request.HTTPSHandler(context=context))
+    opener = urllib.request.build_opener(*handlers)
     try:
         with opener.open(request, timeout=timeout) as response:
             if response.status != 200:

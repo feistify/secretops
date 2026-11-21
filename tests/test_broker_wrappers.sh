@@ -146,6 +146,14 @@ out=$(SECRETOPS_INFISICAL_BIN=/tmp/planted-infisical sh "$BROKER" version 2>&1 |
     && check "broker.env SECRETOPS_INFISICAL_BIN wins over the caller's" 0 0 \
     || check "broker.env SECRETOPS_INFISICAL_BIN wins over the caller's (got: $out)" 0 1
 
+# SECRETOPS_INFISICAL_CA_FILE decides which vault receives the token.
+printf '#!/bin/sh\necho "CA_FILE=${SECRETOPS_INFISICAL_CA_FILE-unset}"\n' > "$PROBE"; chmod +x "$PROBE"
+printf 'SECRETOPS_BIN=%s\n' "$PROBE" > "$BROKER_ENV"; chmod 600 "$BROKER_ENV"
+out=$(SECRETOPS_INFISICAL_CA_FILE=/tmp/planted-ca.pem sh "$BROKER" version 2>&1 || true)
+[ "$out" = "CA_FILE=unset" ] \
+    && check "inherited SECRETOPS_INFISICAL_CA_FILE cleared when broker.env omits it" 0 0 \
+    || check "inherited SECRETOPS_INFISICAL_CA_FILE cleared when broker.env omits it (got: $out)" 0 1
+
 # SECRETOPS_GH_BIN picks the program that receives secret values on stdin and
 # the broker's GitHub login, so it may also come only from broker.env.
 printf '#!/bin/sh\necho "GH_BIN=${SECRETOPS_GH_BIN-unset}"\n' > "$PROBE"; chmod +x "$PROBE"
