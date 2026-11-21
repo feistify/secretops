@@ -4831,9 +4831,40 @@ def test_decision_whose_status_cannot_be_saved_writes_no_audit_event(
 
     monkeypatch.setattr(secretops.plan_lifecycle, "set_plan_status", failing_status_save)
 
-    with pytest.raises(OSError):
-        decide_in_process(monkeypatch, tmp_path, command, "unsaved-decision")
+    exit_code, output = decide_in_process(monkeypatch, tmp_path, command, "unsaved-decision")
 
+    assert exit_code == 1
+    assert output.strip().splitlines() == UNSAVED_DECISION_LINES
     assert plan_path.read_bytes() == plan_bytes
     assert audit_lines(tmp_path / "audit.jsonl") == []
     assert_plan_lock_free("unsaved-decision")
+
+
+UNSAVED_DECISION_LINES = [
+    "FAIL the decision could not be saved",
+    "the plan is unchanged and still planned; no audit record was written",
+    "ask the operator to check the plan directory",
+]
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permissions")
+@pytest.mark.parametrize("command,status", DECISIONS)
+def test_decision_in_a_read_only_plan_directory_fails_without_traceback(tmp_path, command, status):
+    audit_path = tmp_path / "audit.jsonl"
+    plan_dir = tmp_path / "plans"
+    plan_path = write_plan(plan_dir, rotate_plan("read-only-decision"))
+    # The lock file exists already, so only the status write fails.
+    (plan_dir / ".read-only-decision.lock").touch(mode=0o600)
+    plan_bytes = plan_path.read_bytes()
+    plan_dir.chmod(0o500)
+    try:
+        result = run_secretops(command, "--id", "read-only-decision", audit_path=audit_path, plan_dir=plan_dir)
+    finally:
+        plan_dir.chmod(0o700)
+
+    assert result.returncode == 1
+    assert result.stdout.strip().splitlines() == UNSAVED_DECISION_LINES
+    assert "Traceback" not in result.stdout + result.stderr
+    assert plan_path.read_bytes() == plan_bytes
+    assert audit_lines(audit_path) == []
+    assert [path.name for path in plan_dir.iterdir() if path.name.startswith(".plan-")] == []
