@@ -636,3 +636,36 @@ def test_get_vault_returns_infisical_cli_vault():
 
     assert isinstance(vault, Vault)
     assert isinstance(vault, InfisicalCliVault)
+
+
+def _ca_file(tmp_path, mode=0o644):
+    path = tmp_path / "vault-ca.pem"
+    path.write_text("-----BEGIN CERTIFICATE-----\nnot-a-real-certificate\n-----END CERTIFICATE-----\n")
+    path.chmod(mode)
+    return path
+
+
+def test_vault_ca_file_reaches_the_cli_as_ssl_cert_file(tmp_path):
+    calls = []
+    ca = _ca_file(tmp_path)
+    vault = make_vault(
+        fake_cli({}, calls),
+        SSL_CERT_FILE="/etc/ssl/certs/ca-certificates.crt",
+        SECRETOPS_INFISICAL_CA_FILE=str(ca),
+    )
+    vault.secret_exists(DUMMY_SECRET_NAME, "dev")
+
+    env = calls[0][1]["env"]
+    assert env["SSL_CERT_FILE"] == str(ca)
+    assert "SECRETOPS_INFISICAL_CA_FILE" not in env
+    assert set(env) <= ALLOWED_CHILD_ENV
+
+
+@pytest.mark.parametrize("value", ["relative/ca.pem", "/nonexistent/ca.pem", "DIR"])
+def test_invalid_vault_ca_file_stops_before_the_cli(tmp_path, value):
+    calls = []
+    value = str(tmp_path) if value == "DIR" else value
+    vault = make_vault(fake_cli({}, calls), SECRETOPS_INFISICAL_CA_FILE=value)
+    with pytest.raises(VaultConfigurationError, match="SECRETOPS_INFISICAL_CA_FILE"):
+        vault.secret_exists(DUMMY_SECRET_NAME, "dev")
+    assert calls == []

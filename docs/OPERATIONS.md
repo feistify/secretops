@@ -52,6 +52,16 @@ Before approving, read the whole `show-plan` output: action, environment, vault 
 
 If `execute-plan` says the plan status could not be saved, do not run the plan again; inspect it with `broker show-plan` first. If it says the audit record could not be completed, the printed results are what happened; the plan is marked `failed` even after confirmed writes, so it cannot run again. Fix the audit log location before the next operation.
 
+## Vault behind a private CA
+
+When the vault's certificate comes from your own CA and that CA is not in the broker host's system store:
+
+```sh
+sudo secretops-configure --ca-file /etc/secretops/vault-ca.pem
+```
+
+The file must be a PEM certificate owned by root, readable by every account (it is public) and not writable by others, in a directory that only root can change: whoever can replace it can make the broker send the token to a forged vault. The setting applies only to the vault: the Infisical CLI and the connection check use it, while `gh` keeps the system store for GitHub. The vault check runs right after. After a CA rotation, replace the file and run `sudo secretops-configure --check`; `sudo secretops-configure --no-ca-file` removes the setting.
+
 ## Renew the vault token
 
 The token is renewed by hand. An expired or revoked token fails safely with `vault error`; secretops never falls back to a personal login.

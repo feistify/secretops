@@ -3,6 +3,7 @@
 import http.server
 import json
 import socket
+import ssl
 import subprocess
 import threading
 
@@ -359,3 +360,33 @@ def test_undecodable_provider_output_raises_only_fixed_text(tmp_path, exit_code,
     assert str(error.value) == message
     assert not isinstance(error.value.__context__, UnicodeError)
     assert MARKER not in repr(error.value)
+
+
+def test_probe_uses_the_vault_ca_file(tmp_path, monkeypatch):
+    ca = tmp_path / "vault-ca.pem"
+    ca.write_text("x")
+    contexts = []
+
+    def fake_context(*, cafile=None, **kwargs):
+        contexts.append(cafile)
+        return ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+
+    monkeypatch.setattr("secretops.vault_check.ssl.create_default_context", fake_context)
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    environ = {"SECRETOPS_INFISICAL_CA_FILE": str(ca)}
+    assert probe_server(f"https://127.0.0.1:{port}", environ=environ) is Probe.UNREACHABLE
+    assert contexts == [str(ca)]
+
+
+def test_probe_with_an_invalid_vault_ca_file_decides_nothing():
+    environ = {"SECRETOPS_INFISICAL_CA_FILE": "relative.pem"}
+    assert probe_server("https://127.0.0.1:9", environ=environ) is Probe.INCONCLUSIVE
+
+
+def test_probe_with_an_unparsable_vault_ca_file_decides_nothing(tmp_path):
+    ca = tmp_path / "vault-ca.pem"
+    ca.write_text("-----BEGIN CERTIFICATE-----\nnot base64 at all\n-----END CERTIFICATE-----\n")
+    environ = {"SECRETOPS_INFISICAL_CA_FILE": str(ca)}
+    assert probe_server("https://127.0.0.1:9", environ=environ) is Probe.INCONCLUSIVE

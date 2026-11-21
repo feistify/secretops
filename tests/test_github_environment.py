@@ -36,6 +36,7 @@ UNRELATED_VARS = {
     "INFISICAL_TOKEN": "dummy-infisical-token",
     "AWS_SECRET_ACCESS_KEY": "dummy-aws-key",
     "SECRETOPS_INFISICAL_PROJECT_ID": "dummy-project",
+    "SECRETOPS_INFISICAL_CA_FILE": "/etc/secretops/vault-ca.pem",
     "GH_HOST": "evil.example.com",
     "GH_REPO": "evil-owner/evil-repo",
     "GH_DEBUG": "api",

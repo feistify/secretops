@@ -397,3 +397,112 @@ def test_tell_terminal_falls_back_to_stderr(monkeypatch, capsys):
     monkeypatch.setattr(broker_config.os, "open", no_tty)
     broker_config.tell_terminal("Input received: 3 characters.")
     assert capsys.readouterr().err == "Input received: 3 characters.\n"
+
+
+PEM = "-----BEGIN CERTIFICATE-----\nnot-a-real-certificate\n-----END CERTIFICATE-----\n"
+
+
+def _pem(tmp_path, name="ca.pem", text=PEM, mode=0o644):
+    path = tmp_path / name
+    path.write_text(text)
+    path.chmod(mode)
+    return path
+
+
+_validate_ca_file = broker_config.validate_ca_file
+
+
+def _validate(value):
+    return _validate_ca_file(value, trusted_uid=os.getuid())
+
+
+def test_ca_file_validation(tmp_path):
+    good = _pem(tmp_path)
+    assert _validate(str(good)) == str(good)
+    link = tmp_path / "link.pem"
+    link.symlink_to(good)
+    group_writable = _pem(tmp_path, "group.pem", mode=0o664)
+    open_dir = tmp_path / "open"
+    open_dir.mkdir()
+    in_open_dir = _pem(open_dir)
+    open_dir.chmod(0o777)
+    refused = [
+        "ca.pem",
+        str(tmp_path / "missing.pem"),
+        str(tmp_path),
+        str(link),
+        str(_pem(tmp_path, "key.pem", "-----BEGIN PRIVATE KEY-----\n")),
+        str(_pem(tmp_path, "private.pem", mode=0o600)),
+        str(group_writable),
+        str(in_open_dir),
+    ]
+    for value in refused:
+        with pytest.raises(ConfigError):
+            _validate(value)
+
+
+def test_ca_file_under_a_symlinked_directory_is_refused(tmp_path):
+    real = tmp_path / "real"
+    real.mkdir()
+    _pem(real)
+    (tmp_path / "alias").symlink_to(real)
+    with pytest.raises(ConfigError, match="symbolic link"):
+        _validate(str(tmp_path / "alias" / "ca.pem"))
+
+
+def test_ca_file_owned_by_another_account_is_refused(tmp_path):
+    # Production trusts only root; this file belongs to the test's account.
+    with pytest.raises(ConfigError, match="owned by root"):
+        broker_config.validate_ca_file(str(_pem(tmp_path)))
+
+
+@pytest.fixture
+def trust_test_account(monkeypatch):
+    monkeypatch.setattr(broker_config, "validate_ca_file", _validate)
+
+
+def test_ca_file_option_sets_and_removes_only_that_key(interactive_root, trust_test_account, tmp_path, capsys):
+    env_file, checks, _ = interactive_root
+    ca = _pem(tmp_path)
+    assert broker_config.main(["--ca-file", str(ca)]) == 0
+    values = read_env(env_file, os.getuid())
+    assert values == {"INFISICAL_TOKEN": "old", "SECRETOPS_INFISICAL_CA_FILE": str(ca)}
+    assert checks == ["dev"]
+    assert broker_config.main(["--no-ca-file"]) == 0
+    assert read_env(env_file, os.getuid()) == {"INFISICAL_TOKEN": "old"}
+    out = capsys.readouterr().out
+    assert "old" not in out and "BEGIN CERTIFICATE" not in out
+
+
+def test_refused_ca_file_changes_nothing(interactive_root, trust_test_account, tmp_path, capsys):
+    env_file, checks, _ = interactive_root
+    before = env_file.read_text()
+    assert broker_config.main(["--ca-file", str(_pem(tmp_path, "x.pem", "secret-looking text"))]) == 1
+    assert env_file.read_text() == before
+    assert checks == []
+    err = capsys.readouterr().err
+    assert "nothing was changed" in err and "secret-looking" not in err
+
+
+@pytest.mark.parametrize("extra", [["--check"], ["--token-only"]])
+def test_ca_file_option_refuses_other_modes(interactive_root, trust_test_account, tmp_path, extra):
+    env_file, checks, _ = interactive_root
+    before = env_file.read_text()
+    assert broker_config.main(["--ca-file", str(_pem(tmp_path)), *extra]) == 1
+    assert env_file.read_text() == before
+    assert checks == []
+
+
+def test_ca_file_key_survives_interactive_configuration():
+    values = {"INFISICAL_TOKEN": "old", "SECRETOPS_INFISICAL_CA_FILE": "/etc/ca.pem"}
+    updated = configure(values, token_only=True, read_hidden=lambda prompt: TOKEN)
+    assert updated["SECRETOPS_INFISICAL_CA_FILE"] == "/etc/ca.pem"
+    assert parse(serialize(updated)) == updated
+
+
+def test_empty_ca_file_option_is_refused_not_interactive(interactive_root, capsys):
+    env_file, checks, _ = interactive_root
+    before = env_file.read_text()
+    assert broker_config.main(["--ca-file", ""]) == 1
+    assert env_file.read_text() == before
+    assert checks == []

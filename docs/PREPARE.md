@@ -20,7 +20,7 @@ You do not need to create a test secret by hand: the first check in [INSTALL.md]
 - A non-human identity with access only to those, able to read and write secrets.
 - An access token with a known lifetime; you renew it by hand ([OPERATIONS.md](OPERATIONS.md#renew-the-vault-token)).
 - The vault's CLI installed as root on the broker machine.
-- Network access from the broker to the vault without a proxy. A private CA must be in the system store (`update-ca-certificates`).
+- Network access from the broker to the vault without a proxy. For a private CA, either add it to the broker host's system store (`update-ca-certificates`) or, after installing, point the broker at it with `sudo secretops-configure --ca-file /path/to/ca.pem` ([Operations](OPERATIONS.md#vault-behind-a-private-ca)).
 
 ## Infisical steps
 
