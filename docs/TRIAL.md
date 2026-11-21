@@ -53,4 +53,6 @@ DOCKER=nerdctl sh trial/run.sh            # or DOCKER="sudo nerdctl"
 
 Then use the same program wherever this page or the guide in the container says `docker`. Docker and nerdctl 2.4 run as root are checked by `trial/check.sh` every week; rootless nerdctl and other programs are not tested.
 
+On a Kubernetes node, extract the nerdctl full bundle outside `/usr/local` (for example under `/opt`) and link only `nerdctl`, `buildctl` and `buildkitd` into `/usr/local/bin`. The bundle carries its own `containerd.service`; under `/usr/local` it replaces the node's own unit at the next restart. With that layout, `DOCKER="sudo nerdctl" sh trial/check.sh` passed on a containerd-only node, and `secretops add` worked through SSH and `nerdctl exec` from a terminal that qualifies ([terminal requirement](BROKER_HOST.md#human-secret-entry)).
+
 Next: [prepare a vault](PREPARE.md) and [install](INSTALL.md).

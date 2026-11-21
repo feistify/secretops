@@ -228,7 +228,22 @@ With several brokers and no `default_broker`, `--broker <name>` is required. The
 
 Each route stays as protected as you keep that credential. A `command: [...]` entry runs a local command as your own user and is meant for development only.
 
-**Terminal requirement.** Before asking for the value, `secretops add` enables bracketed paste and asks the terminal to confirm it (a DECRQM report for mode 2004). If the terminal does not answer within about 1.5 seconds, or reports the mode off, entry is refused before the value prompt: without paste markers a multiline paste would end the value at its first line and its next line would reach the confirmation prompt. Support for this report varies between terminal emulators and versions. The actual local T14 session passed the support query, single-line paste, multiline rejection, cancellation, and decline checks; it reported `VTE_VERSION=6800`, but its exact emulator name/version remains unconfirmed. tmux, screen, and SSH-into-client combinations have not been validated. Test your combination with synthetic input first; see [the validation record](validation/interactive-secret-entry.md).
+**Terminal requirement.** Before asking for the value, `secretops add` enables bracketed paste and asks the terminal to confirm it (a DECRQM report for mode 2004). If the terminal does not answer within about 1.5 seconds, or reports the mode off, entry is refused before the value prompt: without paste markers a multiline paste would end the value at its first line and its next line would reach the confirmation prompt. Support for this report varies between terminal emulators and versions. Measured so far, also through SSH and a container's `exec`:
+
+| Terminal | Answers the query | `secretops add` |
+| --- | --- | --- |
+| GNOME Terminal and other VTE terminals | yes | works ([record](validation/interactive-secret-entry.md)) |
+| Git Bash (mintty) on Windows | yes | works |
+| PuTTY | no | refused |
+| Windows Terminal | no | refused |
+
+tmux answers the query itself instead of the outer terminal, so a pass inside tmux says nothing about the terminal around it. Until that is checked, enter values outside tmux. screen has not been tried. To see whether a terminal answers, run this in bash there:
+
+```bash
+printf '\033[?2004$p' > /dev/tty; IFS= read -rs -t2 -d y r < /dev/tty; printf 'reply: %q\n' "$r"
+```
+
+A reply that contains `2004;1$` or `2004;2$` means the terminal answers; an empty reply after two seconds means `add` will refuse there. Test a new combination with a made-up value first.
 
 **What happens.** The broker saves (or loads) the plan, checks the destination binding, policy, connection, and that the name is absent, and returns its validated plan and digest; only then is the value requested. The value is read from the terminal with echo off and sent once, inside a JSON request on the endpoint's stdin, never in arguments, the environment, or client files. The broker checks the digest the human confirmed, the destination, policy, and plan status again under a per-plan lock, records the approval with that digest, creates the secret, and confirms it by reading it back. The value is never printed, logged, or written to the plan or audit.
 
