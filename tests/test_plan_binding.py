@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import typer
 from rich.console import Console
 
 from secretops import plan_lifecycle, plans
@@ -654,8 +655,9 @@ def test_interrupted_plan_write_keeps_the_old_file(tmp_path, monkeypatch, vault_
         raise OSError("simulated crash before rename")
 
     monkeypatch.setattr(plans.os, "replace", fail_replace)
-    with pytest.raises(OSError):
+    with pytest.raises(typer.Exit) as raised:
         plan_lifecycle.transition_planned_plan(plan_id, "approved", "approved", Console())
+    assert raised.value.exit_code == 1
 
     assert plan_path.read_bytes() == original
     # No temporary file is left; approve-plan leaves only its lock file.

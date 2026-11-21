@@ -924,7 +924,15 @@ def _transition_loaded_plan(plan_artifact, status: str, label: str, console: Con
     # the file is not read again in between.
     digest = plan_digest(plan_artifact.loaded_content) if status == "approved" else None
     approved_at = format_timestamp(utc_now()) if status == "approved" else None
-    set_plan_status(plan_artifact, status, approval_digest=digest, approved_at=approved_at)
+    try:
+        set_plan_status(plan_artifact, status, approval_digest=digest, approved_at=approved_at)
+    except OSError as error:
+        # The plan file is replaced atomically, so a failed save leaves the
+        # old file: the plan is still planned and nothing was recorded.
+        console.print("[red]FAIL[/red] the decision could not be saved")
+        console.print("the plan is unchanged and still planned; no audit record was written")
+        console.print("ask the operator to check the plan directory")
+        raise typer.Exit(1) from error
     # Recorded after the status is saved, still under the plan lock, so the
     # audit log holds only decisions that took effect. Same step and outcome
     # names as the approval recorded by `secretops add`.
