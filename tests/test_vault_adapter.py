@@ -17,6 +17,7 @@ from secretops.vaults import (
 )
 from secretops.vaults.infisical_cli import InfisicalCliVault
 
+from conftest import write_ca
 from fake_infisical import SetRejected, parse_set_args
 
 
@@ -638,16 +639,9 @@ def test_get_vault_returns_infisical_cli_vault():
     assert isinstance(vault, InfisicalCliVault)
 
 
-def _ca_file(tmp_path, mode=0o644):
-    path = tmp_path / "vault-ca.pem"
-    path.write_text("-----BEGIN CERTIFICATE-----\nnot-a-real-certificate\n-----END CERTIFICATE-----\n")
-    path.chmod(mode)
-    return path
-
-
-def test_vault_ca_file_reaches_the_cli_as_ssl_cert_file(tmp_path):
+def test_vault_ca_file_reaches_the_cli_as_ssl_cert_file(ca_dir):
     calls = []
-    ca = _ca_file(tmp_path)
+    ca = write_ca(ca_dir)
     vault = make_vault(
         fake_cli({}, calls),
         SSL_CERT_FILE="/etc/ssl/certs/ca-certificates.crt",
@@ -661,10 +655,23 @@ def test_vault_ca_file_reaches_the_cli_as_ssl_cert_file(tmp_path):
     assert set(env) <= ALLOWED_CHILD_ENV
 
 
-@pytest.mark.parametrize("value", ["relative/ca.pem", "/nonexistent/ca.pem", "DIR"])
+def test_ca_file_is_checked_again_at_every_use(ca_dir):
+    # It was fine when set; later it became writable by others.
+    calls = []
+    ca = write_ca(ca_dir)
+    vault = make_vault(fake_cli({}, calls), SECRETOPS_INFISICAL_CA_FILE=str(ca))
+    vault.secret_exists(DUMMY_SECRET_NAME, "dev")
+    ca.chmod(0o666)
+    with pytest.raises(VaultConfigurationError, match="SECRETOPS_INFISICAL_CA_FILE"):
+        vault.secret_exists(DUMMY_SECRET_NAME, "dev")
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("value", ["relative/ca.pem", "/nonexistent/ca.pem", "DIR", "TMP_OWNED"])
 def test_invalid_vault_ca_file_stops_before_the_cli(tmp_path, value):
     calls = []
-    value = str(tmp_path) if value == "DIR" else value
+    tmp_path.chmod(0o755)
+    value = {"DIR": str(tmp_path), "TMP_OWNED": str(write_ca(tmp_path))}.get(value, value)
     vault = make_vault(fake_cli({}, calls), SECRETOPS_INFISICAL_CA_FILE=value)
     with pytest.raises(VaultConfigurationError, match="SECRETOPS_INFISICAL_CA_FILE"):
         vault.secret_exists(DUMMY_SECRET_NAME, "dev")

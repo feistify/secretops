@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 
 from secretops import vault_check
 from secretops.cli import app
+from conftest import write_ca
 from secretops.vault_check import CheckResult, Probe, check_vault_connection, probe_server
 from secretops.vaults import (
     VaultNotFoundError,
@@ -362,9 +363,8 @@ def test_undecodable_provider_output_raises_only_fixed_text(tmp_path, exit_code,
     assert MARKER not in repr(error.value)
 
 
-def test_probe_uses_the_vault_ca_file(tmp_path, monkeypatch):
-    ca = tmp_path / "vault-ca.pem"
-    ca.write_text("x")
+def test_probe_uses_the_vault_ca_file(ca_dir, monkeypatch):
+    ca = write_ca(ca_dir)
     contexts = []
 
     def fake_context(*, cafile=None, **kwargs):
@@ -385,8 +385,7 @@ def test_probe_with_an_invalid_vault_ca_file_decides_nothing():
     assert probe_server("https://127.0.0.1:9", environ=environ) is Probe.INCONCLUSIVE
 
 
-def test_probe_with_an_unparsable_vault_ca_file_decides_nothing(tmp_path):
-    ca = tmp_path / "vault-ca.pem"
-    ca.write_text("-----BEGIN CERTIFICATE-----\nnot base64 at all\n-----END CERTIFICATE-----\n")
+def test_probe_with_an_unparsable_vault_ca_file_decides_nothing(ca_dir):
+    ca = write_ca(ca_dir, text="-----BEGIN CERTIFICATE-----\nnot base64 at all\n-----END CERTIFICATE-----\n")
     environ = {"SECRETOPS_INFISICAL_CA_FILE": str(ca)}
     assert probe_server("https://127.0.0.1:9", environ=environ) is Probe.INCONCLUSIVE

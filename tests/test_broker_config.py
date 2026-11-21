@@ -5,6 +5,7 @@ import subprocess
 import pytest
 
 from secretops import broker_config
+from conftest import write_ca
 from secretops.broker_config import (
     TOKEN_KEY,
     ConfigError,
@@ -399,71 +400,56 @@ def test_tell_terminal_falls_back_to_stderr(monkeypatch, capsys):
     assert capsys.readouterr().err == "Input received: 3 characters.\n"
 
 
-PEM = "-----BEGIN CERTIFICATE-----\nnot-a-real-certificate\n-----END CERTIFICATE-----\n"
-
-
-def _pem(tmp_path, name="ca.pem", text=PEM, mode=0o644):
-    path = tmp_path / name
-    path.write_text(text)
-    path.chmod(mode)
-    return path
-
-
-_validate_ca_file = broker_config.validate_ca_file
-
-
-def _validate(value):
-    return _validate_ca_file(value, trusted_uid=os.getuid())
-
-
-def test_ca_file_validation(tmp_path):
-    good = _pem(tmp_path)
-    assert _validate(str(good)) == str(good)
-    link = tmp_path / "link.pem"
+def test_ca_file_validation(ca_dir):
+    good = write_ca(ca_dir)
+    assert broker_config.validate_ca_file(str(good)) == str(good)
+    link = ca_dir / "link.pem"
     link.symlink_to(good)
-    group_writable = _pem(tmp_path, "group.pem", mode=0o664)
-    open_dir = tmp_path / "open"
+    hard = ca_dir / "hard.pem"
+    os.link(write_ca(ca_dir, "hard-source.pem"), hard)
+    open_dir = ca_dir / "open"
     open_dir.mkdir()
-    in_open_dir = _pem(open_dir)
+    in_open_dir = write_ca(open_dir)
     open_dir.chmod(0o777)
-    refused = [
-        "ca.pem",
-        str(tmp_path / "missing.pem"),
-        str(tmp_path),
-        str(link),
-        str(_pem(tmp_path, "key.pem", "-----BEGIN PRIVATE KEY-----\n")),
-        str(_pem(tmp_path, "private.pem", mode=0o600)),
-        str(group_writable),
-        str(in_open_dir),
-    ]
-    for value in refused:
-        with pytest.raises(ConfigError):
-            _validate(value)
-
-
-def test_ca_file_under_a_symlinked_directory_is_refused(tmp_path):
-    real = tmp_path / "real"
+    sticky = ca_dir / "sticky"
+    sticky.mkdir()
+    in_sticky = write_ca(sticky)
+    sticky.chmod(0o1777)
+    real = ca_dir / "real"
     real.mkdir()
-    _pem(real)
-    (tmp_path / "alias").symlink_to(real)
-    with pytest.raises(ConfigError, match="symbolic link"):
-        _validate(str(tmp_path / "alias" / "ca.pem"))
+    real.chmod(0o755)
+    write_ca(real)
+    (ca_dir / "alias").symlink_to(real)
+    refused = {
+        "ca.pem": "absolute",
+        str(ca_dir / "x" / ".." / "ca.pem"): "normalised",
+        str(good) + "/": "normalised",
+        str(ca_dir / "missing.pem"): "cannot be opened",
+        str(real): "regular file",
+        str(link): "cannot be opened",
+        str(hard): "single link",
+        str(write_ca(ca_dir, "key.pem", "-----BEGIN PRIVATE KEY-----\n")): "PEM certificate",
+        str(write_ca(ca_dir, "private.pem", mode=0o600)): "readable",
+        str(write_ca(ca_dir, "group.pem", mode=0o664)): "owned by root",
+        str(in_open_dir): "not protected by root",
+        str(in_sticky): "not protected by root",
+        str(ca_dir / "alias" / "ca.pem"): "symbolic link",
+    }
+    for value, reason in refused.items():
+        with pytest.raises(ConfigError, match=reason):
+            broker_config.validate_ca_file(value)
 
 
 def test_ca_file_owned_by_another_account_is_refused(tmp_path):
     # Production trusts only root; this file belongs to the test's account.
-    with pytest.raises(ConfigError, match="owned by root"):
-        broker_config.validate_ca_file(str(_pem(tmp_path)))
+    tmp_path.chmod(0o755)
+    with pytest.raises(ConfigError):
+        broker_config.validate_ca_file(str(write_ca(tmp_path)))
 
 
-@pytest.fixture
-def trust_test_account(monkeypatch):
-    monkeypatch.setattr(broker_config, "validate_ca_file", _validate)
-
-
-def test_ca_file_option_sets_and_removes_only_that_key(interactive_root, trust_test_account, tmp_path, capsys):
+def test_ca_file_option_sets_and_removes_only_that_key(interactive_root, ca_dir, capsys):
     env_file, checks, _ = interactive_root
-    ca = _pem(tmp_path)
+    ca = write_ca(ca_dir)
     assert broker_config.main(["--ca-file", str(ca)]) == 0
     values = read_env(env_file, os.getuid())
     assert values == {"INFISICAL_TOKEN": "old", "SECRETOPS_INFISICAL_CA_FILE": str(ca)}
@@ -474,10 +460,10 @@ def test_ca_file_option_sets_and_removes_only_that_key(interactive_root, trust_t
     assert "old" not in out and "BEGIN CERTIFICATE" not in out
 
 
-def test_refused_ca_file_changes_nothing(interactive_root, trust_test_account, tmp_path, capsys):
+def test_refused_ca_file_changes_nothing(interactive_root, ca_dir, capsys):
     env_file, checks, _ = interactive_root
     before = env_file.read_text()
-    assert broker_config.main(["--ca-file", str(_pem(tmp_path, "x.pem", "secret-looking text"))]) == 1
+    assert broker_config.main(["--ca-file", str(write_ca(ca_dir, "x.pem", "secret-looking text"))]) == 1
     assert env_file.read_text() == before
     assert checks == []
     err = capsys.readouterr().err
@@ -485,10 +471,10 @@ def test_refused_ca_file_changes_nothing(interactive_root, trust_test_account, t
 
 
 @pytest.mark.parametrize("extra", [["--check"], ["--token-only"]])
-def test_ca_file_option_refuses_other_modes(interactive_root, trust_test_account, tmp_path, extra):
+def test_ca_file_option_refuses_other_modes(interactive_root, ca_dir, extra):
     env_file, checks, _ = interactive_root
     before = env_file.read_text()
-    assert broker_config.main(["--ca-file", str(_pem(tmp_path)), *extra]) == 1
+    assert broker_config.main(["--ca-file", str(write_ca(ca_dir)), *extra]) == 1
     assert env_file.read_text() == before
     assert checks == []
 
