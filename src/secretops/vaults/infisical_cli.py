@@ -3,6 +3,7 @@ import os
 import re
 import secrets
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -42,14 +43,71 @@ TLS_PASSTHROUGH_VARS = ("SSL_CERT_FILE", "SSL_CERT_DIR")
 CA_FILE_KEY = "SECRETOPS_INFISICAL_CA_FILE"
 
 
+# Who may own the CA file and the directories above it, and the highest
+# directory checked. Tests widen these; the broker uses root and "/".
+CA_TRUSTED_OWNERS = frozenset({0})
+CA_CHECK_TOP = "/"
+
+
+def _root_protected(info: os.stat_result) -> bool:
+    return info.st_uid in CA_TRUSTED_OWNERS and not info.st_mode & 0o022
+
+
+def ca_file_problem(value: str) -> str | None:
+    """Why this CA file cannot be trusted, or None.
+
+    Whoever can replace the file can make the broker trust a forged vault and
+    send it the token. So the file and every directory above it must be owned
+    by root and writable by nobody else, with no symbolic link on the path.
+    World-writable sticky directories such as /tmp are refused too: they are
+    emptied on reboot, after which anyone can create the same name.
+    """
+    if not os.path.isabs(value) or value != os.path.normpath(value):
+        return "is not an absolute, normalised path"
+    top = os.path.normpath(CA_CHECK_TOP)
+    parent = os.path.dirname(value)
+    # Up to CA_CHECK_TOP, or to "/" when the path is not under it.
+    while True:
+        try:
+            info = os.lstat(parent)
+        except OSError:
+            return f"has a directory that cannot be read ({parent})"
+        if stat.S_ISLNK(info.st_mode):
+            return f"has a symbolic link on its path ({parent}); give the real path"
+        if not _root_protected(info):
+            return f"is in a directory not protected by root ({parent})"
+        if parent == top or parent == os.path.dirname(parent):
+            break
+        parent = os.path.dirname(parent)
+    try:
+        fd = os.open(value, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return "cannot be opened (symbolic links are refused)"
+    try:
+        info = os.fstat(fd)
+    finally:
+        os.close(fd)
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        return "is not a regular file with a single link (hard links are refused)"
+    if not _root_protected(info):
+        return "must be owned by root and writable by nobody else"
+    if not info.st_mode & 0o004:
+        return "must be readable by the broker account (mode o+r)"
+    return None
+
+
 def configured_ca_file(environ: Mapping[str, str]) -> str | None:
-    """Return the vault CA file from the configuration, or None when unset."""
+    """Return the vault CA file from the configuration, or None when unset.
+
+    Checked again at every use: the file may have changed since it was set.
+    """
     value = environ.get(CA_FILE_KEY, "")
     if not value:
         return None
-    if not (os.path.isabs(value) and os.path.isfile(value) and os.access(value, os.R_OK)):
+    if ca_file_problem(value) is not None:
         raise VaultConfigurationError(
-            f"{CA_FILE_KEY} must be an absolute path to a readable certificate file"
+            f"{CA_FILE_KEY} is not a root-protected certificate file; "
+            "the human can check it with sudo secretops-configure --ca-file"
         )
     return value
 

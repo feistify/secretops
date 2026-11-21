@@ -36,7 +36,7 @@ from urllib.parse import urlsplit
 
 from secretops.terminal_input import input_received_line
 from secretops.validation import VAULT_ENVIRONMENT_PATTERN
-from secretops.vaults.infisical_cli import CA_FILE_KEY
+from secretops.vaults.infisical_cli import CA_FILE_KEY, ca_file_problem
 
 BROKER_ENV = Path("/opt/secretops/broker.env")
 BROKER_USER = "secretops-broker"
@@ -174,56 +174,16 @@ def validate_executable(value: str) -> str:
 CA_MAX_BYTES = 1024 * 1024
 
 
-def _protected(info: os.stat_result, trusted_uids: set[int]) -> bool:
-    """Owned by root (or the test's own account) and not writable by others."""
-    if info.st_uid not in trusted_uids:
-        return False
-    if not info.st_mode & 0o022:
-        return True
-    # A world-writable sticky directory such as /tmp: others cannot replace
-    # an entry they do not own.
-    return stat.S_ISDIR(info.st_mode) and bool(info.st_mode & stat.S_ISVTX)
-
-
-def validate_ca_file(value: str, trusted_uid: int = 0) -> str:
-    """A PEM file with the CA that signed the vault's certificate.
-
-    Whoever can replace this file can make the broker trust a forged vault
-    and send it the token, so the file and every directory above it must be
-    owned by root and not writable by group or others.
-    """
-    trusted = {0, trusted_uid}
-    path = Path(value)
-    if not path.is_absolute():
-        raise ConfigError(f"{value} is not an absolute path; nothing was changed")
-    for parent in path.parents:
-        try:
-            info = os.lstat(parent)
-            if stat.S_ISLNK(info.st_mode):
-                raise ConfigError(f"{parent} is a symbolic link; give the real path; nothing was changed")
-            if not _protected(info, trusted):
-                raise ConfigError(
-                    f"{parent} must be owned by root and not writable by others; nothing was changed"
-                )
-        except OSError:
-            raise ConfigError(f"{parent} cannot be read; nothing was changed") from None
+def validate_ca_file(value: str) -> str:
+    """A root-protected PEM file with the CA that signed the vault's certificate."""
+    problem = ca_file_problem(value)
+    if problem is not None:
+        raise ConfigError(f"{value} {problem}; nothing was changed")
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    except OSError:
-        raise ConfigError(f"{value} cannot be opened (symlinks are refused); nothing was changed") from None
-    info = os.fstat(fd)
-    if not stat.S_ISREG(info.st_mode):
-        os.close(fd)
-        raise ConfigError(f"{value} is not a regular file; nothing was changed")
-    with os.fdopen(fd, "rb") as handle:
-        if not _protected(info, trusted):
-            raise ConfigError(f"{value} must be owned by root and not writable by others; nothing was changed")
-        if not info.st_mode & 0o004:
-            raise ConfigError(f"{value} must be readable by the broker account (mode o+r); nothing was changed")
-        try:
+        with open(value, "rb") as handle:
             text = handle.read(CA_MAX_BYTES + 1).decode("ascii")
-        except (OSError, UnicodeDecodeError):
-            text = ""
+    except (OSError, UnicodeDecodeError):
+        text = ""
     if len(text) > CA_MAX_BYTES or "-----BEGIN CERTIFICATE-----" not in text:
         raise ConfigError(f"{value} does not contain a PEM certificate; nothing was changed")
     return value
