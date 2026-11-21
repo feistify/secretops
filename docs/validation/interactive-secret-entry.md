@@ -20,8 +20,9 @@ The client used a temporary metadata-only configuration selecting local sudo to 
 | Client session | Reported environment | Result |
 | --- | --- | --- |
 | Actual local T14 terminal, emulator name/version not independently confirmed | `TERM=xterm-256color`, `VTE_VERSION=6800`, no `TERM_PROGRAM`, no tmux or SSH TTY indicated | Passed the four manual checks below |
-| tmux | Not exercised | No support claim |
-| SSH session into the client computer | Not exercised | No support claim |
+| Git Bash (mintty) on Windows, SSH to the broker host, then a container's `exec` (pilot, 2026-11-20, v0.1.11) | Answered the query (`2004;2`) | `secretops add` worked |
+| PuTTY and Windows Terminal, same path (pilot) | No answer to the query | `add` refused, as intended |
+| tmux, inside PuTTY (pilot) | tmux answered the query itself | No support claim: the answer does not come from the outer terminal; whether pastes are marked was not checked |
 
 The environment reports VTE `0.68.0`; it does not establish the terminal application's name or version. The result applies to the actual tested session, not all VTE terminals or versions.
 

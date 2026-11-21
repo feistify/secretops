@@ -203,6 +203,6 @@ Do not do this for a working installation that has plans or audit you want to ke
 - One broker per machine, one Infisical project and folder per broker.
 - The agent runs on the broker machine. A broker on another machine is a manual setup ([BROKER_HOST.md](BROKER_HOST.md)).
 - An HTTP proxy cannot be configured on an installed broker.
-- Human secret entry over SSH from another machine, tmux, and other distributions are not tested.
+- Human secret entry inside tmux and other distributions are not tested; over SSH, only the terminals listed in the [terminal requirement](BROKER_HOST.md#human-secret-entry) were tried.
 - The token is renewed by hand; see [OPERATIONS.md](OPERATIONS.md#renew-the-vault-token).
 - `broker.env` is read by the broker wrapper as shell. Edit it only through `secretops-configure`, which accepts and writes only plain `KEY='value'` lines.
