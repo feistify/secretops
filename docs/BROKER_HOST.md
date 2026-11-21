@@ -127,7 +127,7 @@ secretops runs `gh` with an explicit environment, never the broker's own:
 
 - `gh` is `SECRETOPS_GH_BIN` when set (an absolute path to an executable), otherwise the first `gh` in `/usr/local/bin`, `/usr/bin`, and `/bin`. The caller's `PATH` is never searched, and a missing `gh` stops the plan before any secret is read. The executable and its directory must be administrator-managed and not writable by the agent or broker user.
 - `gh` receives only `HOME`, `XDG_CONFIG_HOME` and `GH_CONFIG_DIR` (when set), `XDG_RUNTIME_DIR` and `DBUS_SESSION_BUS_ADDRESS` (when set, for a keyring-stored login), `SSL_CERT_FILE`, `SSL_CERT_DIR`, the `HTTP(S)_PROXY`/`NO_PROXY` variables in either case, `LANG`, and `LC_ALL`. The broker sets `PATH` to the fixed directories above, `GH_PROMPT_DISABLED=1`, `GH_NO_UPDATE_NOTIFIER=1`, and `NO_COLOR=1`.
-- GitHub tokens, `GH_HOST`, `GH_REPO`, `INFISICAL_TOKEN`, and every other broker variable are dropped.
+- GitHub tokens, `GH_HOST`, `GH_REPO`, `INFISICAL_TOKEN`, `SECRETOPS_INFISICAL_CA_FILE`, and every other broker variable are dropped; the vault's CA file never becomes `gh`'s `SSL_CERT_FILE`.
 
 `SECRETOPS_GH_BIN` may come only from `broker.env`: `secretops-broker` clears an inherited value before loading it. When upgrading secretops, reinstall `/usr/local/bin/secretops-broker` from the same version.
 
