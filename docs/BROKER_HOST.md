@@ -232,7 +232,7 @@ Each route stays as protected as you keep that credential. A `command: [...]` en
 
 | Terminal | Answers the query | `secretops add` |
 | --- | --- | --- |
-| GNOME Terminal (VTE), one tested version | yes | works |
+| A VTE terminal (VTE 0.68, one session) | yes | works |
 | Git Bash (mintty) on Windows | yes | works |
 | PuTTY | no | refused |
 | Windows Terminal | no | refused |
