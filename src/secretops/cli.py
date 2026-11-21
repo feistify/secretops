@@ -1,3 +1,4 @@
+import functools
 import sys
 from importlib.metadata import version as package_version
 
@@ -10,7 +11,7 @@ from secretops.add_client import (
     load_broker_access,
     run_add,
 )
-from secretops.audit import write_audit_event
+from secretops.audit import AuditWriteError, write_audit_event
 from secretops.handlers import (
     execute_recipe_action,
     execute_vault_read_check_recipe,
@@ -105,6 +106,32 @@ def _require_vault_environment(env: str) -> None:
         _refuse_recipe(error)
 
 
+def _audit_failure_stops(command):
+    """Stop with a fixed message when an audit event cannot be written.
+
+    Only for commands whose audit events are all written before any vault or
+    GitHub write and before any plan file change; events written after a
+    provider write go through their own handling and never raise. The
+    human-entry commands (add and its endpoints) are not wrapped: they write
+    audit events after a vault write.
+    """
+
+    @functools.wraps(command)
+    def run(*args, **kwargs):
+        try:
+            return command(*args, **kwargs)
+        except AuditWriteError as error:
+            console.print("[red]FAIL[/red] the audit record could not be written", soft_wrap=True)
+            console.print(
+                "the command stopped before any vault or GitHub write; nothing was changed",
+                soft_wrap=True,
+            )
+            console.print("ask the operator to fix the audit log before running this again", soft_wrap=True)
+            raise typer.Exit(1) from error
+
+    return run
+
+
 @app.command(help="Show the secretops version.", rich_help_panel="Information")
 def version():
     console.print(f"secretops {shown(package_version('secretops'))}")
@@ -132,6 +159,7 @@ def actions():
     help="Show the plan for a recipe; with --save, store it and print its plan_id.",
     rich_help_panel="Plans",
 )
+@_audit_failure_stops
 def plan(
     file: str = typer.Option(..., "--file"),
     save: bool = typer.Option(False, "--save"),
@@ -167,6 +195,7 @@ def plan(
 
 
 @app.command("show-plan", help="Show a saved plan and its status.", rich_help_panel="Plans")
+@_audit_failure_stops
 def show_plan(plan_id: str = typer.Option(..., "--id")):
     show_saved_plan(plan_id, console)
 
@@ -189,11 +218,13 @@ def pending_plans():
 
 
 @app.command("approve-plan", help="Approve a saved plan (human only).", rich_help_panel="Plans")
+@_audit_failure_stops
 def approve_plan(plan_id: str = typer.Option(..., "--id")):
     transition_planned_plan(plan_id, "approved", "approved", console)
 
 
 @app.command("reject-plan", help="Reject a saved plan (human only).", rich_help_panel="Plans")
+@_audit_failure_stops
 def reject_plan(plan_id: str = typer.Option(..., "--id")):
     transition_planned_plan(plan_id, "rejected", "rejected", console)
 
@@ -203,6 +234,7 @@ def reject_plan(plan_id: str = typer.Option(..., "--id")):
     help="Check a saved plan's prerequisites without writing anything.",
     rich_help_panel="Plans",
 )
+@_audit_failure_stops
 def preflight_plan(plan_id: str = typer.Option(..., "--id")):
     preflight_saved_plan(plan_id, console)
 
@@ -212,6 +244,7 @@ def preflight_plan(plan_id: str = typer.Option(..., "--id")):
     help="Run an approved plan. Exit 0 done, 1 failed, 3 outcome unknown.",
     rich_help_panel="Plans",
 )
+@_audit_failure_stops
 def execute_plan(plan_id: str = typer.Option(..., "--id")):
     execute_saved_plan(plan_id, console)
 
@@ -221,6 +254,7 @@ def execute_plan(plan_id: str = typer.Option(..., "--id")):
     help="Show the plan for a vault name check; nothing is saved.",
     rich_help_panel="Checks",
 )
+@_audit_failure_stops
 def plan_vault_read(
     name: str = typer.Option(..., "--name"),
     env: str = typer.Option("dev", "--env"),
@@ -252,6 +286,7 @@ def plan_vault_read(
     help="Check that a secret name exists in the vault, without its value.",
     rich_help_panel="Checks",
 )
+@_audit_failure_stops
 def check_vault_read(
     name: str = typer.Option(..., "--name"),
     env: str = typer.Option("dev", "--env"),
@@ -309,6 +344,7 @@ def check_vault_read(
     help="Check the saved vault configuration (human; usually through secretops-configure --check).",
     rich_help_panel="Checks",
 )
+@_audit_failure_stops
 def check_vault_connection_command(env: str = typer.Option("dev", "--env")):
     if not ENV_PATTERN.fullmatch(env):
         typer.echo("environment name is not valid")
@@ -417,6 +453,7 @@ def submit_add_endpoint():
     help="Show the plan for a vault.read.check recipe without saving it.",
     rich_help_panel="Single-recipe commands (development)",
 )
+@_audit_failure_stops
 def plan_recipe(file: str = typer.Option(..., "--file")):
     recipe = _load_recipe(file)
     require_recipe_allowed(recipe, console)
@@ -427,6 +464,7 @@ def plan_recipe(file: str = typer.Option(..., "--file")):
     help="Show the plan for a GitHub recipe without saving it.",
     rich_help_panel="Single-recipe commands (development)",
 )
+@_audit_failure_stops
 def plan_github_env_secret(file: str = typer.Option(..., "--file")):
     recipe = _load_recipe(file)
     require_recipe_allowed(recipe, console)
@@ -447,6 +485,7 @@ def plan_github_env_secret(file: str = typer.Option(..., "--file")):
     help="Run a vault.read.check recipe directly, without a saved plan.",
     rich_help_panel="Single-recipe commands (development)",
 )
+@_audit_failure_stops
 def execute(file: str = typer.Option(..., "--file")):
     recipe = _load_recipe(file)
     execute_recipe_action(recipe, console)
@@ -456,6 +495,7 @@ def execute(file: str = typer.Option(..., "--file")):
     help="Run a vault.read.check recipe directly, without a saved plan.",
     rich_help_panel="Single-recipe commands (development)",
 )
+@_audit_failure_stops
 def execute_recipe(file: str = typer.Option(..., "--file")):
     recipe = _load_recipe(file)
     require_recipe_allowed(recipe, console)
