@@ -4605,13 +4605,13 @@ def test_decision_uses_the_plan_read_under_the_lock(tmp_path, monkeypatch, comma
     plan_path = write_plan(plan_dir, rotate_plan("raced-decision"))
     real_plan_lock = secretops.plan_lifecycle.plan_lock
     entered = []
+    # Built once: it holds the current time, so a second call could differ.
+    finished_content = json.dumps(written_plan_with_status("raced-decision", on_disk))
 
     @contextlib.contextmanager
     def finish_other_command_first(plan_id):
         entered.append(plan_id)
-        plan_path.write_text(
-            json.dumps(written_plan_with_status(plan_id, on_disk)), encoding="utf-8"
-        )
+        plan_path.write_text(finished_content, encoding="utf-8")
         with real_plan_lock(plan_id):
             yield
 
@@ -4623,9 +4623,7 @@ def test_decision_uses_the_plan_read_under_the_lock(tmp_path, monkeypatch, comma
     assert exit_code == 1
     assert output.strip().splitlines() == [f"FAIL plan status is {on_disk}; expected planned"]
     assert read_plan(plan_path)["status"] == on_disk
-    assert plan_path.read_text(encoding="utf-8") == json.dumps(
-        written_plan_with_status("raced-decision", on_disk)
-    )
+    assert plan_path.read_text(encoding="utf-8") == finished_content
     assert_plan_lock_free("raced-decision")
     assert DUMMY_SECRET_VALUE not in output
 
