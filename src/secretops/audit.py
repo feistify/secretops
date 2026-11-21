@@ -12,6 +12,11 @@ CORE_FIELDS = frozenset(
 )
 
 
+class AuditWriteError(OSError):
+    """The audit log could not be written. An OSError, so callers that
+    already treat a failed audit write as OSError are unchanged."""
+
+
 def audit_path() -> Path:
     return Path(os.environ.get(AUDIT_PATH_ENV, DEFAULT_AUDIT_PATH))
 
@@ -48,6 +53,9 @@ def write_audit_event(
         event.update(details)
 
     path = audit_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as audit_file:
-        audit_file.write(json.dumps(event, separators=(",", ":")) + "\n")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as audit_file:
+            audit_file.write(json.dumps(event, separators=(",", ":")) + "\n")
+    except OSError as error:
+        raise AuditWriteError("audit log could not be written") from error
