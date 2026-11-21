@@ -112,6 +112,8 @@ It asks for the vault URL (Enter keeps the `--infisical-domain` address), projec
 
 After saving, it checks the connection by looking up a made-up name in the `dev` environment (nothing is written) and prints one result with the next step: `OK vault connection works`, `vault not reachable at the configured URL`, `the vault refused the access token`, `project, environment or folder not found, or not permitted`, or `could not tell what is wrong`. A failed check keeps the saved configuration. Check again at any time with `sudo secretops-configure --check`; add `--env NAME` if your project has no `dev` environment. A folder that does not exist may look empty rather than missing; the first check below confirms it.
 
+If the vault's certificate comes from your own CA, see [Vault behind a private CA](OPERATIONS.md#vault-behind-a-private-ca).
+
 ## First check: vault only
 
 This needs no GitHub. Use a made-up name and value in `dev`, an environment the default policy allows ([environment names](PREPARE.md#environment-names)).
