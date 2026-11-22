@@ -24,6 +24,8 @@ You do not need to create a test secret by hand: the first check in [INSTALL.md]
 
 ## Infisical steps
 
+A new self-hosted vault can skip these: [`bootstrap-broker.py`](VAULT_SELF_HOSTED.md#connect-the-broker) creates the admin, project, identity and token and configures the broker in one command.
+
 1. Create a project. Its ID is in the address bar. **Folder path:** in the simplest case keep secrets at the project root and enter `/` when `secretops-configure` asks (it is the default; press Enter). Another folder is an absolute path such as `/app`.
 2. In the organization: **Access Control** → **Machine Identities** → **Create**, with the least organization role. Under **Authentication**, replace Universal Auth with Token Auth and set the access token TTL ([Token Auth](https://infisical.com/docs/documentation/platform/identities/token-auth)).
 3. In the project: **Access Control** → **Machine Identities** → **Add Machine Identity to Project** → **Assign Existing**, choose the identity and a role that can read and write secrets (see below).
