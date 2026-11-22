@@ -1,0 +1,13 @@
+# TLS in front of Infisical with Caddy's own local CA. The root certificate
+# stays in the caddy_data volume; the guide shows how to copy it out for
+# `secretops-configure --ca-file` and for your browser.
+{
+	admin off
+	# Clients that connect by IP address send no server name.
+	default_sni {$INFISICAL_HOST}
+}
+
+{$INFISICAL_HOST} {
+	tls internal
+	reverse_proxy backend:8080
+}

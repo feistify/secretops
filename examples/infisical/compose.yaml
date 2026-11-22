@@ -1,0 +1,97 @@
+# Self-hosted Infisical for secretops: Infisical, Postgres, Redis, and Caddy
+# for TLS with its own local CA. Guide: docs/VAULT_SELF_HOSTED.md.
+#
+# Runs unchanged with `sudo nerdctl compose` (containerd) or `docker compose`.
+# make-env.sh writes .env (host name and port, no secrets) and secrets/
+# (keys and passwords, root-only). Keys are read from files inside the
+# containers, not passed in the container configuration or command
+# arguments, so they do not appear in nerdctl's output, `ps` or `inspect`.
+# Infisical and Redis run as uids 61001 and 61002, which no host account
+# should have: a container process is readable through /proc by the host
+# account with the same uid. Postgres runs as the image's uid 70.
+# Never commit .env or secrets/. Image versions are pinned; change them only
+# as described in the guide.
+
+name: infisical
+
+services:
+  backend:
+    image: infisical/infisical:v0.167.14
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    # Starts as root only to read the key file, then runs Infisical as
+    # uid 61001 instead of the image's 1001, a uid host accounts often have.
+    # Node needs a passwd entry for its uid, and the image's start script
+    # updates /etc/ssl/certs; both are set for 61001 inside the container.
+    user: "0:0"
+    entrypoint:
+      - sh
+      - -c
+      - >-
+        grep -q '^infisical:' /etc/passwd || echo 'infisical:x:61001:61001::/backend:/usr/sbin/nologin' >> /etc/passwd;
+        chown -R 61001:61001 /etc/ssl/certs;
+        set -a && . /run/secrets/backend.env && set +a &&
+        exec setpriv --reuid=61001 --regid=61001 --clear-groups env HOME=/backend docker-entrypoint.sh ./standalone-entrypoint.sh
+    environment:
+      NODE_ENV: production
+      SITE_URL: https://${INFISICAL_HOST}:${HTTPS_PORT}
+    volumes:
+      - ./secrets/backend.env:/run/secrets/backend.env:ro
+    networks: [infisical]
+
+  db:
+    image: postgres:16.16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: infisical
+      POSTGRES_DB: infisical
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./secrets/db_password:/run/secrets/db_password:ro
+    healthcheck:
+      # Over TCP: the image's temporary setup server answers only on the socket.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [infisical]
+
+  redis:
+    image: redis:7.4.12-alpine
+    restart: unless-stopped
+    # The password is in a root-only file; it is copied for uid 61002 and
+    # never put on the command line, where `ps` would show it.
+    entrypoint:
+      - sh
+      - -c
+      - install -m 600 -o 61002 -g 61002 /run/secrets/redis.conf /tmp/redis.conf && chown -R 61002:61002 /data && exec setpriv --reuid=61002 --regid=61002 --clear-groups redis-server /tmp/redis.conf
+    volumes:
+      - redis_data:/data
+      - ./secrets/redis.conf:/run/secrets/redis.conf:ro
+    networks: [infisical]
+
+  caddy:
+    image: caddy:2.11.9-alpine
+    restart: unless-stopped
+    depends_on: [backend]
+    environment:
+      INFISICAL_HOST: ${INFISICAL_HOST}
+    ports:
+      - "${HTTPS_PORT}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    networks: [infisical]
+
+volumes:
+  pg_data:
+  redis_data:
+  caddy_data:
+
+networks:
+  infisical:

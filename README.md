@@ -115,6 +115,7 @@ Details: [limitations and tested versions](https://github.com/feistify/secretops
 | Read this | For |
 | --- | --- |
 | [PREPARE](https://github.com/feistify/secretops/blob/main/docs/PREPARE.md) | What the vault needs before installing |
+| [VAULT_SELF_HOSTED](https://github.com/feistify/secretops/blob/main/docs/VAULT_SELF_HOSTED.md) | Run your own Infisical with TLS and backups |
 | [INSTALL](https://github.com/feistify/secretops/blob/main/docs/INSTALL.md) | Installing a local broker |
 | [OPERATIONS](https://github.com/feistify/secretops/blob/main/docs/OPERATIONS.md) | Daily use, failures, token renewal, upgrade, backup |
 | [USAGE](https://github.com/feistify/secretops/blob/main/docs/USAGE.md) | Adding secrets, the plan lifecycle, all actions |
