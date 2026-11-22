@@ -99,6 +99,23 @@ def _secret_name_for_policy_audit(plan_artifact) -> str:
     return plan_artifact.secret_name or "unknown"
 
 
+def _audit_env(plan_artifact) -> str:
+    """The environment an audit event names for this plan: where a copy
+    writes (its target), otherwise the source or the plan's environment.
+    A copy's source is in `source_env` (see _audit_source)."""
+    if plan_artifact.action == "vault.secret.copy_many":
+        return plan_artifact.target_env or plan_artifact.env
+    return plan_artifact.source_env or plan_artifact.env
+
+
+def _audit_source(plan_artifact) -> dict[str, str]:
+    """Audit details naming a copy's source environment (its events name the
+    target in `env`), so a search by either environment finds them."""
+    if plan_artifact.action == "vault.secret.copy_many":
+        return {"source_env": plan_artifact.source_env or plan_artifact.env}
+    return {}
+
+
 def _fail_plan(
     plan_artifact,
     console: Console,
@@ -108,12 +125,14 @@ def _fail_plan(
     extra_lines: list[str] | None = None,
     mark_failed: bool,
 ) -> None:
+    source = _audit_source(plan_artifact)
     write_audit_event(
         action=plan_artifact.action,
         secret_name=secret_name or _secret_name_for_policy_audit(plan_artifact),
-        env=plan_artifact.source_env or plan_artifact.env,
+        env=_audit_env(plan_artifact),
         status="failure",
         plan_id=plan_artifact.plan_id,
+        details={**source},
     )
     if mark_failed:
         set_plan_status(plan_artifact, "failed")
@@ -414,6 +433,7 @@ def _finish_confirmed_write(
     secret_name: str,
     env: str,
     not_printed: str,
+    source_env: str | None = None,
 ) -> None:
     """Record a fully confirmed vault write, as the GitHub path does: the
     success event first, then the status; `executed` only when the event
@@ -425,6 +445,7 @@ def _finish_confirmed_write(
         env=env,
         status="success",
         plan_id=plan_artifact.plan_id,
+        details={"source_env": source_env} if source_env else {},
     )
     status_saved = _try_save_status(plan_artifact, "executed" if audited else "failed")
     for line in ok_lines:
@@ -493,6 +514,7 @@ def _stop_partial_write(
     not_written = names[index + 1 :] if unknown else names[index:]
     # The audit event names the write that stopped the run and its target
     # environment, plus the partial result, so it survives beyond the console.
+    source = _audit_source(plan_artifact)
     audited = _try_audit(
         action=plan_artifact.action,
         secret_name=name,
@@ -500,6 +522,7 @@ def _stop_partial_write(
         status="outcome_unknown" if unknown else "failure",
         plan_id=plan_artifact.plan_id,
         details={
+            **source,
             "confirmed_names": names[:index],
             "not_written_names": not_written,
         },
@@ -977,13 +1000,15 @@ def _transition_loaded_plan(plan_artifact, status: str, label: str, console: Con
     # Recorded after the status is saved, still under the plan lock, so the
     # audit log holds only decisions that took effect. Same step and outcome
     # names as the approval recorded by `secretops add`.
+    source = _audit_source(plan_artifact)
     audit_written = _try_audit(
         action=plan_artifact.action,
         secret_name=_secret_name_for_policy_audit(plan_artifact),
-        env=plan_artifact.source_env or plan_artifact.env,
+        env=_audit_env(plan_artifact),
         status="success",
         plan_id=plan_id,
         details={
+            **source,
             "step": "approve" if status == "approved" else "reject",
             "outcome": status,
             **({"approval_digest": digest} if digest is not None else {}),
@@ -1026,13 +1051,14 @@ def _preflight_approval_validity(plan_artifact, console: Console) -> None:
     )
     if refusal is None:
         return
+    source = _audit_source(plan_artifact)
     write_audit_event(
         action=plan_artifact.action,
         secret_name=_secret_name_for_policy_audit(plan_artifact),
-        env=plan_artifact.source_env or plan_artifact.env,
+        env=_audit_env(plan_artifact),
         status="failure",
         plan_id=plan_artifact.plan_id,
-        details={"failure": "approval_expired"},
+        details={**source, "failure": "approval_expired", "step": "preflight"},
     )
     console.print(f"[red]FAIL[/red] preflight failed: {shown(plan_artifact.action)}")
     console.print(f"approval_valid: no; {shown(refusal)}")
@@ -1174,9 +1200,10 @@ def _preflight_plan(plan_artifact, console: Console) -> None:
         write_audit_event(
             action=plan_artifact.action,
             secret_name="multiple",
-            env=source_env,
+            env=target_env,
             status="failure" if failed else "success",
             plan_id=plan_artifact.plan_id,
+            details={"source_env": source_env},
         )
         if failed:
             console.print("[red]FAIL[/red] preflight failed: vault.secret.copy_many")
@@ -1433,13 +1460,14 @@ def _refuse_unapproved(plan_artifact, console: Console, *, secret_name: str | No
     `failed` reaches this point) is refused as before and stays `failed`.
     """
     pending = plan_artifact.status == "planned"
+    source = _audit_source(plan_artifact)
     write_audit_event(
         action=plan_artifact.action,
         secret_name=secret_name or _secret_name_for_policy_audit(plan_artifact),
-        env=plan_artifact.source_env or plan_artifact.env,
+        env=_audit_env(plan_artifact),
         status="failure",
         plan_id=plan_artifact.plan_id,
-        details={"failure": "approval_pending"} if pending else {},
+        details={**source, **({"failure": "approval_pending"} if pending else {})},
     )
     if not pending:
         set_plan_status(plan_artifact, "failed")
@@ -1481,12 +1509,14 @@ def _require_environment_policy(plan_artifact, console: Console) -> None:
         for environment in _execution_policy_environments(plan_artifact):
             require_environment_allowed(plan_artifact.action, environment)
     except PermissionError as error:
+        source = _audit_source(plan_artifact)
         write_audit_event(
             action=plan_artifact.action,
             secret_name=_secret_name_for_policy_audit(plan_artifact),
-            env=plan_artifact.source_env or plan_artifact.env,
+            env=_audit_env(plan_artifact),
             status="failure",
             plan_id=plan_artifact.plan_id,
+            details={**source},
         )
         set_plan_status(plan_artifact, "failed")
         console.print(f"[red]FAIL[/red] {shown(error)}", soft_wrap=True)
@@ -1504,13 +1534,14 @@ def _refuse_expired_approval(plan_artifact, console: Console) -> None:
     )
     if refusal is None:
         return
+    source = _audit_source(plan_artifact)
     write_audit_event(
         action=plan_artifact.action,
         secret_name=_secret_name_for_policy_audit(plan_artifact),
-        env=plan_artifact.source_env or plan_artifact.env,
+        env=_audit_env(plan_artifact),
         status="failure",
         plan_id=plan_artifact.plan_id,
-        details={"failure": "approval_expired"},
+        details={**source, "failure": "approval_expired", "step": "execute"},
     )
     set_plan_status(plan_artifact, "failed")
     console.print(f"[red]FAIL[/red] {shown(refusal)}")
@@ -1802,9 +1833,10 @@ def _execute_plan(plan_artifact, console: Console) -> None:
             write_audit_event(
                 action=plan_artifact.action,
                 secret_name="multiple",
-                env=source_env,
+                env=target_env,
                 status="failure",
                 plan_id=plan_artifact.plan_id,
+                details={"source_env": source_env},
             )
             set_plan_status(plan_artifact, "failed")
             console.print("[red]FAIL[/red] vault.secret.copy_many safety check failed")
@@ -1843,8 +1875,9 @@ def _execute_plan(plan_artifact, console: Console) -> None:
             console,
             [f"OK vault secrets copied: {len(mappings)}"],
             secret_name="multiple",
-            env=source_env,
+            env=target_env,
             not_printed="secret values were not printed",
+            source_env=source_env,
         )
         return
 
