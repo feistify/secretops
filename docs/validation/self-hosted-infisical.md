@@ -60,6 +60,20 @@ Found on the NAS:
 - **A non-interactive SSH command on DSM does not find `docker`** (`/usr/local/bin` is not on the path); an interactive login does. Noted in the guide.
 - **Switching a configured broker to a new vault with a private CA** takes `--ca-file` first (its check still uses the old vault) and then `secretops-configure`; the first check's result does not matter there.
 
+## Keys export and import
+
+Date: 2026-11-22, in a fresh Ubuntu 22.04 VM with nerdctl 2.4.2, the same images.
+
+| Step | Result |
+| --- | --- |
+| `sudo COMPOSE="nerdctl compose" sh export-keys.sh` | One archive in the user's home, mode 600, owned by the user: `.env`, `secrets/`, Caddy's root certificate and key; no temporary file left; a directory others can write to is refused |
+| A new machine | `down -v`, `.env` and `secrets/` deleted |
+| `import-keys.sh ARCHIVE` | `.env` and `secrets/` back (root, 600/700) and the root CA put into the new `caddy_data` volume before the first start; Caddy made a new intermediate from it; a second run refuses; a broken archive changes nothing |
+| Restore from `backup.sh` | The project is there; the old `root.crt` still verifies the vault and the restored root certificate is byte for byte the old one, so the broker needs no new `--ca-file` |
+| Browser trust | The guide's `certutil` lines create an NSS database when there is none and import the root as `C,,`; a browser itself was not run |
+
+Found: `nerdctl compose run` always asks for a terminal and has no `-T`, so `import-keys.sh` uses `compose create` and `compose cp` into the created container instead. Only the root is exported: Caddy's intermediate lasts 7 days and would be expired in a later restore (found by the review). The restore with a regenerated intermediate was run the same day; one weeks later was not.
+
 ## Not tried
 
 - Docker Engine on Ubuntu at runtime, Kubernetes (Helm).

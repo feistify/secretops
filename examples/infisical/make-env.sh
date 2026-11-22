@@ -76,4 +76,9 @@ mv secrets.tmp secrets
 
 umask 022
 printf 'INFISICAL_HOST=%s\nHTTPS_PORT=%s\n' "$host" "$port" > .env
-echo "Wrote .env and secrets/ (root-only). Copy secrets/ to offline storage now."
+echo "Wrote .env and secrets/ (root-only)."
+echo "Keep a copy offline, in your password manager, not only on this machine:"
+echo "  secrets/backend.env   ENCRYPTION_KEY: without it no database backup can be decrypted"
+echo "  secrets/db_password, secrets/redis.conf, .env"
+echo "After the first start, export them with Caddy's CA as one file:"
+echo "  sudo COMPOSE=\"nerdctl compose\" sh export-keys.sh    (or COMPOSE=\"docker compose\")"
