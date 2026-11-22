@@ -17,9 +17,13 @@ from typing import Any
 import yaml
 
 from secretops.human_entry import (
+    CREATED_MESSAGE,
+    EXISTS_MESSAGE,
     PROTOCOL_VERSION,
     REVIEW_OUTCOMES,
     SUBMIT_OUTCOMES,
+    UNKNOWN_MESSAGE,
+    WARNING_PREFIX,
     InvalidValueError,
     validate_entered_value,
 )
@@ -339,13 +343,27 @@ def run_add(echo, *, access: BrokerAccess, review_args: list[str],
     if result == "created":
         echo("")
         echo("Saved and verified.")
+        _echo_warnings(echo, response["message"], CREATED_MESSAGE)
         return EXIT_CREATED
     if result == "exists":
         echo("Secret already exists. Nothing was written by this invocation.")
+        _echo_warnings(echo, response["message"], EXISTS_MESSAGE)
         return EXIT_NOT_WRITTEN
     if result == "unknown":
         for line in unknown_lines(plan_id):
             echo(line)
+        _echo_warnings(echo, response["message"], UNKNOWN_MESSAGE)
         return EXIT_UNKNOWN
     echo(f"Not saved: {safe_text(response['message'])}")
     return EXIT_NOT_WRITTEN
+
+
+def _echo_warnings(echo, message: str, base: str) -> None:
+    """Print the warnings the broker added to a known outcome, such as a
+    missing audit record: only parts after the fixed message that start
+    with WARNING, so a response cannot add lines that look like the
+    client's own."""
+    if message.startswith(base + "; "):
+        for part in message[len(base) + 2 :].split("; "):
+            if part.startswith(WARNING_PREFIX):
+                echo(safe_text(part))

@@ -18,8 +18,15 @@ ADD_VALUE = "synthetic add value ü 42"
 COMPETING_VALUE = "competing-writer-value"
 
 
-def write_fake_infisical_for_add(tmp_path, *, existing=(), set_exit=0, store_other=False):
-    """Stateful fake: `run` exposes stored names, `secrets set` stores (upsert)."""
+def write_fake_infisical_for_add(
+    tmp_path, *, existing=(), set_exit=0, store_other=False, before_set="", before_run=""
+):
+    """Stateful fake: `run` exposes stored names, `secrets set` stores (upsert).
+
+    `before_set` and `before_run` are Python code run when `secrets set` or a
+    `run` (presence check) starts, with `record` loaded, for tests that break
+    the audit log or the plan store at that point. The vault CLI gets no
+    broker environment, so such code must name its paths itself."""
     fake = tmp_path / "infisical"
     record_path = tmp_path / "add-record.json"
     fake.write_text(
@@ -38,14 +45,16 @@ def write_fake_infisical_for_add(tmp_path, *, existing=(), set_exit=0, store_oth
         "args = sys.argv[1:]\n"
         "record = load()\n"
         "if 'run' in args:\n"
-        "    record['calls'].append('run')\n"
+        + "".join(f"    {line}\n" for line in before_run.splitlines())
+        + "    record['calls'].append('run')\n"
         "    save(record)\n"
         "    command = args[args.index('--') + 1:]\n"
         "    child_env = dict(os.environ)\n"
         "    child_env.update(record['stored'])\n"
         "    raise SystemExit(subprocess.run(command, env=child_env).returncode)\n"
         "if 'secrets' in args and 'set' in args:\n"
-        "    record['calls'].append('set')\n"
+        + "".join(f"    {line}\n" for line in before_set.splitlines())
+        + "    record['calls'].append('set')\n"
         "    record['set_args'] = args\n"
         "    try:\n"
         "        stored_now, _ = parse_set_args(args[args.index('set') + 1:])\n"
