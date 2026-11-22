@@ -41,15 +41,18 @@ The executable is resolved through `/usr/local/bin:/usr/bin:/bin`, never the cal
 
 `production_environments` lists additional environment names treated as production, whatever the vault product calls them; `production` and `prod` always are, and the key cannot remove them (an empty list is refused: leave the key out instead). Names are compared without regard to case, so `Prod` or `PRODUCTION` is production too. It applies to every environment a plan touches: the vault environment, copy and diff source and target, and the GitHub environment. An action may run in such an environment only when its `production_allowed` is `true` **and** its `allowed_environments` lists the name; with `production_allowed: false` it is refused even if listed (`production execution denied by policy: ACTION (environment NAME is a production environment by policy)`). Other names need only `allowed_environments`. If you add a name, also list it under the metadata checks that should run there.
 
-A key may appear only once in each mapping. Action names under `actions` are not checked. Anything else stops every command:
+A key may appear only once in each mapping. Action names must be known, so that a misspelled one cannot silently fail to allow, deny or configure anything. The known actions are `vault.read.plan`, `vault.read.check`, `vault.secret.generate`, `vault.secret.rotate`, `vault.secret.import_file`, `vault.secret.copy_many`, `vault.secret.diff_envs`, `vault.secret.add`, `github.env_secret.plan`, `github.env_secret.write`, `github.env_secret.sync_many` and `github.env_secret.verify_many`; `allowed_actions` and `denied_actions` also accept the deny-only names `secret.reveal`, `secret.export_all`, `secret.print_value` and `production.execute_without_approval`. Anything else stops every command:
 
 - an unknown or repeated key, or a value of another type: `FAIL policy file PATH: ...`, naming the key and its location or line, and what to correct
+- an unknown action name: `... entry N of allowed_actions in the top level is not a known action` (or `denied_actions`), or `... unknown action 'NAME' in actions`
 - a missing or unreadable file: `FAIL policy file PATH is missing or not readable by this account`
 - invalid YAML: `FAIL policy file PATH is not valid YAML at line N`
 
 **Breaking change (production names):** `prod` is now a production environment by default. A custom policy that lists `prod` in `allowed_environments` of an action with `production_allowed: false` now refuses it; this holds for every policy, since `production` and `prod` are always production, in any case. Metadata checks need `prod` listed to run there, as the packaged default does.
 
 **Breaking change (approval expiry):** plans approved before the upgrade have no approval time; `execute-plan` refuses them. Plan and approve them again. Plans still `planned` keep working.
+
+**Breaking change (action names):** unknown action names were accepted before and never applied. A custom policy with one now stops every broker command, and `install.sh --upgrade` stops before switching, until it is corrected or removed.
 
 **Breaking change:** unknown keys and wrong value types were accepted before (a quoted `"false"` counted as true, a single name instead of a list was read letter by letter). A custom policy with such a key or value, or a repeated key, now stops every broker command until it is fixed.
 

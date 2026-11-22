@@ -177,11 +177,11 @@ def test_policy_path_env_override(tmp_path, monkeypatch):
     policy_path = tmp_path / "policy.yaml"
     policy_path.write_text(
         "allowed_actions:\n"
-        "  - custom.safe\n"
+        "  - vault.read.check\n"
         "denied_actions:\n"
-        "  - custom.denied\n"
+        "  - secret.reveal\n"
         "actions:\n"
-        "  custom.safe:\n"
+        "  vault.read.check:\n"
         "    requires_approval: false\n"
         "    allowed_environments:\n"
         "      - dev\n"
@@ -192,10 +192,10 @@ def test_policy_path_env_override(tmp_path, monkeypatch):
 
     policy = load_policy()
 
-    assert policy.allowed_actions == ["custom.safe"]
-    assert policy.denied_actions == ["custom.denied"]
-    assert requires_approval("custom.safe", policy) is False
-    assert is_production_allowed("custom.safe", policy) is False
+    assert policy.allowed_actions == ["vault.read.check"]
+    assert policy.denied_actions == ["secret.reveal"]
+    assert requires_approval("vault.read.check", policy) is False
+    assert is_production_allowed("vault.read.check", policy) is False
 
 
 def test_policy_empty_env_override_falls_back_to_package_default(monkeypatch):
@@ -221,6 +221,13 @@ VALID_ACTION = (
 def write_policy(tmp_path, text):
     path = tmp_path / "policy.yaml"
     path.write_text(f"allowed_actions: [{MARKER}]\ndenied_actions: []\n" + text, encoding="utf-8")
+    return path
+
+
+def write_loadable_policy(tmp_path, text):
+    """As write_policy, with a known action, for policies that must load."""
+    path = tmp_path / "policy.yaml"
+    path.write_text("allowed_actions: [vault.read.check]\ndenied_actions: []\n" + text, encoding="utf-8")
     return path
 
 
@@ -338,10 +345,15 @@ def test_missing_or_unreadable_policy_file_is_a_clean_error(tmp_path, kind):
 
 
 def test_empty_action_entry_and_valid_custom_policy_still_load(tmp_path):
-    policy = load_policy(write_policy(tmp_path, VALID_ACTION + "  custom.empty:\n"))
+    path = tmp_path / "policy.yaml"
+    path.write_text(
+        "allowed_actions: [vault.read.check]\ndenied_actions: []\n" + VALID_ACTION + "  vault.secret.generate:\n",
+        encoding="utf-8",
+    )
+    policy = load_policy(path)
 
-    assert policy.allowed_actions == [MARKER]
-    assert get_action_policy("custom.empty", policy).requires_approval is True
+    assert policy.allowed_actions == ["vault.read.check"]
+    assert get_action_policy("vault.secret.generate", policy).requires_approval is True
     assert get_action_policy("vault.read.check", policy).allowed_environments == ["dev"]
 
 
@@ -410,12 +422,12 @@ def test_duplicate_policy_keys_are_refused(tmp_path, text, key, line):
 
 def test_approval_period_defaults_to_24_hours(tmp_path):
     assert load_policy().approval_valid_hours == 24
-    assert load_policy(write_policy(tmp_path, VALID_ACTION)).approval_valid_hours == 24
+    assert load_policy(write_loadable_policy(tmp_path, VALID_ACTION)).approval_valid_hours == 24
 
 
 @pytest.mark.parametrize("value", ["1", "168", "48"])
 def test_approval_period_accepts_whole_hours_in_range(tmp_path, value):
-    policy = load_policy(write_policy(tmp_path, f"approval_valid_hours: {value}\n"))
+    policy = load_policy(write_loadable_policy(tmp_path, f"approval_valid_hours: {value}\n"))
 
     assert policy.approval_valid_hours == int(value)
 
@@ -577,3 +589,98 @@ def test_production_environments_must_be_a_non_empty_list_of_names(tmp_path, val
 
     assert str(raised.value) == f"policy file {path}: {expected}; see docs/CONFIGURATION.md#policy-file"
     assert MARKER not in str(raised.value)
+
+
+# Action names must be known: a misspelled one would never apply.
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        (
+            "allowed_actions: [vault.read.check, vault.secret.rotat]\n",
+            "entry 2 of allowed_actions in the top level is not a known action",
+        ),
+        (
+            "allowed_actions: [vault.read.check]\ndenied_actions: [vault.secret.rotat]\n",
+            "entry 1 of denied_actions in the top level is not a known action",
+        ),
+        (
+            "allowed_actions: [vault.read.check]\nactions:\n  vault.secret.rotat:\n    requires_approval: true\n",
+            "unknown action 'vault.secret.rotat' in actions",
+        ),
+        (
+            "allowed_actions: [vault.read.check]\nactions:\n  secret.reveal:\n",
+            "unknown action 'secret.reveal' in actions",
+        ),
+    ],
+    ids=["allowed", "denied", "actions-key", "deny-only-under-actions"],
+)
+def test_unknown_action_names_are_refused(tmp_path, text, expected):
+    from secretops.policy import ACTION_NAMES_HINT, PolicyError
+
+    path = tmp_path / "policy.yaml"
+    path.write_text(text, encoding="utf-8")
+
+    with pytest.raises(PolicyError) as raised:
+        load_policy(path)
+
+    assert str(raised.value) == (
+        f"policy file {path}: {expected}; {ACTION_NAMES_HINT}; see docs/CONFIGURATION.md#policy-file"
+    )
+
+
+def test_unknown_list_entries_are_named_by_position_only(tmp_path):
+    from secretops.policy import PolicyError
+
+    path = tmp_path / "policy.yaml"
+    path.write_text(f"allowed_actions: [{MARKER}]\n", encoding="utf-8")
+
+    with pytest.raises(PolicyError) as raised:
+        load_policy(path)
+
+    assert MARKER not in str(raised.value)
+
+
+def test_deny_only_names_are_accepted_in_the_lists(tmp_path):
+    from secretops.policy import DENY_ONLY_ACTIONS
+
+    path = tmp_path / "policy.yaml"
+    names = sorted(DENY_ONLY_ACTIONS)
+    path.write_text(f"allowed_actions: [vault.read.check]\ndenied_actions: [{', '.join(names)}]\n", encoding="utf-8")
+
+    assert load_policy(path).denied_actions == names
+
+
+def test_known_actions_are_the_plan_actions_and_the_planning_check():
+    from secretops.plans import GITHUB_ACTIONS, VAULT_ACTIONS
+    from secretops.policy import KNOWN_ACTIONS
+
+    from secretops.recipes import RECIPE_FIELDS
+
+    assert KNOWN_ACTIONS == VAULT_ACTIONS | GITHUB_ACTIONS | {"vault.read.plan"}
+    assert KNOWN_ACTIONS == set(RECIPE_FIELDS) | {"vault.read.plan"}
+
+
+def test_odd_keys_under_actions_are_refused_cleanly(tmp_path):
+    from secretops.policy import PolicyError
+
+    path = tmp_path / "policy.yaml"
+    path.write_text("allowed_actions: [vault.read.check]\nactions:\n  123:\n", encoding="utf-8")
+
+    with pytest.raises(PolicyError, match="unknown action '123' in actions"):
+        load_policy(path)
+
+
+def test_the_default_policy_names_every_known_action():
+    from importlib import resources
+
+    import yaml
+
+    from secretops.policy import DENY_ONLY_ACTIONS, KNOWN_ACTIONS
+
+    data = yaml.safe_load(
+        resources.files("secretops.policies").joinpath("default.yaml").read_text(encoding="utf-8")
+    )
+    assert set(data["allowed_actions"]) == KNOWN_ACTIONS
+    assert set(data["denied_actions"]) == DENY_ONLY_ACTIONS
