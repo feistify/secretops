@@ -32,7 +32,7 @@ About 2.5 hours, of which about one hour was writing and reviewing the script; t
 5. **`curl -s` of the 250 MB nerdctl bundle looked stuck.** `AGENT_START.md` asks to say when a download is large.
 6. **`PLAN_ID` was typed literally.** `INSTALL.md` now says so next to the command.
 7. **Offline keys:** the agent told the human to copy `secrets/` by hand instead of `export-keys.sh`, which also carries Caddy's root key. `AGENT_START.md` names `export-keys.sh`.
-8. **The Infisical CLI is not pinned** (apt installs the newest); the adapter was tested with 0.44.2 and 0.45.14. `INSTALL.md` now names the tested versions and how to install one.
+8. **The Infisical CLI is not pinned** (apt installs the newest); the adapter was tested with 0.44.2 and 0.45.14. `INSTALL.md` now shows how to install and hold a tested version; `LIMITATIONS.md` lists them.
 9. **A CA file in a directory that does not exist** is reported as "has a directory that cannot be read". Fixed in PR #114: "is in a directory that does not exist".
 
 ## Next
