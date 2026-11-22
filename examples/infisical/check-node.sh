@@ -197,9 +197,9 @@ describe() {
     # First line, without leading quotes; cut at the first space, quote or ';'.
     line=$(printf '%s\n' "$1" | head -n 1 | sed -E "s#^[[:space:]\"']*##")
     value=$(printf '%s\n' "$line" | sed -E "s#[[:space:]\"';].*##")
-    # A cut before the @ would leave a user and part of a password.
+    # A cut before the line's last @ would leave a user and part of a password.
     case $line in
-        *@*) case $value in *@*) ;; *) echo "set (not shown: not a plain proxy URL)"; return ;; esac ;;
+        *@*) [ "${value%@*}" = "${line%@*}" ] || { echo "set (not shown: not a plain proxy URL)"; return; } ;;
     esac
     scheme=$(printf '%s\n' "$value" | sed -nE 's#^((https?|socks4a?|socks5h?)://).*#\1#ip')
     rest=${value#"$scheme"}
