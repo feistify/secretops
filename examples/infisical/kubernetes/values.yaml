@@ -31,7 +31,7 @@ infisical:
         - -c
         - >-
           cp /etc/passwd /work/passwd &&
-          echo 'infisical:x:61001:61001::/backend:/usr/sbin/nologin' >> /work/passwd &&
+          echo 'infisical:x:61001:61001::/backend:/sbin/nologin' >> /work/passwd &&
           mkdir -p /work/certs && cp -a /etc/ssl/certs/. /work/certs/
       securityContext:
         runAsUser: 61001
@@ -46,6 +46,8 @@ infisical:
   extraVolumeMounts:
     - {name: uid-files, mountPath: /etc/passwd, subPath: passwd, readOnly: true}
     - {name: uid-files, mountPath: /etc/ssl/certs, subPath: certs}
+  # The chart also mounts its ServiceAccount token (a Role that can only
+  # read Jobs); it has no value to turn that off.
 ingress:
   enabled: false
   nginx: {enabled: false}

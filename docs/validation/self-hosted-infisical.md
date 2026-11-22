@@ -104,10 +104,11 @@ Date: 2026-11-22. A fresh Ubuntu 22.04 VM with k3s v1.37.2+k3s1 (one node, `loca
 | `make-secrets.sh`, `apply-secrets.sh`, `vault.yaml`, `helm upgrade --install` | `secrets/` mode 700, files 600; five Secrets/ConfigMaps; all pods running; `https://HOST:30843/api/status` verifies with `infisical-root.crt` |
 | Passwords out of sight | None in the Deployments or StatefulSets; the Helm values hold only the unused defaults of the disabled subcharts. The agent account has no kubeconfig; Redis answers `NOAUTH` from the host |
 | Process uids | Infisical 61001, Redis 61002, Caddy 61003, Postgres 70 |
+| NetworkPolicy (k3s enforces it) | A pod without Infisical's labels gets `Connection refused` from Redis and Postgres; one with them gets Redis' `NOAUTH` |
 | `bootstrap-broker.py` | Admin, project, identity, token; `OK vault connection works`; no password or token in the output |
 | First check | `secretops add`: `Saved and verified.`; the agent account's `vault.read.check`: `OK secret exists: FIRST_CHECK_KEY` |
-| Backup | `backup.sh`: a 183 KB dump, mode 600 |
-| Restore into an empty cluster | Helm release and namespace deleted (all volumes gone); `apply-secrets.sh`, `vault.yaml`, database restored, Helm release again: the broker's saved configuration and CA still work (`OK vault connection works`), and the agent's check finds `FIRST_CHECK_KEY` |
+| Backup | `backup.sh`: a 183 KB dump, mode 600, compressed inside the pod; no temporary file left |
+| Restore into an empty cluster | Helm release and namespace deleted (all volumes gone); the guide's restore steps, run twice (before and after the review's changes): the broker's saved configuration and CA still work (`OK vault connection works`), and the agent's check finds `FIRST_CHECK_KEY` |
 
 Found:
 
