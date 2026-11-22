@@ -40,7 +40,7 @@ Now — from a pilot on 2026-11-19 and 2026-11-20 (v0.1.11, a containerd-only Ku
     - [ ] Run it again on a clean VM without help: the agent finds `bootstrap-broker.py` itself; time and human steps.
     - [ ] One script for the human's part on a single-machine install (nerdctl, vault, CLI, installer, bootstrap), so nothing long is pasted.
     - [ ] Pin or document the tested Infisical CLI version (adapter tested with 0.44.2 and 0.45.14; apt installs the newest).
-    - [x] `--ca-file` in a directory that does not exist says "cannot be read"; say it does not exist (code, small). Done (branch `ca-file-missing-directory`).
+    - [x] `--ca-file` in a directory that does not exist says "cannot be read"; say it does not exist (code, small). Done (PR #114).
 - [ ] 5. First real-project use (section 7).
 - [ ] 6. The rest of section 9, the CI work in section 10, the launch in section 11, then several vault projects per broker (section 8). A script that starts a local Infisical for a user with no vault is evaluated together with the trial container in section 11; Infisical Cloud stays the documented path until then.
 

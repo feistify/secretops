@@ -427,6 +427,7 @@ def test_ca_file_validation(ca_dir):
         str(good) + "/": "normalised",
         str(ca_dir / "missing.pem"): "cannot be opened",
         str(ca_dir / "no-such-dir" / "ca.pem"): "directory that does not exist",
+        str(good) + "/x/ca.pem": "cannot be read",
         str(real): "regular file",
         str(link): "cannot be opened",
         str(hard): "single link",
