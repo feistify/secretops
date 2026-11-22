@@ -80,3 +80,17 @@ Found: `nerdctl compose run` always asks for a terminal and has no `-T`, so `imp
 - The run on the owner's work machine.
 - A browser that trusts the local CA (the warning was accepted instead).
 - Adopting an existing instance: the old NAS instance was a test and is replaced, not adopted.
+
+## One command for admin, project, identity and token
+
+Date: 2026-11-22. A fresh agent preparing an installation (TODO 4k) found the Infisical web page steps (first admin, project, machine identity, Token Auth, token) to be where a new user gets stuck. `examples/infisical/bootstrap-broker.py` does them through the API, run by the human on the broker. Tried in a fresh Ubuntu 22.04 VM with nerdctl 2.4.2, Infisical v0.167.14, Infisical CLI 0.45.14 and secretops 0.1.14 from the release bundle, through `expect`, with made-up values.
+
+| Step | Result |
+| --- | --- |
+| New vault, configured broker without a token | Asks email and password (hidden, twice); creates admin, organization, project (`dev`, `prod`, `staging`) with the admin as project admin, `secretops-broker` with Token Auth and project membership, a 30-day token; saves URL, project, CA file and token in `broker.env` (600, broker user); deletes the bootstrap identity; `OK vault connection works` |
+| Afterwards, in the database | The admin user is the project's admin; `secretops-broker` is the only machine identity left |
+| Output | Neither the password nor a token appears |
+| Run again | Refuses: the broker already has a project and token |
+| Broker without a token, vault with an admin | Refuses before asking anything; nothing changed |
+
+Found (review): a project made by an identity has only that identity as member, so the admin is added as project admin before the bootstrap identity is deleted. Not tried: a broker on another host than the vault (the NAS case), a failure half-way, logging in to the web page as the new admin.
