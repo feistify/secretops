@@ -195,7 +195,12 @@ echo "== Network"
 # (a password with a space, another variable, a query) is never shown.
 describe() {
     # First line, without leading quotes; cut at the first space, quote or ';'.
-    value=$(printf '%s\n' "$1" | head -n 1 | sed -E "s#^[[:space:]\"']*##; s#[[:space:]\"';].*##")
+    line=$(printf '%s\n' "$1" | head -n 1 | sed -E "s#^[[:space:]\"']*##")
+    value=$(printf '%s\n' "$line" | sed -E "s#[[:space:]\"';].*##")
+    # A cut before the @ would leave a user and part of a password.
+    case $line in
+        *@*) case $value in *@*) ;; *) echo "set (not shown: not a plain proxy URL)"; return ;; esac ;;
+    esac
     scheme=$(printf '%s\n' "$value" | sed -nE 's#^((https?|socks4a?|socks5h?)://).*#\1#ip')
     rest=${value#"$scheme"}
     creds=""
@@ -246,7 +251,8 @@ fi
 if have systemctl; then
     for unit in containerd docker k3s k3s-agent rke2-server rke2-agent; do
         [ "$(systemctl is-active "$unit" 2>/dev/null)" = active ] || continue
-        value=$(systemctl show -p Environment --value "$unit" 2>/dev/null | tr ' ' '\n' | pick)
+        # systemd quotes an entry with spaces: keep a quoted entry together.
+        value=$(systemctl show -p Environment --value "$unit" 2>/dev/null | grep -oE '"[^"]*"|[^ "]+' | pick)
         unreadable=""
         for file in "/etc/systemd/system/$unit.service.env" "/etc/default/$unit" "/etc/sysconfig/$unit"; do
             [ -z "$value" ] && [ -e "$file" ] || continue
