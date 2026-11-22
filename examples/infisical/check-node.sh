@@ -5,12 +5,25 @@
 # human; with sudo it can also look at containerd's namespaces:
 #
 #   sh check-node.sh            # or: sudo sh check-node.sh
+#   sh check-node.sh https://VAULT:30843   # also: does the vault answer, direct or through the proxy
 #
-# Proxy variables are reported as set or not set, never with their values
-# (they can hold a password). Paste the output to whoever helps you; it holds
-# host names, addresses and versions, nothing else.
+# A proxy is shown as scheme://host:port only, never with a user or password.
+# It checks each download site directly and through the proxy, and whether the
+# proxy intercepts TLS. Paste the output to whoever helps you; it holds host
+# names, addresses, versions and certificate issuers, nothing else.
 set -u
 export LC_ALL=C
+
+VAULT_URL=${1:-}
+case $VAULT_URL in
+    *@*|*[[:space:]]*) echo "check-node: give the vault URL without a user or password" >&2; exit 2 ;;
+    ''|https://*) ;;
+    *) echo "usage: sh check-node.sh [https://VAULT:PORT]" >&2; exit 2 ;;
+esac
+if [ $# -gt 1 ]; then
+    echo "usage: sh check-node.sh [https://VAULT:PORT]" >&2
+    exit 2
+fi
 
 say() { printf '%-6s %s\n' "$1" "$2"; }
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -177,22 +190,172 @@ else
 fi
 
 echo "== Network"
-proxies=""
-for var in HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy; do
+# A proxy URL can hold a user and password: only scheme://host:port is printed.
+# Only a recognised scheme and host:port are printed; anything else on the line
+# (a password with a space, another variable, a query) is never shown.
+describe() {
+    # First line, without leading quotes; cut at the first space, quote or ';'.
+    line=$(printf '%s\n' "$1" | head -n 1 | sed -E "s#^[[:space:]\"']*##")
+    value=$(printf '%s\n' "$line" | sed -E "s#[[:space:]\"';].*##")
+    # A cut before the line's last @ would leave a user and part of a password.
+    case $line in
+        *@*) [ "${value%@*}" = "${line%@*}" ] || { echo "set (not shown: not a plain proxy URL)"; return; } ;;
+    esac
+    scheme=$(printf '%s\n' "$value" | sed -nE 's#^((https?|socks4a?|socks5h?)://).*#\1#ip')
+    rest=${value#"$scheme"}
+    creds=""
+    case $rest in
+        *@*) rest=${rest##*@}; creds=" (holds a user and password, not shown)" ;;
+    esac
+    host=$(printf '%s\n' "$rest" | sed -nE 's#^([A-Za-z0-9.-]+(:[0-9]+)?|\[[0-9A-Fa-f:.]+\](:[0-9]+)?)([/?#].*)?$#\1#p')
+    if [ -n "$host" ]; then
+        printf '%s%s%s\n' "$scheme" "$host" "$creds"
+    else
+        echo "set (not shown: not a plain proxy URL)"
+    fi
+}
+# The value of the first https_proxy line read on stdin (also systemd's quoted
+# "HTTPS_PROXY=..." and k3s's CONTAINERD_HTTPS_PROXY).
+pick() {
+    grep -iE "^[[:space:]\"']*(export[[:space:]]+)?(CONTAINERD_)?https_proxy=" | head -n 1 |
+        sed -E "s/^[[:space:]\"']*(export[[:space:]]+)?[A-Za-z_]+=//"
+}
+proxy=${https_proxy:-${HTTPS_PROXY:-${all_proxy:-${ALL_PROXY:-}}}}
+found=""
+for var in https_proxy HTTPS_PROXY http_proxy HTTP_PROXY all_proxy ALL_PROXY; do
     eval "value=\${$var:-}"
-    [ -n "$value" ] && proxies="$proxies $var"
+    [ -n "$value" ] || continue
+    found=yes
+    say INFO "$var: $(describe "$value")"
 done
-say INFO "proxy variables set (values not shown):${proxies:- none}"
-[ "$(id -u)" = 0 ] && say INFO "sudo drops proxy variables; if you use a proxy, run without sudo for this part"
-say INFO "any HTTP code below means the site is reachable; dl.cloudsmith.io serves Infisical's Helm chart"
-if have curl; then
-    for url in https://registry-1.docker.io/v2/ https://dl.cloudsmith.io/ https://artifacts-cli.infisical.com/ https://pypi.org/simple/ https://github.com/; do
-        code=$(curl -s -o /dev/null -m 10 -w '%{http_code}' "$url" 2>/dev/null)
-        case $code in
-            000|'') say WARN "no answer from $url" ;;
-            *) say OK "$url answers (HTTP $code)" ;;
-        esac
+for var in no_proxy NO_PROXY; do
+    eval "value=\${$var:-}"
+    [ -n "$value" ] && say INFO "$var: $value"
+done
+[ -n "$found" ] || say INFO "no proxy variables in this shell"
+if [ -z "$proxy" ] && [ -n "$found" ]; then
+    say INFO "only an http proxy is set; curl, gh and the Infisical CLI use https_proxy or HTTPS_PROXY for https"
+fi
+if [ -r /etc/environment ]; then
+    value=$(pick < /etc/environment)
+    [ -n "$value" ] && say INFO "/etc/environment: HTTPS proxy $(describe "$value")"
+fi
+if have apt-config; then
+    # apt uses its http proxy for https too unless an https one is set.
+    for key in https http; do
+        value=$(apt-config dump 2>/dev/null | grep -i "^Acquire::$key::Proxy \"" | head -n 1 | sed 's/^[^"]*"//; s/";*$//')
+        [ -n "$value" ] && { say INFO "apt: $key proxy $(describe "$value")"; break; }
     done
+fi
+# Images are pulled by the container runtime, not by this shell: it needs its own proxy settings.
+if have systemctl; then
+    for unit in containerd docker k3s k3s-agent rke2-server rke2-agent; do
+        [ "$(systemctl is-active "$unit" 2>/dev/null)" = active ] || continue
+        # systemd quotes an entry with spaces: keep a quoted entry together.
+        value=$(systemctl show -p Environment --value "$unit" 2>/dev/null | grep -oE '"[^"]*"|[^ "]+' | pick)
+        unreadable=""
+        for file in "/etc/systemd/system/$unit.service.env" "/etc/default/$unit" "/etc/sysconfig/$unit"; do
+            [ -z "$value" ] && [ -e "$file" ] || continue
+            if [ -r "$file" ]; then
+                value=$(pick < "$file")
+            else
+                unreadable=$file
+            fi
+        done
+        if [ -n "$value" ]; then
+            say INFO "service $unit: HTTPS proxy $(describe "$value")"
+        elif [ -n "$unreadable" ]; then
+            say INFO "service $unit: proxy unknown, $unreadable needs sudo to read"
+        else
+            say INFO "service $unit: no HTTPS proxy (its downloads and image pulls go direct)"
+        fi
+    done
+fi
+[ "$(id -u)" = 0 ] && say INFO "sudo drops proxy variables; if you use a proxy, run without sudo for the checks below"
+
+# probe URL [curl options]: prints "HTTP_CODE CURL_STATUS".
+probe() {
+    url=$1
+    shift
+    code=$(curl -s -o /dev/null -m 15 -w '%{http_code}' "$@" "$url" 2>/dev/null)
+    printf '%s %s' "${code:-000}" "$?"
+}
+# Any HTTP code means the site answered, even if the connection then broke.
+words() {
+    [ "$1" != 000 ] && { echo "HTTP $1"; return; }
+    case $2 in
+        6) echo "name not resolved" ;;
+        5|7) echo "no connection" ;;
+        28) echo "timeout" ;;
+        35) echo "TLS handshake failed" ;;
+        56) echo "refused or cut off" ;;
+        60) echo "certificate not trusted" ;;
+        *) echo "failed (curl status $2)" ;;
+    esac
+}
+# reach LABEL URL [curl options]: direct, and with this shell's proxy settings when a proxy is set.
+# Sets direct_ok and proxy_ok to yes or no.
+reach() {
+    label=$1
+    url=$2
+    shift 2
+    # A blocked direct route often drops packets: give up on it sooner than on a slow proxy.
+    set -- $(probe "$url" --noproxy '*' --connect-timeout 5 "$@") "$@"
+    direct_ok=no
+    [ "$1" != 000 ] && direct_ok=yes
+    line="direct: $(words "$1" "$2")"
+    shift 2
+    proxy_ok=no
+    if [ -n "$proxy" ]; then
+        set -- $(probe "$url" "$@")
+        case $1 in
+            000) text=$(words "$1" "$2") ;;
+            # These can come from the proxy itself (blocked, login, no route), not from the site.
+            403|407|502|503|504) text="HTTP $1 (may be the proxy's answer, not the site's)" ;;
+            *) text="HTTP $1"; proxy_ok=yes ;;
+        esac
+        line="$line; with the proxy settings: $text"
+    fi
+    if [ $direct_ok = yes ] || [ $proxy_ok = yes ]; then
+        say OK "$label $line"
+    else
+        say WARN "$label $line"
+    fi
+}
+if have curl; then
+    say INFO "an HTTP code means the site answers (through a proxy, 403, 407, 502-504 can be the proxy's own); dl.cloudsmith.io serves Infisical's Helm chart"
+    for url in https://registry-1.docker.io/v2/ https://dl.cloudsmith.io/ https://artifacts-cli.infisical.com/infisical.gpg https://pypi.org/simple/secretops/ https://github.com/ https://api.github.com/; do
+        reach "$url" "$url"
+    done
+    # A proxy that intercepts TLS shows its own issuer instead of the site's.
+    # -k only to read the certificate; nothing is sent but a plain GET.
+    issuer() {
+        curl -sv -k -o /dev/null -m 15 "$@" https://api.github.com/ 2>&1 | sed -n 's/^\*[[:space:]]*issuer: *//p' | tail -n 1
+    }
+    direct_issuer=$(issuer --noproxy '*' --connect-timeout 5)
+    [ -n "$direct_issuer" ] && say INFO "api.github.com certificate issuer, direct: $direct_issuer"
+    if [ -n "$proxy" ]; then
+        proxy_issuer=$(issuer)
+        if [ -z "$proxy_issuer" ]; then
+            say INFO "api.github.com certificate issuer, with the proxy settings: unknown (no answer)"
+        else
+            say INFO "api.github.com certificate issuer, with the proxy settings: $proxy_issuer"
+            if [ -n "$direct_issuer" ] && [ "$direct_issuer" != "$proxy_issuer" ]; then
+                say WARN "the proxy intercepts TLS (another issuer than direct): gh, pip, curl and the Infisical CLI need the company's CA"
+            elif echo "$proxy_issuer" | grep -qiE "Sectigo|DigiCert|USERTrust|COMODO|Let's Encrypt|ISRG|GlobalSign|Google Trust|GTS|Amazon|Microsoft|Entrust|GeoTrust|Baltimore|GoDaddy|Starfield"; then
+                say OK "the proxy does not intercept TLS (a public issuer)"
+            else
+                say WARN "the issuer is not a well-known public CA: the proxy probably intercepts TLS; gh, pip, curl and the Infisical CLI need the company's CA"
+            fi
+        fi
+    fi
+    if [ -n "$VAULT_URL" ]; then
+        # -k: this checks the route only; the broker checks the vault's CA itself.
+        reach "vault $VAULT_URL" "${VAULT_URL%/}/api/status" -k
+        if [ $direct_ok = yes ] && [ -n "$proxy" ] && [ $proxy_ok = no ]; then
+            say WARN "the vault answers directly but not with the proxy settings: put its host in NO_PROXY"
+        fi
+    fi
 else
     say INFO "curl not found; network not checked"
 fi
