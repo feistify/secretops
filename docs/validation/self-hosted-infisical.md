@@ -1,4 +1,4 @@
-# Self-hosted Infisical with containerd: first run
+# Self-hosted Infisical: Ubuntu with containerd, and a Synology NAS
 
 Date: 2026-11-22
 Guide: [VAULT_SELF_HOSTED.md](../VAULT_SELF_HOSTED.md), files in `examples/infisical/`
@@ -43,10 +43,10 @@ Date: 2026-11-22. A Synology NAS with DSM 7.3.2 (x86_64, 20 GB), Container Manag
 
 | Step | Result |
 | --- | --- |
-| `make-env.sh 192.168.0.94 8443` in `/volume1/docker/infisical-secretops` | `.env` and `secrets/`; `secrets/` in Linux mode (no inherited Synology ACL), not readable by other accounts |
+| `sudo sh make-env.sh 192.168.0.94 8443` in `/volume1/docker/infisical-secretops` (root's, mode 755) | `.env` and `secrets/`; `secrets/` in Linux mode (no inherited Synology ACL), not readable by other accounts |
 | `sudo docker compose up -d` | Four containers; Infisical uid 61001, Redis 61002, Postgres 70; no key or password in the output |
 | TLS | The laptop verifies `https://192.168.0.94:8443` with the copied Caddy root |
-| First admin | Created through the bootstrap API; the human finished the setup page (invite-only, email login only) |
+| First admin | Created through the bootstrap API; the human finished the setup page (invite-only, email login only) after accepting the browser's certificate warning; the CA was not imported into the browser |
 | Project, machine identity, token | Through the API; the token was stored root-only on the NAS, shown once in the human's terminal and deleted |
 | Laptop broker | `secretops-configure --ca-file`, then `secretops-configure` with the new URL, project and token: `OK vault connection works` |
 | First check: vault only | `secretops add FIRST_CHECK_KEY --env dev`; the agent account's `vault.read.check`: `OK secret exists: FIRST_CHECK_KEY` |
@@ -64,4 +64,5 @@ Found on the NAS:
 
 - Docker Engine on Ubuntu at runtime, Kubernetes (Helm).
 - The run on the owner's work machine.
+- A browser that trusts the local CA (the warning was accepted instead).
 - Adopting an existing instance: the old NAS instance was a test and is replaced, not adopted.

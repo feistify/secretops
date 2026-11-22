@@ -31,7 +31,8 @@ done
 # Container uids: Infisical 61001, Redis 61002 (compose.yaml), Postgres 70
 # (the image's). A host account with the same uid could read their keys.
 has_account() {
-    # Synology DSM has no getent; its accounts are in /etc/passwd.
+    # Synology DSM has no getent; its local accounts are in /etc/passwd
+    # (directory-service accounts are not checked there).
     if command -v getent >/dev/null; then
         getent passwd "$1" >/dev/null
     else
@@ -39,7 +40,13 @@ has_account() {
     fi
 }
 for uid in 61001 61002 70; do
-    if has_account "$uid"; then
+    status=0
+    has_account "$uid" || status=$?
+    if [ "$status" -gt 2 ] || { [ "$status" = 2 ] && ! command -v getent >/dev/null; }; then
+        echo "could not check whether uid $uid belongs to a host account" >&2
+        exit 1
+    fi
+    if [ "$status" = 0 ]; then
         echo "uid $uid belongs to a host account, which could read the vault's keys or passwords;" >&2
         echo "use another uid in compose.yaml (61001, 61002) or a machine without that account (70)" >&2
         exit 1

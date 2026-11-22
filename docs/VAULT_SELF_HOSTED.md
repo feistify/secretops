@@ -29,7 +29,14 @@ COMPOSE="docker compose"       # Docker, for example a Synology NAS over SSH
 
 ## Set up
 
-1. Copy `examples/infisical/` to the machine, for example to `/opt/infisical` (on a Synology NAS `/volume1/docker/infisical-secretops`), and work in that directory. Its name is the Compose project name: choose one that no other Compose project on the host uses, for example not `infisical` when an older Infisical runs there.
+1. Copy `examples/infisical/` to the machine, for example to `/opt/infisical` (on a Synology NAS `/volume1/docker/infisical-secretops`), and work in that directory. Its name is the Compose project name and also names the data volumes: choose one that no other Compose project on the host uses (`sudo $COMPOSE ls` lists them), for example not `infisical` when an older Infisical runs there, and keep it afterwards. Root runs the files in it, so make it root's and writable by nobody else:
+
+   ```sh
+   # Human
+   sudo chown -R root:root DIR && sudo chmod 755 DIR
+   ```
+
+   On a Synology NAS, the `docker` shared folder lets administrators and Container Manager write by default; do not give other users write access to it.
 2. Write the configuration. `HOST` is the DNS name or IPv4 address that the broker and your browser use for the vault:
 
    ```sh
