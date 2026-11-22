@@ -70,6 +70,8 @@ def ca_file_problem(value: str) -> str | None:
     while True:
         try:
             info = os.lstat(parent)
+        except FileNotFoundError:
+            return f"is in a directory that does not exist ({parent})"
         except OSError:
             return f"has a directory that cannot be read ({parent})"
         if stat.S_ISLNK(info.st_mode):
