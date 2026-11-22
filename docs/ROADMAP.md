@@ -60,6 +60,12 @@ Later, four-eyes approval: with one passkey per person, a plan can require two d
 
 Evidence: a plan is approved or rejected without a shell session; an agent on the same host cannot produce or replay a decision; the audit records which channel was used.
 
+### Agent access expires
+
+Replace the agent's permanent restricted key with an SSH certificate valid for a few hours, so access ends on its own without removing a key. This needs no change to secretops: a CA line with the same forced command and `restrict` in the broker user's `authorized_keys`, and a human who signs each certificate with a CA key the agent cannot reach.
+
+Evidence: an expired certificate is refused; a valid one reaches only the wrapper allowlist; the agent cannot sign one.
+
 ### A second vault proves provider independence
 
 Trial OpenBao operationally, then add a narrow adapter with explicit conditional-write capabilities. Preserve Infisical and document differences in guarantees instead of treating weaker semantics as equivalent. Motivation beyond independence: a team vault without Infisical's cost. Target deployment: a compose file (nerdctl or Docker) and Kubernetes (Helm); backup through integrated-storage snapshots.
