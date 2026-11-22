@@ -211,15 +211,27 @@ def test_real_timeout_kills_gh_and_returns_in_bounded_time(tmp_path):
 # Process level: fake gh driven by target-name behaviour
 
 
-def write_scripted_gh(tmp_path, behaviour):
+def write_scripted_gh(tmp_path, behaviour, *, break_audit=None):
     """gh fake: per target name, 'ok' (exit 0), 'fail' (exit 1), or
-    'break-after' (exit 0, then make gh unlaunchable). Records calls."""
+    'break-after' (exit 0, then make gh unlaunchable). Records calls.
+    With break_audit, the first call replaces that audit file with a
+    directory, so the audit log fails only after a write has started."""
     gh = tmp_path / "gh"
     record = tmp_path / "gh-calls.json"
+    breaker = (
+        f"audit = {str(break_audit)!r}\n"
+        "if not os.path.isdir(audit):\n"
+        "    if os.path.exists(audit):\n"
+        "        os.remove(audit)\n"
+        "    os.mkdir(audit)\n"
+        if break_audit is not None
+        else ""
+    )
     gh.write_text(
         f"#!{sys.executable}\n"
         "import json, os, sys\n"
-        f"record = {str(record)!r}\n"
+        + breaker
+        + f"record = {str(record)!r}\n"
         f"behaviour = {behaviour!r}\n"
         "name = sys.argv[3]\n"
         "stdin = sys.stdin.read()\n"
@@ -265,10 +277,12 @@ MAPPINGS = [
 ]
 
 
-def run_batch(tmp_path, behaviour, *, values=VALUES, mappings=MAPPINGS, audit_path=None):
+def run_batch(
+    tmp_path, behaviour, *, values=VALUES, mappings=MAPPINGS, audit_path=None, break_audit=False
+):
     plan_dir = tmp_path / "plans"
     audit_path = audit_path or tmp_path / "audit.jsonl"
-    record = write_scripted_gh(tmp_path, behaviour)
+    record = write_scripted_gh(tmp_path, behaviour, break_audit=audit_path if break_audit else None)
     write_vault(tmp_path, values)
     plan_path = write_plan(plan_dir, batch_plan("batch", mappings))
     result = run_secretops(
@@ -402,10 +416,7 @@ def test_single_write_unknown_exits_3(tmp_path):
 
 
 def test_audit_failure_after_acknowledged_write_stops_and_reports(tmp_path):
-    audit_dir = tmp_path / "audit-is-a-directory"
-    audit_dir.mkdir()
-
-    result, plan_path, _, calls = run_batch(tmp_path, {}, audit_path=audit_dir)
+    result, plan_path, _, calls = run_batch(tmp_path, {}, break_audit=True)
 
     assert result.returncode == 1
     assert [call["name"] for call in calls] == ["TARGET_ONE"]
@@ -417,10 +428,7 @@ def test_audit_failure_after_acknowledged_write_stops_and_reports(tmp_path):
 
 
 def test_audit_failure_while_recording_unknown_exits_3(tmp_path):
-    audit_dir = tmp_path / "audit-is-a-directory"
-    audit_dir.mkdir()
-
-    result, _, _, _ = run_batch(tmp_path, {"TARGET_ONE": "fail"}, audit_path=audit_dir)
+    result, _, _, _ = run_batch(tmp_path, {"TARGET_ONE": "fail"}, break_audit=True)
 
     assert result.returncode == 3
     assert "Unknown: 1" in result.stdout
@@ -666,15 +674,16 @@ def restore_permissions(tmp_path):
     (tmp_path / "plans").chmod(0o700)
 
 
-def run_batch_with_read_only_plans(tmp_path, behaviour, audit_path=None):
+def run_batch_with_read_only_plans(tmp_path, behaviour, audit_path=None, break_audit=False):
     plan_dir = tmp_path / "plans"
-    write_scripted_gh(tmp_path, behaviour)
+    audit_path = audit_path or tmp_path / "audit.jsonl"
+    write_scripted_gh(tmp_path, behaviour, break_audit=audit_path if break_audit else None)
     write_vault(tmp_path, VALUES)
     plan_path = write_plan(plan_dir, batch_plan("batch", MAPPINGS[:1]))
     make_plan_store_read_only(plan_dir)
     result = run_secretops(
         "execute-plan", "--id", "batch",
-        audit_path=audit_path or tmp_path / "audit.jsonl", plan_dir=plan_dir, path_prefix=tmp_path,
+        audit_path=audit_path, plan_dir=plan_dir, path_prefix=tmp_path,
     )
     return result, plan_path
 
@@ -693,10 +702,7 @@ def test_unsaved_status_after_acknowledged_write_exits_1(tmp_path, restore_permi
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permissions")
 def test_audit_and_status_failing_together_still_report(tmp_path, restore_permissions):
-    audit_dir = tmp_path / "audit-is-a-directory"
-    audit_dir.mkdir()
-
-    result, _ = run_batch_with_read_only_plans(tmp_path, {}, audit_path=audit_dir)
+    result, _ = run_batch_with_read_only_plans(tmp_path, {}, break_audit=True)
 
     assert result.returncode == 1
     assert "Acknowledged: 1" in result.stdout or "OK GitHub writes acknowledged: 1" in result.stdout

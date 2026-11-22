@@ -11,17 +11,22 @@ import json
 import pytest
 
 from secretops.audit import AuditWriteError, write_audit_event
-from test_plan_binding import write_recording_gh, write_stateful_infisical
+from test_github_reliability import MAPPINGS, VALUES, batch_plan, run_batch, write_scripted_gh, write_vault
+from test_plan_binding import provider_calls, write_recording_gh, write_stateful_infisical
 from test_plans import (
     DUMMY_SECRET_NAME,
     DUMMY_SECRET_VALUE,
     GENERATE_RECIPE,
+    TEST_VAULT_DESTINATION,
+    copy_many_plan,
     diff_envs_plan,
     verify_many_plan,
     GITHUB_RECIPE,
     VAULT_RECIPE,
     assert_no_secret_leak,
     generate_plan,
+    github_plan,
+    import_file_plan,
     read_plan,
     rotate_plan,
     run_secretops,
@@ -234,23 +239,124 @@ def test_check_plan_results_that_cannot_be_recorded_leave_the_plan(tmp_path, bro
     assert plan_path.read_bytes() == before
 
 
-def test_a_vault_write_with_a_broken_audit_log_never_claims_nothing_changed(tmp_path, broken_audit):
-    # The decorator must never speak after a provider write: a confirmed
-    # write with an unwritable audit log keeps its own warning.
+def seed_vault(state, env, values):
+    """Put values into the stateful fake vault at the test destination."""
+    destination = TEST_VAULT_DESTINATION
+    key = "|".join([destination["domain"], destination["project_id"], destination["path"], env])
+    state.write_text(json.dumps({key: values}), encoding="utf-8")
+
+
+# No audit, no write: the record made before the first provider write must
+# succeed, or the command stops with the plan unchanged.
+
+
+def vault_case(name, tmp_path):
+    """(plan, environment to seed, values to seed, expected start details)."""
+    if name == "generate":
+        plan = generate_plan("generated", status="approved")
+        return plan, "dev", {}, {"secret_names": ["GENERATED_DUMMY_PASSWORD"]}
+    if name == "rotate":
+        plan = rotate_plan("rotated", status="approved")
+        return plan, "dev", {"GENERATED_DUMMY_PASSWORD": "old-dummy"}, {"secret_names": ["GENERATED_DUMMY_PASSWORD"]}
+    if name == "import_file":
+        source = tmp_path / "import.env"
+        source.write_text("BACKUP_AWS_ACCESS_KEY_ID=import-dummy\n", encoding="utf-8")
+        source.chmod(0o600)
+        plan = import_file_plan("imported", status="approved", source_file=str(source))
+        return plan, "staging", {}, {"secret_names": ["BACKUP_AWS_ACCESS_KEY_ID"]}
+    plan = copy_many_plan("copied", status="approved")
+    sources = [mapping["source"] for mapping in plan["secret_mappings"]]
+    targets = [mapping["target"] for mapping in plan["secret_mappings"]]
+    expected = {"secret_names": targets, "source_env": "dev", "source_secret_names": sources}
+    return plan, "dev", {name: "copy-dummy" for name in sources}, expected
+
+
+@pytest.mark.parametrize("case", ["generate", "rotate", "import_file", "copy_many"])
+def test_no_vault_write_without_an_audit_record(tmp_path, broken_audit, case):
+    plan, seed_env, seed, expected = vault_case(case, tmp_path)
     plan_dir = tmp_path / "plans"
-    plan_path = write_plan(plan_dir, generate_plan("generated", status="approved"))
-    bin_dir, _, state = write_stateful_infisical(tmp_path)
+    plan_path = write_plan(plan_dir, plan)
+    before = plan_path.read_bytes()
+    bin_dir, calls, state = write_stateful_infisical(tmp_path)
+    seed_vault(state, seed_env, seed)
 
     result = run_secretops(
-        "execute-plan", "--id", "generated", audit_path=broken_audit, plan_dir=plan_dir, path_prefix=bin_dir
+        "execute-plan", "--id", plan["plan_id"], audit_path=broken_audit, plan_dir=plan_dir, path_prefix=bin_dir
     )
 
-    assert result.returncode == 1, result.stdout + result.stderr
-    assert "OK generated secret stored: GENERATED_DUMMY_PASSWORD" in result.stdout
-    assert "WARNING" in result.stdout
+    assert_stopped(result)
+    assert plan_path.read_bytes() == before
+    assert not any("set" in call for call in provider_calls(calls))
+    # The same plan passes every check and writes once the audit log works,
+    # so the stop above came from the record before the write.
+    audit_path = tmp_path / "audit.jsonl"
+    again = run_secretops(
+        "execute-plan", "--id", plan["plan_id"], audit_path=audit_path, plan_dir=plan_dir, path_prefix=bin_dir
+    )
+    assert again.returncode == 0, again.stdout + again.stderr
+    assert any("set" in call for call in provider_calls(calls))
+    audit_text = audit_path.read_text(encoding="utf-8")
+    started = json.loads(audit_text.splitlines()[0])
+    assert started["status"] == "started" and started["step"] == "write_started"
+    assert started["plan_id"] == plan["plan_id"]
+    assert started["env"] == (plan.get("target_env") or plan["env"])
+    assert {key: started[key] for key in expected} == expected
+    for value in ["old-dummy", "import-dummy", "copy-dummy"]:
+        assert value not in audit_text
+
+
+def github_case(name, tmp_path):
+    """(plan, vault values, expected start details)."""
+    if name == "write":
+        plan = github_plan("single", status="approved", action="github.env_secret.write")
+        return plan, {DUMMY_SECRET_NAME: "single-dummy"}, {
+            "source_secret_names": [DUMMY_SECRET_NAME],
+            "target_secret_names": [DUMMY_SECRET_NAME],
+        }
+    return batch_plan("batch", MAPPINGS), VALUES, {
+        "source_secret_names": [source for source, _ in MAPPINGS],
+        "target_secret_names": [target for _, target in MAPPINGS],
+    }
+
+
+@pytest.mark.parametrize("case", ["write", "sync_many"])
+def test_no_github_write_without_an_audit_record(tmp_path, broken_audit, case):
+    plan, values, expected = github_case(case, tmp_path)
+    plan_dir = tmp_path / "plans"
+    write_scripted_gh(tmp_path, {})
+    write_vault(tmp_path, values)
+    plan_path = write_plan(plan_dir, plan)
+    before = plan_path.read_bytes()
+
+    result = run_secretops(
+        "execute-plan", "--id", plan["plan_id"], audit_path=broken_audit, plan_dir=plan_dir, path_prefix=tmp_path
+    )
+
+    assert_stopped(result)
+    assert plan_path.read_bytes() == before
+    assert not (tmp_path / "gh-calls.json").exists()
+    audit_path = tmp_path / "audit.jsonl"
+    again = run_secretops(
+        "execute-plan", "--id", plan["plan_id"], audit_path=audit_path, plan_dir=plan_dir, path_prefix=tmp_path
+    )
+    assert again.returncode == 0, again.stdout + again.stderr
+    assert (tmp_path / "gh-calls.json").exists()
+    audit_text = audit_path.read_text(encoding="utf-8")
+    started = json.loads(audit_text.splitlines()[0])
+    assert started["step"] == "write_started" and started["env"] == plan["env"]
+    assert {key: started[key] for key in expected} == expected
+    for value in values.values():
+        assert value not in audit_text + result.stdout + again.stdout
+
+
+def test_the_stop_message_never_follows_a_write(tmp_path):
+    # The audit log breaks during the first GitHub write: the run reports
+    # what it wrote and never claims that nothing was changed.
+    result, plan_path, _, calls = run_batch(tmp_path, {}, break_audit=True)
+
+    assert result.returncode == 1
+    assert [call["name"] for call in calls] == ["TARGET_ONE"]
+    assert "the audit record could not be completed" in result.stdout
     for line in STOPPED_LINES:
         assert line not in result.stdout
-    assert "Traceback" not in result.stdout + result.stderr
     assert read_plan(plan_path)["status"] == "failed"
-    stored = json.loads(state.read_text(encoding="utf-8"))
-    assert any("GENERATED_DUMMY_PASSWORD" in names for names in stored.values())

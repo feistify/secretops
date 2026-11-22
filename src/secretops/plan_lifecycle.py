@@ -178,6 +178,23 @@ def _github_destination(plan_artifact) -> dict[str, str]:
     }
 
 
+def _record_write_start(plan_artifact, *, secret_name: str, env: str, details: dict) -> None:
+    """Record that provider writes are about to start: no audit, no write.
+
+    Raises AuditWriteError before any vault or GitHub write when the audit
+    log cannot be written; the plan is still unchanged then, and the CLI
+    stops with a fixed message. Audit events after a write use _try_audit.
+    """
+    write_audit_event(
+        action=plan_artifact.action,
+        secret_name=secret_name,
+        env=env,
+        status="started",
+        plan_id=plan_artifact.plan_id,
+        details={**details, "step": "write_started"},
+    )
+
+
 def _try_audit(**event) -> bool:
     """Write one audit event; report failure instead of raising it."""
     try:
@@ -221,6 +238,16 @@ def _transfer_to_github(
     write that is not acknowledged. Every mapping ends in exactly one
     category; an audit event is written after each attempt."""
     destination = _github_destination(plan_artifact)
+    _record_write_start(
+        plan_artifact,
+        secret_name=transfers[0][0] if single else "multiple",
+        env=plan_artifact.env,
+        details={
+            **destination,
+            "source_secret_names": [source for source, _ in transfers],
+            "target_secret_names": [target for _, target in transfers],
+        },
+    )
     results: list[dict] = []
     stopped = False
     audit_complete = True
@@ -414,11 +441,25 @@ def _finish_confirmed_write(
 
 
 def _write_secrets_in_order(
-    plan_artifact, console: Console, vault: Vault, writes, *, env: str, label: str
+    plan_artifact,
+    console: Console,
+    vault: Vault,
+    writes,
+    *,
+    env: str,
+    label: str,
+    start_details: dict | None = None,
 ) -> None:
     """Write (name, read_value) pairs in order. Stop at the first write that is
     not confirmed and report which names were written; never roll back or retry."""
     names = [name for name, _ in writes]
+    start_details = start_details or {}
+    _record_write_start(
+        plan_artifact,
+        secret_name=names[0] if len(names) == 1 else "multiple",
+        env=env,
+        details={**start_details, "secret_names": names},
+    )
     for index, (name, read_value) in enumerate(writes):
         try:
             value = read_value()
@@ -1717,6 +1758,12 @@ def _execute_plan(plan_artifact, console: Console) -> None:
                 mark_failed=True,
             )
 
+        _record_write_start(
+            plan_artifact,
+            secret_name=target_secret,
+            env=plan_artifact.env,
+            details={"secret_names": [target_secret]},
+        )
         outcome = vault.write_secret(target_secret, plan_artifact.env, rotated_value)
         if outcome is WriteOutcome.CONFIRMED:
             _finish_confirmed_write(
@@ -1785,6 +1832,10 @@ def _execute_plan(plan_artifact, console: Console) -> None:
             ],
             env=target_env,
             label="copied secret",
+            start_details={
+                "source_env": source_env,
+                "source_secret_names": [mapping["source"] for mapping in mappings],
+            },
         )
 
         _finish_confirmed_write(
@@ -1845,6 +1896,12 @@ def _execute_plan(plan_artifact, console: Console) -> None:
                 mark_failed=True,
             )
 
+        _record_write_start(
+            plan_artifact,
+            secret_name=target_secret,
+            env=plan_artifact.env,
+            details={"secret_names": [target_secret]},
+        )
         outcome = vault.write_secret(target_secret, plan_artifact.env, generated_value)
         if outcome is WriteOutcome.CONFIRMED:
             _finish_confirmed_write(

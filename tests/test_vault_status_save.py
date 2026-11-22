@@ -56,13 +56,27 @@ class FakeVault:
         return self.outcomes.pop(0) if self.outcomes else WriteOutcome.CONFIRMED
 
 
+def break_audit_on_first_write(vault, audit_path):
+    """The audit log fails only once a write has started: the record made
+    before the write succeeds, every later one fails."""
+    real_write = vault.write_secret
+
+    def write_then_break(name, env, value):
+        if not audit_path.is_dir():
+            audit_path.unlink(missing_ok=True)
+            audit_path.mkdir()
+        return real_write(name, env, value)
+
+    vault.write_secret = write_then_break
+
+
 def execute_with_unsaved_status(monkeypatch, tmp_path, plan, vault, *, unwritable_audit=False):
     """Run execute-plan in process. The status save fails, or with
     unwritable_audit the audit log cannot be written and the save works."""
     plan_path = write_plan(tmp_path / "plans", plan)
     audit_path = tmp_path / "audit.jsonl"
     if unwritable_audit:
-        audit_path.mkdir()
+        break_audit_on_first_write(vault, audit_path)
     monkeypatch.setenv("SECRETOPS_PLAN_DIR", str(tmp_path / "plans"))
     monkeypatch.setenv("SECRETOPS_AUDIT_PATH", str(audit_path))
     monkeypatch.setattr(secretops.plan_lifecycle, "get_vault", lambda destination: vault)
@@ -233,8 +247,8 @@ def test_unwritable_audit_after_partial_import_exits_3(monkeypatch, tmp_path):
 
 
 def test_audit_and_status_both_failing_after_confirmed_write_exit_1(monkeypatch, tmp_path):
-    (tmp_path / "audit.jsonl").mkdir()
     vault = FakeVault({})
+    break_audit_on_first_write(vault, tmp_path / "audit.jsonl")
 
     exit_code, lines, plan_path, attempts = execute_with_unsaved_status(
         monkeypatch, tmp_path, generate_plan("generate-both", status="approved"), vault
