@@ -30,8 +30,16 @@ for path in .env secrets secrets.tmp; do
 done
 # Container uids: Infisical 61001, Redis 61002 (compose.yaml), Postgres 70
 # (the image's). A host account with the same uid could read their keys.
+has_account() {
+    # Synology DSM has no getent; its accounts are in /etc/passwd.
+    if command -v getent >/dev/null; then
+        getent passwd "$1" >/dev/null
+    else
+        awk -F: -v uid="$1" '$3 == uid { found = 1 } END { exit !found }' /etc/passwd
+    fi
+}
 for uid in 61001 61002 70; do
-    if getent passwd "$uid" >/dev/null; then
+    if has_account "$uid"; then
         echo "uid $uid belongs to a host account, which could read the vault's keys or passwords;" >&2
         echo "use another uid in compose.yaml (61001, 61002) or a machine without that account (70)" >&2
         exit 1

@@ -12,7 +12,8 @@
 # Never commit .env or secrets/. Image versions are pinned; change them only
 # as described in the guide.
 
-name: infisical
+# No fixed project name: Compose uses this directory's name, so the copy
+# does not collide with another Infisical project on the same host.
 
 services:
   backend:

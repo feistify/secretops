@@ -2,7 +2,7 @@
 
 How to run your own Infisical for secretops on one machine, a server or a NAS, with TLS and a tested backup. The files are in [`examples/infisical/`](../examples/infisical/). Afterwards continue with [PREPARE.md](PREPARE.md) and [INSTALL.md](INSTALL.md).
 
-Tested: Ubuntu 22.04 with containerd and nerdctl 2.4.2, without Docker Engine; Infisical v0.167.14, Infisical CLI 0.45.14, secretops 0.1.13 ([record](validation/self-hosted-infisical.md)). Docker Compose v5.8.0 reads the same file; a full run with Docker, on a Synology NAS and on Kubernetes is not yet recorded. Infisical's own guide: [Docker Compose](https://infisical.com/docs/self-hosting/deployment-options/docker-compose).
+Tested: Ubuntu 22.04 with containerd and nerdctl 2.4.2, without Docker Engine; Infisical v0.167.14, Infisical CLI 0.45.14, secretops 0.1.13; and a Synology NAS with DSM 7.3.2, Docker 24.0.2 and Compose v2.20.1, with secretops 0.1.14 ([record](validation/self-hosted-infisical.md)). Kubernetes is not yet recorded. Infisical's own guide: [Docker Compose](https://infisical.com/docs/self-hosting/deployment-options/docker-compose).
 
 ## What you get
 
@@ -25,10 +25,11 @@ COMPOSE="docker compose"       # Docker, for example a Synology NAS over SSH
 
 - **containerd with nerdctl:** install the nerdctl full bundle (containerd, CNI plugins, BuildKit) from the [nerdctl releases](https://github.com/containerd/nerdctl/releases) and check it against the release's `SHA256SUMS`, then `sudo tar Cxzf /usr/local nerdctl-full-VERSION-linux-amd64.tar.gz` and `sudo systemctl enable --now containerd`. On a Kubernetes node, read the note in [TRIAL.md](TRIAL.md) first: the bundle must not replace the node's containerd. Commands run as root (`sudo`); rootless nerdctl is not tested.
 - **Docker:** Docker Engine with the Compose plugin.
+- **Synology NAS:** install Container Manager in DSM, enable SSH (Control Panel → Terminal & SNMP) and work over SSH as an administrator. DSM uses ports 80, 443, 5000 and 5001; keep 8443 or choose another free port. In a non-interactive SSH command `docker` may not be found, because `/usr/local/bin` is not on the path: use an interactive login or `export PATH=$PATH:/usr/local/bin`.
 
 ## Set up
 
-1. Copy `examples/infisical/` to the machine, for example to `/opt/infisical`, and work in that directory.
+1. Copy `examples/infisical/` to the machine, for example to `/opt/infisical` (on a Synology NAS `/volume1/docker/infisical-secretops`), and work in that directory. Its name is the Compose project name: choose one that no other Compose project on the host uses, for example not `infisical` when an older Infisical runs there.
 2. Write the configuration. `HOST` is the DNS name or IPv4 address that the broker and your browser use for the vault:
 
    ```sh
@@ -80,7 +81,7 @@ sudo mkdir -p /var/backups/infisical
 sudo COMPOSE="$COMPOSE" bash /opt/infisical/backup.sh /var/backups/infisical
 ```
 
-It writes a compressed `pg_dump` (mode 600) and leaves no partial file when it fails. It works from any directory, also from a root cron job, for example `30 2 * * * COMPOSE="nerdctl compose" bash /opt/infisical/backup.sh /var/backups/infisical`. Keep several and copy them off the machine. A dump holds encrypted data and is useless without `secrets/`; keep the two in different places. Redis holds nothing that needs a backup.
+It writes a compressed `pg_dump` (mode 600) and leaves no partial file when it fails. It works from any directory, also from a root cron job, for example `30 2 * * * COMPOSE="nerdctl compose" bash /opt/infisical/backup.sh /var/backups/infisical`. On a Synology NAS use DSM's Task Scheduler (Control Panel → Task Scheduler → Create → Scheduled Task → User-defined script, user root) with `COMPOSE="docker compose" bash /volume1/docker/infisical-secretops/backup.sh DIR`. Keep several and copy them off the machine. A dump holds encrypted data and is useless without `secrets/`; keep the two in different places. Redis holds nothing that needs a backup.
 
 ## Restore
 
@@ -113,4 +114,3 @@ For an Infisical that already runs, for example on a NAS, do not reinstall. In t
 3. Prove a restore on another machine with this directory's `compose.yaml`: run `make-env.sh` there, then replace `ENCRYPTION_KEY` and `AUTH_SECRET` in `secrets/backend.env` with the old ones, in single quotes if they contain `$`, quotes or spaces. Dump the old database with `pg_dump --no-owner --no-privileges`, then follow [Restore](#restore). A dump from Postgres 14 (Infisical's own example) restores into 16; not the other way round.
 4. Put TLS in front of it: Caddy as here, or the NAS's own reverse proxy and certificate, then point the broker at its CA as in [Connect the broker](#connect-the-broker).
 
-A record template for this run is in the [validation record](validation/self-hosted-infisical.md#adopting-an-existing-instance).
