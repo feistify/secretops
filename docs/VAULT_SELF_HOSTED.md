@@ -8,9 +8,10 @@ Tested: Ubuntu 22.04 with containerd and nerdctl 2.4.2, without Docker Engine; I
 
 - Infisical, Postgres and Redis, with pinned image versions.
 - Caddy in front, with TLS from its own local CA, on port 8443 by default (a Synology NAS uses 443 itself).
-- Keys and the database password in `secrets/`, readable by root only. They are read from files inside the containers, never passed as environment or command arguments, so they do not appear in `ps`, in nerdctl's output or in `inspect`.
+- Keys and passwords in `secrets/`, readable by root only. The containers read them from files; they are not in the container configuration or on a command line, so they do not appear in nerdctl's output, `ps` or `inspect`. Redis has a password too.
+- Infisical and Redis run as uids 61001 and 61002. A process is readable through `/proc` by the host account with the same uid, so no host account may have these uids; `make-env.sh` checks this.
 
-Run the vault on a machine of its own or one you trust: anyone with root or container access there can read the keys.
+Run the vault on a machine of its own or one you trust: root and anyone with container access there can read the keys.
 
 ## Choose the container tool
 
@@ -35,7 +36,7 @@ COMPOSE="docker compose"       # Docker, for example a Synology NAS over SSH
    sudo sh make-env.sh HOST            # optional second argument: HTTPS port, default 8443
    ```
 
-   It writes `.env` (host and port only) and `secrets/` (root-only), prints no key, and never overwrites. **Copy `secrets/` to offline storage now**, separately from the database backups: without `ENCRYPTION_KEY` in `secrets/backend.env` no backup can be decrypted.
+   It writes `.env` (host and port only) and `secrets/` (root-only), prints no key, and never overwrites. It stops if a host account has uid 61001 or 61002; then change both numbers in `compose.yaml` first. **Copy `secrets/` to offline storage now**, separately from the database backups: without `ENCRYPTION_KEY` in `secrets/backend.env` no backup can be decrypted.
 3. Start it and wait until the API answers:
 
    ```sh
@@ -77,10 +78,10 @@ The second command ends with `OK vault connection works`. The certificate is tru
 ```sh
 # Human
 sudo mkdir -p /var/backups/infisical
-sudo COMPOSE="$COMPOSE" bash backup.sh /var/backups/infisical
+sudo COMPOSE="$COMPOSE" bash /opt/infisical/backup.sh /var/backups/infisical
 ```
 
-It writes a compressed `pg_dump` (mode 600). Run it on a schedule (for example a root cron job), keep several, and copy them off the machine. A dump holds encrypted data and is useless without `secrets/`; keep the two in different places. Redis holds nothing that needs a backup.
+It writes a compressed `pg_dump` (mode 600) and leaves no partial file when it fails. It works from any directory, also from a root cron job, for example `30 2 * * * COMPOSE="nerdctl compose" bash /opt/infisical/backup.sh /var/backups/infisical`. Keep several and copy them off the machine. A dump holds encrypted data and is useless without `secrets/`; keep the two in different places. Redis holds nothing that needs a backup.
 
 ## Restore
 
@@ -89,14 +90,14 @@ On the same or a new machine, with the same `secrets/` and `.env`:
 ```sh
 # Human
 sudo $COMPOSE up -d db
-sudo $COMPOSE exec -T db pg_isready -U infisical -d infisical     # repeat until "accepting connections"
+sudo $COMPOSE exec -T db pg_isready -h 127.0.0.1 -U infisical -d infisical   # repeat until "accepting connections"
 gunzip -c BACKUP.sql.gz | sudo $COMPOSE exec -T db psql -q -v ON_ERROR_STOP=1 -U infisical -d infisical
 sudo $COMPOSE up -d
 ```
 
 Restore only into an empty database: on a running instance, first `sudo $COMPOSE down -v`, which deletes its data.
 
-Caddy creates a new local CA when its volume is new, so after a restore on a new machine the broker reports `vault not reachable ... TLS failed` until you copy the new `root.crt` (step 4 of [Set up](#set-up)) and run `sudo secretops-configure --ca-file ...` again. The broker's token is stored in the database, so it keeps working.
+Caddy creates a new local CA whenever its volume is new (a new machine, or after `down -v`), so the broker then reports `vault not reachable ... TLS failed` until you copy the new `root.crt` (step 4 of [Set up](#set-up)) and run `sudo secretops-configure --ca-file ...` again. The broker's token is stored in the database, so it keeps working.
 
 Test a restore once before you rely on the backups.
 
@@ -110,7 +111,7 @@ For an Infisical that already runs, for example on a NAS, do not reinstall. In t
 
 1. Find its configuration (the `.env` or the container settings) and copy `ENCRYPTION_KEY` and `AUTH_SECRET` to offline storage.
 2. Back up the database with `pg_dump` from its Postgres container, as `backup.sh` does.
-3. Prove a restore on another machine with this directory's `compose.yaml`: put the keys and the database password into `secrets/` in the format `make-env.sh` writes, then follow [Restore](#restore).
+3. Prove a restore on another machine with this directory's `compose.yaml`: run `make-env.sh` there, then replace `ENCRYPTION_KEY` and `AUTH_SECRET` in `secrets/backend.env` with the old ones, in single quotes if they contain `$`, quotes or spaces. Dump the old database with `pg_dump --no-owner --no-privileges`, then follow [Restore](#restore). A dump from Postgres 14 (Infisical's own example) restores into 16; not the other way round.
 4. Put TLS in front of it: Caddy as here, or the NAS's own reverse proxy and certificate, then point the broker at its CA as in [Connect the broker](#connect-the-broker).
 
 A record template for this run is in the [validation record](validation/self-hosted-infisical.md#adopting-an-existing-instance).

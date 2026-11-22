@@ -8,8 +8,9 @@
 # example vault.example.lan or 192.168.1.20. HTTPS_PORT defaults to 8443.
 #
 # It writes .env (HOST and port only) and secrets/ (mode 700, root-only):
-# backend.env with ENCRYPTION_KEY, AUTH_SECRET and the database URI, and
-# db_password. It prints no key or password and never overwrites.
+# backend.env with ENCRYPTION_KEY, AUTH_SECRET and the database and Redis
+# URIs, db_password, and redis.conf. It prints no key or password and never
+# overwrites.
 set -eu
 
 host=${1:?usage: sudo sh make-env.sh HOST [HTTPS_PORT]}
@@ -21,24 +22,38 @@ case $port in
     ''|*[!0-9]*) echo "invalid HTTPS_PORT" >&2; exit 1 ;;
 esac
 [ "$(id -u)" = 0 ] || { echo "run with sudo, so that secrets/ belongs to root" >&2; exit 1; }
-for path in .env secrets; do
+for path in .env secrets secrets.tmp; do
     if [ -e "$path" ]; then
         echo "$path exists; not overwritten" >&2
         exit 1
     fi
 done
+for uid in 61001 61002; do
+    if getent passwd "$uid" >/dev/null; then
+        echo "uid $uid belongs to a host account, which could read the vault's keys;" >&2
+        echo "change it in compose.yaml first" >&2
+        exit 1
+    fi
+done
 command -v openssl >/dev/null || { echo "openssl is required" >&2; exit 1; }
+
+# Generate first, so that a failure stops before anything is written.
+db_password=$(openssl rand -hex 24)
+redis_password=$(openssl rand -hex 24)
+encryption_key=$(openssl rand -hex 16)
+auth_secret=$(openssl rand -base64 32)
 
 umask 077
 mkdir secrets.tmp
-password=$(openssl rand -hex 24)
-printf '%s\n' "$password" > secrets.tmp/db_password
+printf '%s\n' "$db_password" > secrets.tmp/db_password
+printf 'requirepass %s\n' "$redis_password" > secrets.tmp/redis.conf
 cat > secrets.tmp/backend.env <<ENV
 # Written by make-env.sh. Keep a copy of secrets/ offline: without
 # ENCRYPTION_KEY a database backup cannot be decrypted. Never commit it.
-ENCRYPTION_KEY=$(openssl rand -hex 16)
-AUTH_SECRET=$(openssl rand -base64 32)
-DB_CONNECTION_URI=postgres://infisical:$password@db:5432/infisical
+ENCRYPTION_KEY=$encryption_key
+AUTH_SECRET=$auth_secret
+DB_CONNECTION_URI=postgres://infisical:$db_password@db:5432/infisical
+REDIS_URL=redis://:$redis_password@redis:6379
 ENV
 mv secrets.tmp secrets
 

@@ -3,9 +3,12 @@
 #
 # Runs unchanged with `sudo nerdctl compose` (containerd) or `docker compose`.
 # make-env.sh writes .env (host name and port, no secrets) and secrets/
-# (keys and the database password, root-only). Keys are read from files
-# inside the containers, never passed as environment or command arguments,
-# so they do not appear in `ps`, in nerdctl's output, or in `inspect`.
+# (keys and passwords, root-only). Keys are read from files inside the
+# containers, not passed in the container configuration or command
+# arguments, so they do not appear in nerdctl's output, `ps` or `inspect`.
+# Infisical and Redis run as uids 61001 and 61002, which no host account
+# should have: a container process is readable through /proc by the host
+# account with the same uid.
 # Never commit .env or secrets/. Image versions are pinned; change them only
 # as described in the guide.
 
@@ -20,17 +23,20 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
-    # Starts as root only to read the key file, then runs Infisical as the
-    # image's own non-root user (uid 1001), as the image does by default.
+    # Starts as root only to read the key file, then runs Infisical as
+    # uid 61001 instead of the image's 1001, a uid host accounts often have.
+    # Node needs a passwd entry for its uid; it is added inside the container.
     user: "0:0"
     entrypoint:
       - sh
       - -c
-      - set -a && . /run/secrets/backend.env && set +a && exec setpriv --reuid=1001 --regid=1001 --clear-groups docker-entrypoint.sh ./standalone-entrypoint.sh
+      - >-
+        grep -q '^infisical:' /etc/passwd || echo 'infisical:x:61001:61001::/backend:/usr/sbin/nologin' >> /etc/passwd;
+        set -a && . /run/secrets/backend.env && set +a &&
+        exec setpriv --reuid=61001 --regid=61001 --clear-groups env HOME=/backend docker-entrypoint.sh ./standalone-entrypoint.sh
     environment:
       NODE_ENV: production
       SITE_URL: https://${INFISICAL_HOST}:${HTTPS_PORT}
-      REDIS_URL: redis://redis:6379
     volumes:
       - ./secrets/backend.env:/run/secrets/backend.env:ro
     networks: [infisical]
@@ -46,7 +52,8 @@ services:
       - pg_data:/var/lib/postgresql/data
       - ./secrets/db_password:/run/secrets/db_password:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      # Over TCP: the image's temporary setup server answers only on the socket.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -55,8 +62,15 @@ services:
   redis:
     image: redis:7.4.12-alpine
     restart: unless-stopped
+    # The password is in a root-only file; it is copied for uid 61002 and
+    # never put on the command line, where `ps` would show it.
+    entrypoint:
+      - sh
+      - -c
+      - install -m 600 -o 61002 -g 61002 /run/secrets/redis.conf /tmp/redis.conf && chown -R 61002:61002 /data && exec setpriv --reuid=61002 --regid=61002 --clear-groups redis-server /tmp/redis.conf
     volumes:
       - redis_data:/data
+      - ./secrets/redis.conf:/run/secrets/redis.conf:ro
     networks: [infisical]
 
   caddy:
