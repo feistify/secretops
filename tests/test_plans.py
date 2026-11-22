@@ -4766,7 +4766,9 @@ def test_decision_writes_one_audit_event(tmp_path, command, status):
     expected = {
         "action": "vault.secret.copy_many",
         "secret_name": "multiple",
-        "env": "dev",
+        # A copy's events name the environment it writes to, and its source.
+        "env": "staging",
+        "source_env": "dev",
         "status": "success",
         "secret_value_logged": False,
         "plan_id": "audited-decision",

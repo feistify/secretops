@@ -360,3 +360,60 @@ def test_the_stop_message_never_follows_a_write(tmp_path):
     for line in STOPPED_LINES:
         assert line not in result.stdout
     assert read_plan(plan_path)["status"] == "failed"
+
+
+# Every event of a copy names its target environment.
+
+
+def test_copy_events_name_the_target_environment_in_every_outcome(tmp_path):
+    plan_dir = tmp_path / "plans"
+    audit_path = tmp_path / "audit.jsonl"
+    bin_dir, _, state = write_stateful_infisical(tmp_path)
+    plan = copy_many_plan("copied", status="approved")
+    sources = [mapping["source"] for mapping in plan["secret_mappings"]]
+
+    # Safety-check failure: sources missing.
+    write_plan(plan_dir, plan)
+    run_secretops("preflight-plan", "--id", "copied", audit_path=audit_path, plan_dir=plan_dir, path_prefix=bin_dir)
+    run_secretops("execute-plan", "--id", "copied", audit_path=audit_path, plan_dir=plan_dir, path_prefix=bin_dir)
+    # Success.
+    seed_vault(state, "dev", {name: "copy-dummy" for name in sources})
+    write_plan(plan_dir, copy_many_plan("copied-ok", status="approved"))
+    result = run_secretops(
+        "execute-plan", "--id", "copied-ok", audit_path=audit_path, plan_dir=plan_dir, path_prefix=bin_dir
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    events = [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines()]
+    assert {event["status"] for event in events} >= {"failure", "started", "success"}
+    assert {event["env"] for event in events} == {plan["target_env"]}
+    assert {event["source_env"] for event in events} == {plan["source_env"]}
+
+
+def test_a_copy_refused_for_its_production_source_names_that_source(tmp_path):
+    plan_dir = tmp_path / "plans"
+    audit_path = tmp_path / "audit.jsonl"
+    plan = copy_many_plan("from-production", status="approved")
+    plan["env"] = plan["source_env"] = "production"
+    write_plan(plan_dir, plan)
+
+    result = run_secretops("execute-plan", "--id", "from-production", audit_path=audit_path, plan_dir=plan_dir)
+
+    assert result.returncode == 1
+    [event] = [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines()]
+    assert (event["env"], event["source_env"]) == ("staging", "production")
+
+
+def test_expired_approval_events_say_which_step_wrote_them(tmp_path):
+    plan_dir = tmp_path / "plans"
+    audit_path = tmp_path / "audit.jsonl"
+    plan = rotate_plan("expired", status="approved")
+    plan["approved_at"] = "2020-01-01T00:00:00Z"
+    write_plan(plan_dir, plan)
+
+    run_secretops("preflight-plan", "--id", "expired", audit_path=audit_path, plan_dir=plan_dir)
+    run_secretops("execute-plan", "--id", "expired", audit_path=audit_path, plan_dir=plan_dir)
+
+    events = [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines()]
+    expired = [event for event in events if event.get("failure") == "approval_expired"]
+    assert [event["step"] for event in expired] == ["preflight", "execute"]

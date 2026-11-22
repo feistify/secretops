@@ -223,10 +223,10 @@ Left over from the reviews of the changes above (2026-11-14). Each was confirmed
 - [x] The audit writes made before a provider write (refusals, diff and verify results) ended in a traceback when the audit log could not be written. Done: every command except `secretops add` and its endpoints prints a fixed message (stopped before any vault or GitHub write; nothing was changed) and exits 1.
 - [x] `secretops add` (prepare, review and submit endpoints): an audit write that failed ended in a traceback in the endpoint, and a failed approval audit could leave the plan `approved` with no value written. Done: prepare, review and the approval are recorded before they change anything and refuse without the record; after the vault call the known outcome is returned with a warning for a missing status or audit record.
 - [x] Decided 2026-11-22: no audit, no write. `execute-plan` appends a `write_started` event before its first vault or GitHub write and stops, changing nothing, when it cannot. `secretops add` follows the same rule (item above).
-- [ ] `preflight-plan` and `execute-plan` write the same `approval_expired` audit event; add a field that says which step wrote it.
+- [x] `preflight-plan` and `execute-plan` wrote the same `approval_expired` audit event. Done: `step` is `preflight` or `execute`.
 - [x] Lock files of plans are never removed and accumulate in the plan directory. Decided: kept (removing one while another command opens it would break the lock); OPERATIONS says how a human removes them while no broker command runs.
 - [ ] Action names under `actions` in the policy file are not checked against the known actions, so a misspelled action is accepted and never applies.
-- [ ] `vault.secret.copy_many` records a different `env` in its audit event depending on the outcome; record source and target the same way in every outcome.
+- [x] `vault.secret.copy_many` recorded a different `env` depending on the outcome. Done: every event names the target environment in `env` and the source in `source_env`.
 
 ### 10. CI and maintenance — one small pull request, no behaviour change
 

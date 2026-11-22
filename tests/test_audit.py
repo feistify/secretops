@@ -7,14 +7,14 @@ from pathlib import Path
 import pytest
 
 from secretops.audit import CORE_FIELDS, write_audit_event
-from secretops.plan_lifecycle import GITHUB_RESULT_CATEGORIES, _github_destination
+from secretops.plan_lifecycle import GITHUB_RESULT_CATEGORIES, _audit_source, _github_destination
 
 SOURCE_DIR = Path(__file__).resolve().parent.parent / "src" / "secretops"
 AUDIT_CALLS = {"write_audit_event", "_try_audit", "_record_write_start"}
 # `**name` unpacks inside details whose keys are checked below; `details`
 # is _record_write_start's own parameter and `start_details` the one that
 # _write_secrets_in_order passes on; the callers of both are checked here.
-KNOWN_UNPACKS = {"destination", "categories", "digests", "details", "start_details"}
+KNOWN_UNPACKS = {"destination", "categories", "digests", "details", "start_details", "source"}
 
 
 def test_core_fields_are_the_fields_every_event_carries(tmp_path, monkeypatch):
@@ -103,5 +103,7 @@ def test_no_caller_passes_details_that_replace_a_core_field():
               "target_environment": "e", "status": "not copied"}
     keys |= set(_github_destination(type("Plan", (), {"target": target})()))
     keys |= set(GITHUB_RESULT_CATEGORIES)
+    # `source`: what _audit_source returns for a copy plan.
+    keys |= set(_audit_source(type("Plan", (), {"action": "vault.secret.copy_many", "source_env": "d", "env": "d"})()))
     assert "approval_digest" in keys and "failure" in keys
     assert not keys & CORE_FIELDS

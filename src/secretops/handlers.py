@@ -181,8 +181,10 @@ def plan_vault_secret_copy_many_recipe(recipe, console: Console) -> None:
     write_audit_event(
         action=recipe.action,
         secret_name=_audit_secret_name(recipe),
-        env=recipe.source_env or recipe.env,
+        # As every copy event: the target environment, and the source.
+        env=recipe.target_env or recipe.env,
         status="planned",
+        details={"source_env": recipe.source_env or recipe.env},
     )
 
 
