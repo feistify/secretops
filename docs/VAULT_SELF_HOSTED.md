@@ -44,7 +44,7 @@ COMPOSE="docker compose"       # Docker, for example a Synology NAS over SSH
    sudo sh make-env.sh HOST            # optional second argument: HTTPS port, default 8443
    ```
 
-   It writes `.env` (host and port only) and `secrets/` (root-only), prints no key, and never overwrites. It stops if a host account has uid 61001, 61002 or 70 (Postgres); change the first two in `compose.yaml`, or use another machine. **Copy `secrets/` to offline storage now**, separately from the database backups: without `ENCRYPTION_KEY` in `secrets/backend.env` no backup can be decrypted.
+   It writes `.env` (host and port only) and `secrets/` (root-only), prints no key, and never overwrites. It stops if a host account has uid 61001, 61002 or 70 (Postgres); change the first two in `compose.yaml`, or use another machine. Its last lines say what to keep offline; see [Keep offline](#keep-offline).
 3. Start it and wait until the API answers:
 
    ```sh
@@ -63,7 +63,40 @@ COMPOSE="docker compose"       # Docker, for example a Synology NAS over SSH
    curl -s --cacert infisical-root.crt https://HOST:8443/api/status   # must answer without -k
    ```
 
-5. Create the first admin account at `https://HOST:8443` in your browser. The browser warns about the certificate until you import `infisical-root.crt` into it, or check its fingerprint and accept it. Then continue with [PREPARE.md](PREPARE.md#infisical-steps): project, environments and machine identity.
+5. Trust the certificate in your browser ([below](#trust-the-ca-in-your-browser)), then create the first admin account at `https://HOST:8443`. Choose invite-only sign-up and email login on the setup page. Then continue with [PREPARE.md](PREPARE.md#infisical-steps): project, environments and machine identity.
+6. Export the keys for your password manager: [Keep offline](#keep-offline).
+
+## How TLS works here
+
+Caddy is its own small certificate authority (CA). At the first start it creates a root certificate, valid for ten years, and from it the server certificate for `HOST`, which it renews by itself. The root's private key (`root.key`) stays in Caddy's `caddy_data` volume.
+
+The root certificate (`root.crt`) is public. Two places need it: the broker, through `secretops-configure --ca-file` ([Connect the broker](#connect-the-broker)), and your browser ([below](#trust-the-ca-in-your-browser)). Whoever has `root.key` can make certificates that both trust for any name, so treat it like the vault's keys: it is in the export from [Keep offline](#keep-offline) and nowhere else.
+
+When the volume is new (a new machine, or after `down -v`), Caddy creates a new CA, unless you put the old one back with `import-keys.sh` before the first start ([Restore](#restore)). A team can later use the company's own CA or a public certificate for a real DNS name instead; then the broker and browsers need no extra CA.
+
+## Trust the CA in your browser
+
+Check the fingerprint first, against the one on the vault host:
+
+```sh
+# Human
+openssl x509 -in infisical-root.crt -noout -fingerprint -sha256
+```
+
+- **Chrome or Chromium on Linux** use their own certificate store, not the system's (`update-ca-certificates` does not help them). Import with `certutil` from `libnss3-tools`, then restart the browser:
+
+  ```sh
+  # Human, as the account that runs the browser
+  sudo apt install libnss3-tools
+  [ -d ~/.pki/nssdb ] || { mkdir -p ~/.pki/nssdb && certutil -d sql:$HOME/.pki/nssdb -N --empty-password; }
+  certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n "Infisical local CA" -i infisical-root.crt
+  certutil -d sql:$HOME/.pki/nssdb -L | grep "Infisical local CA"     # C,,
+  ```
+
+  Chromium from the snap store keeps its store in `~/snap/chromium/current/.pki/nssdb`; use that path there.
+
+  Or in Chrome: **Settings → Privacy and security → Security → Manage certificates**, import it as a trusted authority for websites.
+- **Firefox:** **Settings → Privacy & Security → Certificates → View Certificates → Authorities → Import**, and tick "Trust this CA to identify websites".
 
 ## Connect the broker
 
@@ -80,6 +113,26 @@ sudo secretops-configure --ca-file /etc/secretops-ca/infisical-root.pem   # then
 
 It ends with `OK vault connection works`. secretops 0.1.13 and older store only the CA setting here; run `sudo secretops-configure` after it. The certificate is trusted for the vault only; `gh` keeps the system store ([Operations](OPERATIONS.md#vault-behind-a-private-ca)).
 
+## Keep offline
+
+Keep these in your password manager, as attachments of one entry, not only on the vault host:
+
+| What | Why |
+| --- | --- |
+| `secrets/backend.env` | `ENCRYPTION_KEY`: without it no database backup can be decrypted; `AUTH_SECRET` |
+| `secrets/db_password`, `secrets/redis.conf`, `.env` | to start a restored copy with the same settings |
+| Caddy's CA (`root.crt`, `root.key`, intermediate) | so a restored vault keeps its CA and nothing needs to trust a new one |
+| The admin login (email and password) | to reach the web UI |
+
+`export-keys.sh` puts all files from the table into one archive, readable only by you:
+
+```sh
+# Human, in the Infisical directory, after the first start
+sudo COMPOSE="$COMPOSE" sh export-keys.sh        # writes ~/infisical-keys-DATE.tar.gz
+```
+
+Attach the archive to the password manager entry, then delete it from the disk. Export again after you change a key or a password. Not needed offline: the broker's access token (create a new one) and any bootstrap token (delete it once the admin login works).
+
 ## Back up
 
 ```sh
@@ -92,7 +145,14 @@ It writes a compressed `pg_dump` (mode 600) and leaves no partial file when it f
 
 ## Restore
 
-On the same or a new machine, with the same `secrets/` and `.env`:
+On a new machine, copy `examples/infisical/` into a directory with the same name as before (it names the volumes), make it root's as in [Set up](#set-up), and put the keys back from your export before the first start:
+
+```sh
+# Human
+sudo COMPOSE="$COMPOSE" sh import-keys.sh infisical-keys-DATE.tar.gz
+```
+
+It restores `.env`, `secrets/` and Caddy's CA, and refuses a directory that already has `.env` or `secrets/`. Then restore the database:
 
 ```sh
 # Human
@@ -104,7 +164,7 @@ sudo $COMPOSE up -d
 
 Restore only into an empty database: on a running instance, first `sudo $COMPOSE down -v`, which deletes its data.
 
-Caddy creates a new local CA whenever its volume is new (a new machine, or after `down -v`), so the broker then reports `vault not reachable ... TLS failed` until you copy the new `root.crt` (step 4 of [Set up](#set-up)) and run `sudo secretops-configure --ca-file ...` again. The broker's token is stored in the database, so it keeps working.
+With the CA from the export, the broker and browsers keep working unchanged; the broker's token is stored in the database. Without it, Caddy creates a new CA and the broker reports `vault not reachable ... TLS failed` until you copy the new `root.crt` (step 4 of [Set up](#set-up)) and run `sudo secretops-configure --ca-file ...` again.
 
 Test a restore once before you rely on the backups.
 
