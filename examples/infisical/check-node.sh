@@ -103,11 +103,6 @@ if have kubectl; then
     if kubectl get --raw /version >/dev/null 2>&1; then
         say OK "cluster reachable: $(kubectl version 2>/dev/null | grep -i '^server' | head -n 1)"
         say INFO "context: $(kubectl config current-context 2>/dev/null)"
-        kubectl get nodes --no-headers -o custom-columns='N:.metadata.name,V:.status.nodeInfo.kubeletVersion,R:.status.nodeInfo.containerRuntimeVersion,IP:.status.addresses[0].address' 2>/dev/null |
-            awk '{ printf "INFO   node %s, kubelet %s, runtime %s, address %s\n", $1, $2, $3, $4 }'
-        ports=$(kubectl get svc -A --no-headers -o custom-columns='T:.spec.type,P:.spec.ports[*].port,NP:.spec.ports[*].nodePort,N:.metadata.namespace,S:.metadata.name' 2>/dev/null |
-            awk '$1 == "LoadBalancer" || $1 == "NodePort" { printf "%s/%s ports %s nodePorts %s; ", $4, $5, $2, $3 }')
-        [ -n "$ports" ] && say INFO "services on node ports (not seen by ss): $ports"
         # Tell "none" from "not allowed to look".
         # 0 with output: found; 1: not found or another error; 2: forbidden.
         look() {
@@ -116,9 +111,27 @@ if have kubectl; then
             case $out in *Forbidden*|*forbidden*) return 2 ;; esac
             return 1
         }
+        if nodes=$(look get nodes --no-headers -o custom-columns='N:.metadata.name,V:.status.nodeInfo.kubeletVersion,R:.status.nodeInfo.containerRuntimeVersion,IP:.status.addresses[0].address,K:.spec.taints[*].key,E:.spec.taints[*].effect'); then
+            echo "$nodes" |
+                awk '{ printf "INFO   node %s, kubelet %s, runtime %s, address %s\n", $1, $2, $3, $4 }'
+            # Taints: the vault's pods have no tolerations, so NoSchedule or NoExecute keeps them off a node.
+            echo "$nodes" | awk '{ $2 = $5; $3 = $6 } $2 == "<none>" { printf "OK     node %s: no taints\n", $1; next }
+                 { hard = 0; n = split($3, e, ","); for (i = 1; i <= n; i++) if (e[i] == "NoSchedule" || e[i] == "NoExecute") hard = 1 }
+                 hard { printf "WARN   node %s taints %s (%s): the vault pods have no tolerations and will not run there\n", $1, $2, $3; next }
+                 { printf "INFO   node %s taints %s (%s): the scheduler prefers other nodes, the pods can still run here\n", $1, $2, $3 }'
+        else
+            say INFO "nodes: not allowed to list (versions and taints unknown)"
+        fi
+        ports=$(kubectl get svc -A --no-headers -o custom-columns='T:.spec.type,P:.spec.ports[*].port,NP:.spec.ports[*].nodePort,N:.metadata.namespace,S:.metadata.name' 2>/dev/null |
+            awk '$1 == "LoadBalancer" || $1 == "NodePort" { printf "%s/%s ports %s nodePorts %s; ", $4, $5, $2, $3 }')
+        [ -n "$ports" ] && say INFO "services on node ports (not seen by ss): $ports"
         if sc=$(look get storageclass --no-headers); then
             if [ -n "$sc" ] && ! echo "$sc" | grep -q '^No resources'; then
-                echo "$sc" | awk '{ d = ($2 == "(default)") ? " (default)" : ""; printf "INFO   storage class %s%s\n", $1, d }'
+                # With "(default)" the provisioner is the third column.
+                echo "$sc" | awk '{ d = ($2 == "(default)"); p = d ? $3 : $2
+                    printf "INFO   storage class %s%s, provisioner %s\n", $1, d ? " (default)" : "", p
+                    if (p ~ /local-path|no-provisioner|openebs\.io\/local|local\.csi\.openebs|zfs\.csi\.openebs|topolvm|hostpath/)
+                        printf "INFO   storage class %s is node-local: a volume stays on the node that created it; if that node is lost, restore from a backup\n", $1 }'
                 echo "$sc" | grep -q '(default)' || say WARN "no default storage class: Postgres and Redis need one, or name it in the manifests"
             else
                 say WARN "no storage class: Postgres and Redis need persistent volumes"
@@ -127,7 +140,7 @@ if have kubectl; then
             say INFO "storage classes: not allowed to list"
         fi
         if ic=$(look get ingressclass --no-headers); then
-            ic=$(echo "$ic" | grep -v '^No resources' | awk '{ printf "%s ", $1 }')
+            ic=$(echo "$ic" | grep -v '^No resources' | awk 'NF { printf "%s ", $1 }')
             say INFO "ingress classes: ${ic:-none}"
         else
             say INFO "ingress classes: not allowed to list"
