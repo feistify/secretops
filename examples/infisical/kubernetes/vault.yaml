@@ -167,6 +167,9 @@ spec:
 ---
 # Only Infisical reaches Postgres and Redis, and only Caddy reaches
 # Infisical. Takes effect where the network plugin enforces NetworkPolicy.
+# `release: infisical` is the Helm release name used in the guide. The
+# kubelet's readiness probe is node traffic, which most plugins let in; if
+# Infisical stays not ready under a strict plugin, allow the node's address.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

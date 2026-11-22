@@ -17,11 +17,11 @@ done
 for name in infisical-secrets infisical-db infisical-redis infisical-ca infisical-settings; do
     if kubectl -n "$ns" get secret "$name" >/dev/null 2>&1 || kubectl -n "$ns" get configmap "$name" >/dev/null 2>&1; then
         echo "$name exists in namespace $ns; not replaced." >&2
-        echo "A fresh install that stopped half-way: kubectl delete namespace $ns, then run this again." >&2
+        echo "A fresh install that stopped half-way: kubectl delete namespace $ns, then run this again (this deletes the vault's data volumes; never on a running vault)." >&2
         exit 1
     fi
 done
-trap 'echo "Stopped half-way. For a fresh install: kubectl delete namespace $ns, then run this again." >&2' EXIT
+trap 'echo "Stopped half-way. For a fresh install: kubectl delete namespace $ns, then run this again (this deletes the vault data volumes; never on a running vault)." >&2' EXIT
 kubectl get namespace "$ns" >/dev/null 2>&1 || kubectl create namespace "$ns"
 kubectl -n "$ns" create secret generic infisical-secrets --from-env-file=secrets/backend.env
 kubectl -n "$ns" create secret generic infisical-db --from-file=password=secrets/db_password

@@ -20,7 +20,7 @@ case $host in
     ''|*[!A-Za-z0-9.-]*) echo "invalid HOST: use a DNS name or an IPv4 address" >&2; exit 1 ;;
 esac
 case $port in
-    ''|*[!0-9]*) echo "invalid NODE_PORT" >&2; exit 1 ;;
+    ''|*[!0-9]*|??????*) echo "invalid NODE_PORT" >&2; exit 1 ;;
 esac
 if [ "$port" -lt 30000 ] || [ "$port" -gt 32767 ]; then
     echo "NODE_PORT must be in 30000-32767 (Kubernetes' NodePort range)" >&2; exit 1
