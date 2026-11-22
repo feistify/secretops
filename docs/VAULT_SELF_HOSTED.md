@@ -116,7 +116,7 @@ sudo install -m 644 infisical-root.crt /etc/secretops-ca/infisical-root.pem
 sudo /opt/secretops/venv/bin/python -I bootstrap-broker.py --ca-file /etc/secretops-ca/infisical-root.pem
 ```
 
-It asks for the first admin's email and password (hidden) and nothing else. Through Infisical's API it creates the admin and the organization `secretops`, the project `secretops` (`dev`, `staging`, `prod`), the machine identity `secretops-broker` (Token Auth, project member, no organization role) and a 30-day access token, saves them in the broker's configuration and ends with `OK vault connection works`. The token is not displayed; renew it before it expires with `sudo secretops-configure --token-only`. It deletes the full-rights identity that Infisical's bootstrap creates. Keep the admin password in your password manager. It refuses a vault that already has an admin, and a broker that already has a token. Needs secretops 0.1.14 or newer. An agent can copy the file but must not run it: it needs the admin password.
+It asks only for the first admin's email and password (hidden), creates the admin, the project `secretops` (`dev`, `staging`, `prod`), the machine identity `secretops-broker` with Token Auth and a 30-day token, saves them in the broker without displaying the token, and ends with `OK vault connection works`. Renew the token with `sudo secretops-configure --token-only`. It refuses a vault that already has an admin and a broker that already has a token; details are in the script.
 
 **Vault with an admin already:** create the project, identity and token in the web page ([PREPARE.md](PREPARE.md#infisical-steps)), then:
 

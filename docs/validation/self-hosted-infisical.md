@@ -87,9 +87,10 @@ Date: 2026-11-22. A fresh agent preparing an installation (TODO 4k) found the In
 
 | Step | Result |
 | --- | --- |
-| New vault, configured broker without a token | Asks email and password (hidden, twice); creates admin, organization, project (`dev`, `prod`, `staging`), `secretops-broker` with Token Auth and project membership, a 30-day token; saves URL, project, CA file and token in `broker.env` (600, broker user); deletes the bootstrap identity; `OK vault connection works` |
+| New vault, configured broker without a token | Asks email and password (hidden, twice); creates admin, organization, project (`dev`, `prod`, `staging`) with the admin as project admin, `secretops-broker` with Token Auth and project membership, a 30-day token; saves URL, project, CA file and token in `broker.env` (600, broker user); deletes the bootstrap identity; `OK vault connection works` |
+| Afterwards, in the database | The admin user is the project's admin; `secretops-broker` is the only machine identity left |
 | Output | Neither the password nor a token appears |
 | Run again | Refuses: the broker already has a project and token |
 | Broker without a token, vault with an admin | Refuses before asking anything; nothing changed |
 
-Not tried: a broker on another host than the vault (the NAS case), a failure half-way (it says where it stopped and points to the web page).
+Found (review): a project made by an identity has only that identity as member, so the admin is added as project admin before the bootstrap identity is deleted. Not tried: a broker on another host than the vault (the NAS case), a failure half-way, logging in to the web page as the new admin.
