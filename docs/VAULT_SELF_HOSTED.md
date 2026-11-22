@@ -15,7 +15,7 @@ Run the vault on a machine of its own or one you trust: root and anyone with con
 
 ## Choose the container tool
 
-Not sure what the host has? [`check-node.sh`](../examples/infisical/check-node.sh) is read-only: it reports the container tools, a Kubernetes cluster (node taints, storage and whether it is node-local, ingress, your rights), the ports, the uids the containers need, proxy settings (set or not) and which download sites answer. Run `sh check-node.sh`, and again with `sudo` for containerd's namespaces, and keep or share its output; it holds no secret.
+Not sure what the host has? [`check-node.sh`](../examples/infisical/check-node.sh) is read-only: it reports the container tools, a Kubernetes cluster (node taints, storage and whether it is node-local, ingress, your rights), the ports, the uids the containers need, the proxy (host and port only, also the one containerd or k3s uses), which download sites answer directly or only through the proxy, and whether the proxy intercepts TLS. Run `sh check-node.sh`, and again with `sudo` for containerd's namespaces; once the vault runs, `sh check-node.sh https://VAULT:PORT` also shows whether the vault needs to be in `NO_PROXY`. Keep or share its output; it holds no secret.
 
 Every command below uses `$COMPOSE`. Set it once in the shell you work in:
 
