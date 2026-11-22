@@ -5,7 +5,7 @@ Tested client and broker application: commit `85b7f7d`
 Broker wheel SHA-256: `4aee06d6e10fb517f6655413cb7b9f6daecd43848ab1bd808fa628f90dd01df9`
 Installed Infisical CLI: `0.43.99`, confirmed by a human version-only command as the broker user during this validation.
 
-Manual validation scope: human secret entry through **local sudo only**. Human entry over SSH (direct or followed by remote sudo) and use inside **tmux have not been tested**. Existing agent SSH metadata checks do not establish either of those capabilities.
+Manual validation scope (2026-10-18): human secret entry through **local sudo only**, outside tmux. Existing agent SSH metadata checks do not establish SSH or tmux entry. Later SSH and tmux observations are in the [terminal matrix](#terminal-matrix); none shows that entry inside tmux is safe.
 
 ## Setup
 
@@ -23,6 +23,7 @@ The client used a temporary metadata-only configuration selecting local sudo to 
 | Git Bash (mintty) on Windows, SSH to the broker host, then a container's `exec` (pilot, 2026-11-20, v0.1.11) | Answered the query (`2004;2`) | `secretops add` worked |
 | PuTTY and Windows Terminal, same path (pilot) | No answer to the query | `add` refused, as intended |
 | tmux, inside PuTTY (pilot) | tmux answered the query itself | No support claim: the answer does not come from the outer terminal; whether pastes are marked was not checked |
+| tmux 3.2a inside a local VTE (GNOME) terminal (Ubuntu 22.04, local sudo broker, v0.1.14, 2026-11-22) | `TMUX` set; no answer to the query within two seconds | `add` refused before the value prompt; nothing was sent |
 
 The environment reports VTE `0.68.0`; it does not establish the terminal application's name or version. The result applies to the actual tested session, not all VTE terminals or versions.
 
