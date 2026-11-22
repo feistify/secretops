@@ -47,13 +47,22 @@ Evidence: the same action in the same environment is allowed, sent to approval, 
 
 ### Approval does not need the broker's terminal
 
-Let the human review and decide a plan outside the shell: first a page served on the broker host, later a notification on another device. The decision must be authenticated by something the agent cannot reach, show exactly what is approved, and be bound to the plan content like a terminal approval. The terminal path stays.
+Let the human review and decide a plan outside the shell, in stages; each stage is useful on its own, and the terminal path stays:
+
+1. **Notification only.** The broker tells the human that a plan waits; the decision stays in the terminal.
+2. **A page with a passkey.** A page served on the broker host lists waiting plans with the full review; the human decides with a passkey (WebAuthn with user verification), also from a phone over a private network. An agent on the same host cannot use the human's passkey.
+3. **GitHub as a channel** (experiment). The plan becomes a deployment that waits for a required reviewer, so the GitHub mobile app notifies and records the decision; the broker accepts it only when it is bound to the plan digest. This ties approval to GitHub.
+4. **Bank-style app.** A key on the human's device signs the plan digest. Only if the stages above fall short.
+
+In every stage the decision is authenticated by something the agent cannot reach, shows exactly what is approved, and is bound to the plan content like a terminal approval; notifications carry no secret names. Push approval invites approving without reading, so fewer and clearer requests (name patterns, grants) come first.
+
+Later, four-eyes approval: with one passkey per person, a plan can require two different approvers, and the audit names both.
 
 Evidence: a plan is approved or rejected without a shell session; an agent on the same host cannot produce or replay a decision; the audit records which channel was used.
 
 ### A second vault proves provider independence
 
-Trial OpenBao operationally, then add a narrow adapter with explicit conditional-write capabilities. Preserve Infisical and document differences in guarantees instead of treating weaker semantics as equivalent.
+Trial OpenBao operationally, then add a narrow adapter with explicit conditional-write capabilities. Preserve Infisical and document differences in guarantees instead of treating weaker semantics as equivalent. Motivation beyond independence: a team vault without Infisical's cost. Target deployment: a compose file (nerdctl or Docker) and Kubernetes (Helm); backup through integrated-storage snapshots.
 
 Evidence: the relevant lifecycle and security contract scenarios pass against both backends, with supported capabilities and limitations documented. Selection of the backend does not require changing workflow orchestration.
 

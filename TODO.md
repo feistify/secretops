@@ -26,6 +26,9 @@ Now — from a pilot on 2026-11-19 and 2026-11-20 (v0.1.11, a containerd-only Ku
   - [ ] 4h. Consumer template: the text is done (complete `reject-plan` command, the broker generates the value, `pending-plans` for a lost plan ID). Left: try a rejection, an expired approval and an interrupted session with a fresh agent.
   - [ ] 4i. Adding the template to a project that already has an `AGENTS.md`: the text is done (`docs/AGENT_USAGE.md`, "Adding the section to a project"). Left: include a project with an existing `AGENTS.md` in the next onboarding check.
   - [ ] 4j. The working-connection message says a folder that does not exist may look like an empty folder; with Infisical CLI 0.44.2 it was reported as not found. Check against another version, then correct the message.
+- [ ] 4k. Before the first real use, lower the installation effort. Installation effort is what kept a first use at work (Jenkins credentials) from starting.
+  - [ ] Self-hosted Infisical guide: one compose file (Infisical, Postgres, Redis) on one machine, for a NAS or a work server, run with `nerdctl compose` on containerd where Docker Engine is not allowed, or with Docker Compose where it is. Backup of the database and, stored separately and offline, `ENCRYPTION_KEY` and `AUTH_SECRET`, without which a database backup cannot be restored; one restore test. A short Kubernetes (Helm) variant for an existing cluster. Check every name and step against Infisical's documentation.
+  - [ ] Approval notification, stage 1 of "Approval does not need the broker's terminal" in the ROADMAP: when a plan starts waiting for the human, the broker sends a notification that a plan waits, with at most the plan ID: no secret names, no plan content. The decision stays in the terminal. One channel first (for example ntfy, Pushover or email), its credential held by the broker only; a failed notification never blocks planning.
 - [ ] 5. First real-project use (section 7).
 - [ ] 6. The rest of section 9, the CI work in section 10, the launch in section 11, then several vault projects per broker (section 8). A script that starts a local Infisical for a user with no vault is evaluated together with the trial container in section 11; Infisical Cloud stays the documented path until then.
 
@@ -262,7 +265,7 @@ The topic is current and larger vendors now ship runtime credential proxies for 
 
 ## P2 — Deferred until the daily-use workflow is proven
 
-- [ ] OpenBao operational trial, then a narrow adapter and conditional-write contract (create-only/versioned replace). First confirm actual install, authentication, restart/unseal, backup, and restore behavior. Preserve the Infisical adapter and document its non-atomic existence-check/write limitation.
+- [ ] OpenBao operational trial, then a narrow adapter and conditional-write contract (create-only/versioned replace). First confirm actual install, authentication, restart/unseal, backup, and restore behavior. Preserve the Infisical adapter and document its non-atomic existence-check/write limitation. Motivation beyond independence: a team vault without Infisical's cost. Target deployment: a compose file (nerdctl or Docker) and Kubernetes (Helm); backup through integrated-storage snapshots.
 - [ ] Stronger policy rules for action, environment, target, approval, name patterns, and production. Use the reviewed `docs/design/name-pattern-policy.md` when needed; production enablement requires deliberate controls and tests. Include the strict policy-file validation from section 9.
 - [ ] Refactor large CLI/lifecycle code into handlers/services where changes justify it, preserving output, plan state, audit, and adapter contracts.
 - [ ] Delete a secret through an approved plan, in the vault and at the GitHub target. Cleaning up after a test or retiring a secret today needs the two web UIs. Deletion is destructive: always approved by the human, names listed explicitly, denied in production by default, and an unknown outcome is reported like an unknown write.
@@ -280,7 +283,7 @@ The topic is current and larger vendors now ship runtime credential proxies for 
 - [ ] Provider-specific credential creation followed by vault storage: AWS, Scaleway, Cloudflare, Stripe.
 - [ ] Create, renew, and rotate website TLS certificates through approved broker workflows. Define CA/ACME integration, domain validation, broker-private key storage, certificate deployment, expiry monitoring, and verification before retiring the previous certificate/key.
 - [ ] Generate and rotate SSH key pairs through approved broker workflows. Keep private keys outside the agent's view; explicitly authorize public-key distribution to target hosts/services, verify replacement access before removing old authorized keys, and define recovery for partial rotation.
-- [ ] Jenkins target adapter.
+- [ ] Jenkins: first check whether Jenkins can read from the vault itself (Infisical's Jenkins plugin), so secretops only governs writes to the vault. Build a target adapter only if that is not enough.
 - [ ] Automatic combined workflows with explicit authorization boundaries.
 - [ ] Secret versioning/rollback and rotation propagation tracking.
 
