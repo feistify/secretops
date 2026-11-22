@@ -72,7 +72,7 @@ What this setup enforces:
 - the agent cannot edit plan artifacts, the audit log, or the policy, because the broker user owns them
 - secret values never cross into the agent domain
 
-The broker can be a separate machine (NAS, VPS, home server) or a second Unix user on the same machine, reached through `ssh secretops-broker@localhost`. The boundary is the Unix user, not the machine. Which guarantees hold where is summarised in [Deployment levels](#deployment-levels).
+The broker can be a separate machine (NAS, VPS, home server) or a second Unix user on the same machine, reached through `ssh secretops-broker@localhost`. The boundary is the Unix user, not the machine; whoever can act as that user crosses it (see [Residual risks and limits](#residual-risks-and-limits)). Which guarantees hold where is summarised in [Deployment levels](#deployment-levels).
 
 ## Deployment levels
 
@@ -137,6 +137,8 @@ How much secretops protects depends on how you run it. From weakest to strongest
 - **The agent's own host.** Secrets already sitting in the agent workspace, such as `.env` files or tokens, are readable by the agent. secretops helps move them into the vault (`vault.secret.import_file`) but cannot protect them before that.
 - **Human review.** Approval is only as good as the review behind it. Read `show-plan` before `approve-plan`.
 - **Broker host compromise.** The broker domain holds the vault machine identity. Scope that identity to the projects and environments the broker actually needs.
+- **Who can act as the broker.** Anyone who can act as the broker user can approve plans, run any operation, change the policy and read the vault machine identity: the holder of its unrestricted human key, root or sudo on the broker host, root on the machine it runs on (the hypervisor of a broker VM, the Kubernetes node of a VM or pod), and on Kubernetes anyone who can exec into the broker pod. A VM separates the broker from other VMs, not from whoever administers its host: a VM on a cluster node is as trusted as the node. Choose the broker host by who has these rights there, and keep that group small and known.
+- **Changes outside secretops.** Approval covers only changes made through secretops. Anyone who can write to the vault directly can change secrets without a plan, and secretops does not record it: the vault's users and machine identities with write access (the broker's own included), its administrators, and whoever holds both its encryption key and its database, such as the administrators of a shared cluster that runs the vault. Use the vault's own audit log for those.
 - **Values in broker memory.** During execution, a value passes through the secretops process on the broker. This is inherent to moving a value from vault to target.
 - **Wrapper parsing.** The forced-command wrapper splits arguments on whitespace and does not support quoting. secretops subcommands, plan ids, and recipe names never need spaces.
 - **Approval digest is not a signature.** It detects a change to a plan's content as long as the stored digest survives. Someone who can rewrite both the plan and its digest is stopped only by plan store ownership (layer 3).
