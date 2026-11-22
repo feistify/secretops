@@ -138,7 +138,7 @@ This needs no GitHub. Use a made-up name and value in `dev`, an environment the 
    YAML
    secretops-local write-recipe first-check.yaml < first-check.yaml
    secretops-local plan --file first-check.yaml --save      # prints plan_id
-   secretops-local execute-plan --id PLAN_ID
+   secretops-local execute-plan --id PLAN_ID                # the printed plan_id, not the word PLAN_ID
    # OK secret exists: FIRST_CHECK_KEY
    ```
 

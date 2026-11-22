@@ -26,15 +26,16 @@ command -v secretops-local && secretops-local help
 
 The installation guide is [INSTALL.md](INSTALL.md). Every command block there says who runs it. You may:
 
-- Check prerequisites and report what is missing: Ubuntu 24.04 or Debian 12, Python 3.11 or newer, `python3-venv`, `openssh-server`, `curl`, a root-owned `infisical` (for example `/usr/bin/infisical`) and, for GitHub sync, a root-owned `gh`.
+- Ask whether the human already has a vault and whether it must run on their own machines (on-prem) before you suggest Infisical Cloud. For their own vault, use [VAULT_SELF_HOSTED.md](VAULT_SELF_HOSTED.md): it runs with containerd and nerdctl where Docker Engine is not allowed, and its `bootstrap-broker.py` replaces the vault's web page steps and `secretops-configure` with one command the human runs. Copy its files for the human; offline keys go through its `export-keys.sh`.
+- Check prerequisites and report what is missing: Ubuntu 24.04 or Debian 12 (Ubuntu 22.04 with Python 3.12 and `--python`, see INSTALL.md), Python 3.11 or newer, `python3-venv`, `openssh-server`, `curl`, a root-owned `infisical` (for example `/usr/bin/infisical`) and, for GitHub sync, a root-owned `gh`.
 - Find your account name (`id -un`) and whether it can use `sudo`. The recommended setup runs you as a separate account without sudo, which the installer can create with `--create-agent-user`; if you run as the human's own account, tell them that the boundary is then a convention, not enforced.
-- Write out the exact commands from INSTALL.md with the values filled in (version, agent account, Infisical URL), for the human to run.
+- Write out the exact commands from INSTALL.md with the values filled in (version, agent account, Infisical URL, plan IDs), for the human to run. Say above every block on which machine and in which account it runs. Keep each command on one line: pasted commands that wrap break. Say when a download is large.
 - After installation, run `secretops-local help`, `secretops-local version` and `secretops-local actions`.
 
 Only the human:
 
 - downloads and checks the installer bundle and runs `sudo ./install.sh ...`, `sudo secretops-configure` (asks for the Infisical token) and `sudo -u secretops-broker gh auth login` (GitHub device login);
-- creates the Infisical project and machine identity;
+- creates the Infisical project and machine identity, or runs `bootstrap-broker.py` for a new self-hosted vault;
 - enters secret values and approves plans;
 - removes the broker with `sudo secretops-uninstall`.
 
