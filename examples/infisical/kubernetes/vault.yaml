@@ -1,0 +1,166 @@
+# Postgres, Redis and Caddy (TLS) for Infisical on Kubernetes. Infisical
+# itself comes from Infisical's Helm chart with values.yaml. Guide:
+# docs/VAULT_KUBERNETES.md. The Secrets and the ConfigMap infisical-settings
+# come from apply-secrets.sh. Images are pinned, the same as compose.yaml.
+# Processes run as uids 70 (Postgres), 61002 (Redis) and 61003 (Caddy);
+# Infisical as 61001 (values.yaml). No host account should have these uids:
+# a container process is readable through /proc by the host account with the
+# same uid.
+apiVersion: v1
+kind: Service
+metadata:
+  name: infisical-db
+spec:
+  selector: {app: infisical-db}
+  ports: [{port: 5432}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: infisical-db
+spec:
+  serviceName: infisical-db
+  replicas: 1
+  selector: {matchLabels: {app: infisical-db}}
+  template:
+    metadata: {labels: {app: infisical-db}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsUser: 70, runAsGroup: 70, fsGroup: 70, runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: postgres
+          image: postgres:16.16-alpine
+          env:
+            - {name: POSTGRES_USER, value: infisical}
+            - {name: POSTGRES_DB, value: infisical}
+            - {name: POSTGRES_PASSWORD_FILE, value: /run/secrets/db/password}
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          readinessProbe:
+            exec: {command: [sh, -c, 'pg_isready -h 127.0.0.1 -U infisical -d infisical']}
+            periodSeconds: 5
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/postgresql/data}
+            - {name: password, mountPath: /run/secrets/db, readOnly: true}
+      volumes:
+        - name: password
+          secret: {secretName: infisical-db, defaultMode: 0440}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: {requests: {storage: 5Gi}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: infisical-redis
+spec:
+  selector: {app: infisical-redis}
+  ports: [{port: 6379}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: infisical-redis
+spec:
+  serviceName: infisical-redis
+  replicas: 1
+  selector: {matchLabels: {app: infisical-redis}}
+  template:
+    metadata: {labels: {app: infisical-redis}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsUser: 61002, runAsGroup: 61002, fsGroup: 61002, runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: redis
+          image: redis:7.4.12-alpine
+          # The password is in a file from the Secret, not on the command line.
+          command: [redis-server, /run/secrets/redis/redis.conf]
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: conf, mountPath: /run/secrets/redis, readOnly: true}
+      volumes:
+        - name: conf
+          secret: {secretName: infisical-redis, defaultMode: 0440}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: {requests: {storage: 1Gi}}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: infisical-caddy
+data:
+  Caddyfile: |
+    {
+    	admin off
+    	http_port 8080
+    	https_port 8443
+    	auto_https disable_redirects
+    	# Clients that connect by IP address send no server name.
+    	default_sni {$INFISICAL_HOST}
+    	pki {
+    		ca local {
+    			root {
+    				format pem_file
+    				cert /run/secrets/ca/root.crt
+    				key /run/secrets/ca/root.key
+    			}
+    		}
+    	}
+    }
+    {$INFISICAL_HOST} {
+    	tls internal
+    	reverse_proxy infisical-backend:8080
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: infisical-caddy
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: infisical-caddy}}
+  template:
+    metadata: {labels: {app: infisical-caddy}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsUser: 61003, runAsGroup: 61003, fsGroup: 61003, runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: caddy
+          image: caddy:2.11.9-alpine
+          envFrom: [{configMapRef: {name: infisical-settings}}]
+          env:
+            - {name: XDG_DATA_HOME, value: /data}
+            - {name: XDG_CONFIG_HOME, value: /config}
+          ports: [{containerPort: 8443}]
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          volumeMounts:
+            - {name: caddyfile, mountPath: /etc/caddy}
+            - {name: ca, mountPath: /run/secrets/ca, readOnly: true}
+            - {name: data, mountPath: /data}
+            - {name: config, mountPath: /config}
+      volumes:
+        - name: caddyfile
+          configMap: {name: infisical-caddy}
+        - name: ca
+          secret: {secretName: infisical-ca, defaultMode: 0440}
+        # Intermediate and site certificates are made again from the root on
+        # each start; nothing here needs a backup.
+        - {name: data, emptyDir: {}}
+        - {name: config, emptyDir: {}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: infisical-https
+spec:
+  type: NodePort
+  selector: {app: infisical-caddy}
+  ports:
+    # Change nodePort here and in make-secrets.sh together.
+    - {port: 8443, targetPort: 8443, nodePort: 30843}
