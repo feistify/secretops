@@ -1,4 +1,5 @@
 import functools
+import os
 import sys
 from importlib.metadata import version as package_version
 
@@ -63,6 +64,7 @@ from secretops.vault_check import (
     result_lines,
 )
 from secretops.vaults import VaultError, configured_vault_destination, get_vault
+from secretops.vaults.infisical_cli import CA_FILE_KEY
 
 app = typer.Typer(
     help="Safe secret operations for coding agents: agents plan, humans enter values and approve.",
@@ -367,7 +369,7 @@ def check_vault_connection_command(env: str = typer.Option("dev", "--env")):
         status="ok" if result is CheckResult.WORKING else "fail",
         details={"result": result.value},
     )
-    for line in result_lines(result, detail, env):
+    for line in result_lines(result, detail, env, os.environ.get(CA_FILE_KEY) or None):
         typer.echo(line)
     typer.echo("Provider output and secret values were not printed.")
     raise typer.Exit(0 if result is CheckResult.WORKING else 1)

@@ -138,24 +138,34 @@ def check_vault_connection(
     return CheckResult.WORKING, ""
 
 
-def result_lines(result: CheckResult, detail: str, env: str) -> list[str]:
-    """Fixed text for each result, with the next step."""
+def result_lines(result: CheckResult, detail: str, env: str, ca_file: str | None = None) -> list[str]:
+    """Fixed text for each result, with the next step.
+
+    ca_file is the configured vault CA file path, if any; a path, not a secret.
+    """
     if result is CheckResult.WORKING:
         return [
             f"OK vault connection works: URL, token, project and environment {env} answered.",
             "A test name was looked up by name; nothing was written.",
-            "A folder path that does not exist may look like an empty folder. To confirm the",
-            "folder, check a name you know exists: sudo -u secretops-broker",
-            f"  /usr/local/bin/secretops-broker check-vault-read --name NAME --env {env}",
         ]
     if result is CheckResult.UNREACHABLE:
-        return [
+        lines = [
             "FAIL vault not reachable at the configured URL (connection, DNS or TLS failed).",
             "Next: check the URL and that the vault server runs and is reachable from this",
-            "machine; to change the URL run: sudo secretops-configure. For a TLS certificate",
-            "error, make this machine trust the vault's certificate authority (CA), for",
-            "example through the system CA store.",
+            "machine; to change the URL run: sudo secretops-configure.",
         ]
+        if ca_file:
+            lines += [
+                f"For a TLS certificate error: the broker trusts the CA in {ca_file} for the vault.",
+                "Check that it is the vault's current root certificate (a reinstalled or",
+                "restored vault may have a new one), then: sudo secretops-configure --ca-file PATH",
+            ]
+        else:
+            lines += [
+                "For a TLS certificate error with a private CA: sudo secretops-configure --ca-file PATH,",
+                "or add the CA to this machine's system CA store.",
+            ]
+        return lines
     if result is CheckResult.TOKEN_REFUSED:
         return [
             "FAIL the vault refused the access token (expired, revoked or wrong).",
