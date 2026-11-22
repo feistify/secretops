@@ -1,0 +1,81 @@
+# Self-hosted Infisical for secretops: Infisical, Postgres, Redis, and Caddy
+# for TLS with its own local CA. Guide: docs/VAULT_SELF_HOSTED.md.
+#
+# Runs unchanged with `sudo nerdctl compose` (containerd) or `docker compose`.
+# make-env.sh writes .env (host name and port, no secrets) and secrets/
+# (keys and the database password, root-only). Keys are read from files
+# inside the containers, never passed as environment or command arguments,
+# so they do not appear in `ps`, in nerdctl's output, or in `inspect`.
+# Never commit .env or secrets/. Image versions are pinned; change them only
+# as described in the guide.
+
+name: infisical
+
+services:
+  backend:
+    image: infisical/infisical:v0.167.14
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    # Starts as root only to read the key file, then runs Infisical as the
+    # image's own non-root user (uid 1001), as the image does by default.
+    user: "0:0"
+    entrypoint:
+      - sh
+      - -c
+      - set -a && . /run/secrets/backend.env && set +a && exec setpriv --reuid=1001 --regid=1001 --clear-groups docker-entrypoint.sh ./standalone-entrypoint.sh
+    environment:
+      NODE_ENV: production
+      SITE_URL: https://${INFISICAL_HOST}:${HTTPS_PORT}
+      REDIS_URL: redis://redis:6379
+    volumes:
+      - ./secrets/backend.env:/run/secrets/backend.env:ro
+    networks: [infisical]
+
+  db:
+    image: postgres:16.16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: infisical
+      POSTGRES_DB: infisical
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./secrets/db_password:/run/secrets/db_password:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [infisical]
+
+  redis:
+    image: redis:7.4.12-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks: [infisical]
+
+  caddy:
+    image: caddy:2.11.9-alpine
+    restart: unless-stopped
+    depends_on: [backend]
+    environment:
+      INFISICAL_HOST: ${INFISICAL_HOST}
+    ports:
+      - "${HTTPS_PORT}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    networks: [infisical]
+
+volumes:
+  pg_data:
+  redis_data:
+  caddy_data:
+
+networks:
+  infisical:

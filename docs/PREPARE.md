@@ -7,7 +7,7 @@ secretops supports Infisical (Cloud or self-hosted) today; OpenBao is planned ([
 ## Infisical Cloud or self-hosted
 
 - **Infisical Cloud** (simplest for a first try): create an account at the address of your region, `https://app.infisical.com` (US) or `https://eu.infisical.com` (EU) ([Infisical: Cloud addresses](https://infisical.com/docs/documentation/platform/identities/universal-auth)).
-- **Self-hosted:** follow Infisical's [self-hosting guide](https://infisical.com/docs/self-hosting/overview); the address is your server's URL.
+- **Self-hosted:** [VAULT_SELF_HOSTED.md](VAULT_SELF_HOSTED.md) runs Infisical on one machine with containerd (nerdctl) or Docker, with TLS and a tested backup; Infisical's own [self-hosting guide](https://infisical.com/docs/self-hosting/overview) covers the rest. The address is your server's URL.
 
 This exact address is the vault URL: the human passes it to `install.sh --infisical-domain`, and `sudo secretops-configure` offers it again as the default for "Vault URL" (press Enter).
 
