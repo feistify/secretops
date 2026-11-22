@@ -44,6 +44,8 @@ TIMEOUT = 30
 EMAIL = re.compile(r"[^@\s]+@[^@\s]+")
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}")
 MIN_PASSWORD = 14
+NOTE = ("NOTE: if the web page shows a machine identity besides secretops-broker, delete it "
+        "(Organization, Access Control, Machine Identities); Infisical's bootstrap gave it full admin rights.")
 
 
 class Stop(Exception):
@@ -206,13 +208,14 @@ def remove_bootstrap_identity(state: dict) -> None:
     vault = state.get("vault")
     identity = state.get("bootstrap_identity")
     if not vault or not vault.token or not identity:
+        if state["step"] not in ("start", "saved"):
+            print(NOTE)
         return
     try:
         vault.call("DELETE", f"/api/v1/identities/{identity}")
         print("Bootstrap identity: deleted.")
-    except Stop:
-        print("NOTE: delete the bootstrap machine identity in the web page "
-              "(Organization, Access Control, Machine Identities); it has full admin rights.")
+    except (Stop, KeyboardInterrupt):
+        print(NOTE)
     finally:
         vault.token = None
 
@@ -236,11 +239,14 @@ def main(argv: list[str] | None = None) -> int:
     except KeyError:
         print(f"bootstrap-broker: broker user {bc.BROKER_USER} does not exist; install secretops first",
               file=sys.stderr)
-    except OSError:
-        print(f"bootstrap-broker: could not save {bc.BROKER_ENV}", file=sys.stderr)
     except (EOFError, KeyboardInterrupt):
         print("\nbootstrap-broker: cancelled", file=sys.stderr)
         code = 2
+    except OSError:
+        what = f"could not save {bc.BROKER_ENV}" if state["step"] == "save" else "input or output failed"
+        print(f"bootstrap-broker: {what}", file=sys.stderr)
+    except Exception as error:  # noqa: BLE001 - no traceback: keep values off the terminal
+        print(f"bootstrap-broker: unexpected {type(error).__name__}", file=sys.stderr)
     finally:
         remove_bootstrap_identity(state)
     step = state["step"]
@@ -251,6 +257,9 @@ def main(argv: list[str] | None = None) -> int:
         elif step not in ("start", "saved"):
             print(f"bootstrap-broker: stopped at '{step}'. The admin exists; finish in the web page "
                   "(docs/PREPARE.md) and run sudo secretops-configure.", file=sys.stderr)
+            if step == "project":
+                print("bootstrap-broker: if a project was created but you cannot open it, delete it "
+                      "and create a new one in the web page.", file=sys.stderr)
         return code
     print("Next: log in to the web page as the admin and keep the password in your password manager.")
     if bc.run_check(state["account"], bc.DEFAULT_CHECK_ENV, bc.check_timeout(updated)) != 0:
