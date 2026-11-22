@@ -16,9 +16,14 @@ export LC_ALL=C
 
 VAULT_URL=${1:-}
 case $VAULT_URL in
+    *@*|*[[:space:]]*) echo "check-node: give the vault URL without a user or password" >&2; exit 2 ;;
     ''|https://*) ;;
     *) echo "usage: sh check-node.sh [https://VAULT:PORT]" >&2; exit 2 ;;
 esac
+if [ $# -gt 1 ]; then
+    echo "usage: sh check-node.sh [https://VAULT:PORT]" >&2
+    exit 2
+fi
 
 say() { printf '%-6s %s\n' "$1" "$2"; }
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -186,23 +191,33 @@ fi
 
 echo "== Network"
 # A proxy URL can hold a user and password: only scheme://host:port is printed.
+# Only a recognised scheme and host:port are printed; anything else on the line
+# (a password with a space, another variable, a query) is never shown.
 describe() {
-    value=$(printf '%s\n' "$1" | sed -E "s#^[[:space:]\"']*##; s#[[:space:]\"';]*\$##")
-    scheme=$(printf '%s\n' "$value" | sed -nE 's#^([A-Za-z][A-Za-z0-9+.-]*://).*#\1#p')
+    # First line, without leading quotes; cut at the first space, quote or ';'.
+    value=$(printf '%s\n' "$1" | head -n 1 | sed -E "s#^[[:space:]\"']*##; s#[[:space:]\"';].*##")
+    scheme=$(printf '%s\n' "$value" | sed -nE 's#^((https?|socks4a?|socks5h?)://).*#\1#ip')
     rest=${value#"$scheme"}
-    # Everything up to the last @ is a user and password, even one with / or @ in it.
+    creds=""
     case $rest in
-        *@*) printf '%s%s (holds a user and password, not shown)\n' "$scheme" "$(printf '%s' "${rest##*@}" | cut -d/ -f1)" ;;
-        *) printf '%s%s\n' "$scheme" "$(printf '%s' "$rest" | cut -d/ -f1)" ;;
+        *@*) rest=${rest##*@}; creds=" (holds a user and password, not shown)" ;;
     esac
+    host=$(printf '%s\n' "$rest" | sed -nE 's#^([A-Za-z0-9.-]+(:[0-9]+)?|\[[0-9A-Fa-f:.]+\](:[0-9]+)?)([/?#].*)?$#\1#p')
+    if [ -n "$host" ]; then
+        printf '%s%s%s\n' "$scheme" "$host" "$creds"
+    else
+        echo "set (not shown: not a plain proxy URL)"
+    fi
 }
-# The value of the first https_proxy or HTTPS_PROXY line read on stdin.
+# The value of the first https_proxy line read on stdin (also systemd's quoted
+# "HTTPS_PROXY=..." and k3s's CONTAINERD_HTTPS_PROXY).
 pick() {
-    grep -iE '^[[:space:]]*(export[[:space:]]+)?https_proxy=' | head -n 1 | sed -E 's/^[[:space:]]*(export[[:space:]]+)?[A-Za-z_]+=//'
+    grep -iE "^[[:space:]\"']*(export[[:space:]]+)?(CONTAINERD_)?https_proxy=" | head -n 1 |
+        sed -E "s/^[[:space:]\"']*(export[[:space:]]+)?[A-Za-z_]+=//"
 }
-proxy=${https_proxy:-${HTTPS_PROXY:-}}
+proxy=${https_proxy:-${HTTPS_PROXY:-${all_proxy:-${ALL_PROXY:-}}}}
 found=""
-for var in https_proxy HTTPS_PROXY http_proxy HTTP_PROXY; do
+for var in https_proxy HTTPS_PROXY http_proxy HTTP_PROXY all_proxy ALL_PROXY; do
     eval "value=\${$var:-}"
     [ -n "$value" ] || continue
     found=yes
@@ -221,8 +236,11 @@ if [ -r /etc/environment ]; then
     [ -n "$value" ] && say INFO "/etc/environment: HTTPS proxy $(describe "$value")"
 fi
 if have apt-config; then
-    value=$(apt-config dump 2>/dev/null | grep -i '^Acquire::https::Proxy "' | head -n 1 | sed 's/^[^"]*"//; s/";*$//')
-    [ -n "$value" ] && say INFO "apt: HTTPS proxy $(describe "$value")"
+    # apt uses its http proxy for https too unless an https one is set.
+    for key in https http; do
+        value=$(apt-config dump 2>/dev/null | grep -i "^Acquire::$key::Proxy \"" | head -n 1 | sed 's/^[^"]*"//; s/";*$//')
+        [ -n "$value" ] && { say INFO "apt: $key proxy $(describe "$value")"; break; }
+    done
 fi
 # Images are pulled by the container runtime, not by this shell: it needs its own proxy settings.
 if have systemctl; then
@@ -284,8 +302,13 @@ reach() {
     proxy_ok=no
     if [ -n "$proxy" ]; then
         set -- $(probe "$url" "$@")
-        [ "$1" != 000 ] && proxy_ok=yes
-        line="$line; with the proxy settings: $(words "$1" "$2")"
+        case $1 in
+            000) text=$(words "$1" "$2") ;;
+            # These can come from the proxy itself (blocked, login, no route), not from the site.
+            403|407|502|503|504) text="HTTP $1 (may be the proxy's answer, not the site's)" ;;
+            *) text="HTTP $1"; proxy_ok=yes ;;
+        esac
+        line="$line; with the proxy settings: $text"
     fi
     if [ $direct_ok = yes ] || [ $proxy_ok = yes ]; then
         say OK "$label $line"
@@ -294,8 +317,8 @@ reach() {
     fi
 }
 if have curl; then
-    say INFO "any HTTP code means the site answers; dl.cloudsmith.io serves Infisical's Helm chart"
-    for url in https://registry-1.docker.io/v2/ https://dl.cloudsmith.io/ https://artifacts-cli.infisical.com/ https://pypi.org/simple/secretops/ https://github.com/ https://api.github.com/; do
+    say INFO "an HTTP code means the site answers (through a proxy, 403, 407, 502-504 can be the proxy's own); dl.cloudsmith.io serves Infisical's Helm chart"
+    for url in https://registry-1.docker.io/v2/ https://dl.cloudsmith.io/ https://artifacts-cli.infisical.com/infisical.gpg https://pypi.org/simple/secretops/ https://github.com/ https://api.github.com/; do
         reach "$url" "$url"
     done
     # A proxy that intercepts TLS shows its own issuer instead of the site's.
@@ -308,15 +331,15 @@ if have curl; then
     if [ -n "$proxy" ]; then
         proxy_issuer=$(issuer)
         if [ -z "$proxy_issuer" ]; then
-            say INFO "api.github.com certificate issuer through the proxy: unknown (no answer)"
+            say INFO "api.github.com certificate issuer, with the proxy settings: unknown (no answer)"
         else
             say INFO "api.github.com certificate issuer, with the proxy settings: $proxy_issuer"
             if [ -n "$direct_issuer" ] && [ "$direct_issuer" != "$proxy_issuer" ]; then
-                say WARN "the proxy intercepts TLS (another issuer than direct): gh needs the company's CA"
+                say WARN "the proxy intercepts TLS (another issuer than direct): gh, pip, curl and the Infisical CLI need the company's CA"
             elif echo "$proxy_issuer" | grep -qiE "Sectigo|DigiCert|USERTrust|COMODO|Let's Encrypt|ISRG|GlobalSign|Google Trust|GTS|Amazon|Microsoft|Entrust|GeoTrust|Baltimore|GoDaddy|Starfield"; then
                 say OK "the proxy does not intercept TLS (a public issuer)"
             else
-                say WARN "the issuer is not a well-known public CA: the proxy probably intercepts TLS; gh needs the company's CA"
+                say WARN "the issuer is not a well-known public CA: the proxy probably intercepts TLS; gh, pip, curl and the Infisical CLI need the company's CA"
             fi
         fi
     fi
