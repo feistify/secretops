@@ -130,7 +130,7 @@ Keep these in your password manager, as attachments of one entry, not only on th
 sudo COMPOSE="$COMPOSE" sh export-keys.sh        # writes ~/infisical-keys-DATE.tar.gz
 ```
 
-Attach the archive to the password manager entry, then delete it from the disk. Export again after you change a key or a password. Not needed offline: the broker's access token (create a new one) and any bootstrap token (delete it once the admin login works).
+Attach the archive to the password manager entry, then delete it from the disk. On a NAS, keep the default (your home): a shared folder can give read access through ACLs that the file mode does not show. Export again after you change a key or a password. Not needed offline: the broker's access token (create a new one) and any bootstrap token (delete it once the admin login works).
 
 ## Back up
 

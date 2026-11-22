@@ -33,6 +33,7 @@ cleanup() {
     fi
 }
 trap cleanup EXIT
+trap 'exit 1' INT TERM
 tar --no-same-owner -C "$work" -xzf "$file" || die "$file is not a readable export from export-keys.sh"
 # Only plain files and directories: no links or devices from the archive.
 [ -z "$(find "$work" ! -type f ! -type d)" ] || die "$file holds links or special files; refusing it"

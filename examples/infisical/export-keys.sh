@@ -25,7 +25,9 @@ dest=${1:-$home}
 # Root writes the archive there: refuse a directory others can change.
 dest_owner=$(stat -c %U "$dest")
 [ "$dest_owner" = "$owner" ] || [ "$dest_owner" = root ] || die "$dest belongs to $dest_owner; give a directory of yours"
-[ -z "$(find "$dest" -maxdepth 0 -perm /022)" ] || die "$dest is writable by others; give a private directory"
+case $(stat -c %a "$dest") in
+    *[2367]?|*[2367]) die "$dest is writable by others; give a private directory" ;;
+esac
 compose=${COMPOSE:-docker compose}
 PATH=/usr/local/sbin:/usr/local/bin:$PATH
 
@@ -33,6 +35,7 @@ umask 077
 work=$(mktemp -d)
 tmp=$(mktemp "$dest/.infisical-keys.XXXXXX")
 trap 'rm -rf "$work"; rm -f "$tmp"' EXIT
+trap 'exit 1' INT TERM
 mkdir "$work/infisical-keys" "$work/ca"
 cp -p .env "$work/infisical-keys/"
 cp -rp secrets "$work/infisical-keys/"
