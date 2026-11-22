@@ -8,7 +8,7 @@
 # arguments, so they do not appear in nerdctl's output, `ps` or `inspect`.
 # Infisical and Redis run as uids 61001 and 61002, which no host account
 # should have: a container process is readable through /proc by the host
-# account with the same uid.
+# account with the same uid. Postgres runs as the image's uid 70.
 # Never commit .env or secrets/. Image versions are pinned; change them only
 # as described in the guide.
 
@@ -25,13 +25,15 @@ services:
         condition: service_started
     # Starts as root only to read the key file, then runs Infisical as
     # uid 61001 instead of the image's 1001, a uid host accounts often have.
-    # Node needs a passwd entry for its uid; it is added inside the container.
+    # Node needs a passwd entry for its uid, and the image's start script
+    # updates /etc/ssl/certs; both are set for 61001 inside the container.
     user: "0:0"
     entrypoint:
       - sh
       - -c
       - >-
         grep -q '^infisical:' /etc/passwd || echo 'infisical:x:61001:61001::/backend:/usr/sbin/nologin' >> /etc/passwd;
+        chown -R 61001:61001 /etc/ssl/certs;
         set -a && . /run/secrets/backend.env && set +a &&
         exec setpriv --reuid=61001 --regid=61001 --clear-groups env HOME=/backend docker-entrypoint.sh ./standalone-entrypoint.sh
     environment:

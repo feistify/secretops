@@ -28,10 +28,12 @@ for path in .env secrets secrets.tmp; do
         exit 1
     fi
 done
-for uid in 61001 61002; do
+# Container uids: Infisical 61001, Redis 61002 (compose.yaml), Postgres 70
+# (the image's). A host account with the same uid could read their keys.
+for uid in 61001 61002 70; do
     if getent passwd "$uid" >/dev/null; then
-        echo "uid $uid belongs to a host account, which could read the vault's keys;" >&2
-        echo "change it in compose.yaml first" >&2
+        echo "uid $uid belongs to a host account, which could read the vault's keys or passwords;" >&2
+        echo "use another uid in compose.yaml (61001, 61002) or a machine without that account (70)" >&2
         exit 1
     fi
 done

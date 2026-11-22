@@ -9,7 +9,7 @@ Tested: Ubuntu 22.04 with containerd and nerdctl 2.4.2, without Docker Engine; I
 - Infisical, Postgres and Redis, with pinned image versions.
 - Caddy in front, with TLS from its own local CA, on port 8443 by default (a Synology NAS uses 443 itself).
 - Keys and passwords in `secrets/`, readable by root only. The containers read them from files; they are not in the container configuration or on a command line, so they do not appear in nerdctl's output, `ps` or `inspect`. Redis has a password too.
-- Infisical and Redis run as uids 61001 and 61002. A process is readable through `/proc` by the host account with the same uid, so no host account may have these uids; `make-env.sh` checks this.
+- Infisical and Redis run as uids 61001 and 61002, Postgres as 70. A process is readable through `/proc` by the host account with the same uid, so no host account may have these uids; `make-env.sh` checks this.
 
 Run the vault on a machine of its own or one you trust: root and anyone with container access there can read the keys.
 
@@ -36,7 +36,7 @@ COMPOSE="docker compose"       # Docker, for example a Synology NAS over SSH
    sudo sh make-env.sh HOST            # optional second argument: HTTPS port, default 8443
    ```
 
-   It writes `.env` (host and port only) and `secrets/` (root-only), prints no key, and never overwrites. It stops if a host account has uid 61001 or 61002; then change both numbers in `compose.yaml` first. **Copy `secrets/` to offline storage now**, separately from the database backups: without `ENCRYPTION_KEY` in `secrets/backend.env` no backup can be decrypted.
+   It writes `.env` (host and port only) and `secrets/` (root-only), prints no key, and never overwrites. It stops if a host account has uid 61001, 61002 or 70 (Postgres); change the first two in `compose.yaml`, or use another machine. **Copy `secrets/` to offline storage now**, separately from the database backups: without `ENCRYPTION_KEY` in `secrets/backend.env` no backup can be decrypted.
 3. Start it and wait until the API answers:
 
    ```sh
