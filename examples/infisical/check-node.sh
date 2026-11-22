@@ -111,7 +111,8 @@ if have kubectl; then
         # Tell "none" from "not allowed to look".
         # 0 with output: found; 1: not found or another error; 2: forbidden.
         look() {
-            out=$(kubectl "$@" 2>&1) && { printf '%s' "$out"; return 0; }
+            out=$(kubectl "$@" 2>/dev/null) && { printf '%s' "$out"; return 0; }
+            out=$(kubectl "$@" 2>&1)
             case $out in *Forbidden*|*forbidden*) return 2 ;; esac
             return 1
         }
