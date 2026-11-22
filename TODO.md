@@ -225,7 +225,7 @@ Left over from the reviews of the changes above (2026-11-14). Each was confirmed
 - [x] Decided 2026-11-22: no audit, no write. `execute-plan` appends a `write_started` event before its first vault or GitHub write and stops, changing nothing, when it cannot. `secretops add` follows the same rule (item above).
 - [x] `preflight-plan` and `execute-plan` wrote the same `approval_expired` audit event. Done: `step` is `preflight` or `execute`.
 - [x] Lock files of plans are never removed and accumulate in the plan directory. Decided: kept (removing one while another command opens it would break the lock); OPERATIONS says how a human removes them while no broker command runs.
-- [ ] Action names under `actions` in the policy file are not checked against the known actions, so a misspelled action is accepted and never applies.
+- [x] Action names in the policy file were not checked, so a misspelled action was accepted and never applied. Done: unknown names in `allowed_actions`, `denied_actions` and under `actions` refuse the policy (deny-only names are accepted in the two lists).
 - [x] `vault.secret.copy_many` recorded a different `env` depending on the outcome. Done: every event names the target environment in `env` and the source in `source_env`.
 
 ### 10. CI and maintenance — one small pull request, no behaviour change

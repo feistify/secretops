@@ -54,6 +54,29 @@ LIST_KEYS = {
     "allowed_actions", "denied_actions", "allowed_environments", "production_environments"
 }
 BOOLEAN_KEYS = {"requires_approval", "production_allowed"}
+# Every action name the code checks against the policy. A test keeps this
+# equal to the plan actions plus the planning check.
+KNOWN_ACTIONS = frozenset(
+    {
+        "vault.read.plan",
+        "vault.read.check",
+        "vault.secret.generate",
+        "vault.secret.rotate",
+        "vault.secret.import_file",
+        "vault.secret.copy_many",
+        "vault.secret.diff_envs",
+        "vault.secret.add",
+        "github.env_secret.plan",
+        "github.env_secret.write",
+        "github.env_secret.sync_many",
+        "github.env_secret.verify_many",
+    }
+)
+# Names that exist only to be denied: no command performs them.
+DENY_ONLY_ACTIONS = frozenset(
+    {"secret.reveal", "secret.export_all", "secret.print_value", "production.execute_without_approval"}
+)
+ACTION_NAMES_HINT = "check its spelling against the known actions"
 
 
 class PolicyError(Exception):
@@ -127,8 +150,9 @@ def validate_policy_data(data, source: str) -> None:
     """Refuse unknown keys and wrongly typed values at the top level and in
     each `actions` entry.
 
-    Action names under `actions` are not checked: any name is accepted and
-    an entry for an action that is not allowed has no effect.
+    Action names in `allowed_actions`, `denied_actions` and under `actions`
+    must be known: a misspelled name would otherwise never apply. Names
+    that exist only to be denied are accepted in the two lists.
 
     Environment names must be vault environment names. The policy does not
     separate vault from GitHub environments: lists that can also name a
@@ -143,18 +167,31 @@ def validate_policy_data(data, source: str) -> None:
             "production_environments", "the top level", source,
         )
     actions = data.get("actions")
-    if actions is None:
-        return
-    if not isinstance(actions, dict):
-        _fail(source, "actions must be a mapping of action names to settings", "correct its layout")
-    for action, metadata in actions.items():
-        if metadata is not None:
-            location = f"actions entry {_key_name(action)}"
-            _check_mapping(metadata, ACTION_POLICY_KEYS, location, source)
-            _check_environment_names(
-                metadata.get("allowed_environments", []), str(action).startswith("github."),
-                "allowed_environments", location, source,
-            )
+    if actions is not None:
+        if not isinstance(actions, dict):
+            _fail(source, "actions must be a mapping of action names to settings", "correct its layout")
+        for action, metadata in actions.items():
+            if metadata is not None:
+                location = f"actions entry {_key_name(action)}"
+                _check_mapping(metadata, ACTION_POLICY_KEYS, location, source)
+                _check_environment_names(
+                    metadata.get("allowed_environments", []), str(action).startswith("github."),
+                    "allowed_environments", location, source,
+                )
+    _check_action_names(data, source)
+
+
+def _check_action_names(data, source: str) -> None:
+    """A misspelled action name would never allow, deny or configure
+    anything. Checked after the layout. List entries are named by position,
+    never by their text; names under `actions` are keys and are named."""
+    for key in ("allowed_actions", "denied_actions"):
+        for number, name in enumerate(data.get(key) or [], start=1):
+            if name not in KNOWN_ACTIONS | DENY_ONLY_ACTIONS:
+                _fail(source, f"entry {number} of {key} in the top level is not a known action", ACTION_NAMES_HINT)
+    for action in data.get("actions") or {}:
+        if action not in KNOWN_ACTIONS:
+            _fail(source, f"unknown action {_key_name(action)} in actions", ACTION_NAMES_HINT)
 
 
 class _DuplicateKey(Exception):
