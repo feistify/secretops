@@ -94,3 +94,26 @@ Date: 2026-11-22. A fresh agent preparing an installation (TODO 4k) found the In
 | Broker without a token, vault with an admin | Refuses before asking anything; nothing changed |
 
 Found (review): a project made by an identity has only that identity as member, so the admin is added as project admin before the bootstrap identity is deleted. Not tried: a broker on another host than the vault (the NAS case), a failure half-way, logging in to the web page as the new admin.
+
+## Kubernetes (k3s)
+
+Date: 2026-11-22. A fresh Ubuntu 22.04 VM with k3s v1.37.2+k3s1 (one node, `local-path` storage, Traefik unused), Helm 3.19.0, Infisical's chart `infisical-standalone` 1.12.4 (Infisical v0.167.14) with `examples/infisical/kubernetes/`; secretops 0.1.14 and Infisical CLI 0.45.14 on the same node, through `expect`, with made-up values.
+
+| Step | Result |
+| --- | --- |
+| `make-secrets.sh`, `apply-secrets.sh`, `vault.yaml`, `helm upgrade --install` | `secrets/` mode 700, files 600; five Secrets/ConfigMaps; all pods running; `https://HOST:30843/api/status` verifies with `infisical-root.crt` |
+| Passwords out of sight | None in the Deployments or StatefulSets; the Helm values hold only the unused defaults of the disabled subcharts. The agent account has no kubeconfig; Redis answers `NOAUTH` from the host |
+| Process uids | Infisical 61001, Redis 61002, Caddy 61003, Postgres 70 |
+| NetworkPolicy (k3s enforces it) | A pod without Infisical's labels gets `Connection refused` from Redis and Postgres; one with them gets Redis' `NOAUTH` |
+| `bootstrap-broker.py` | Admin, project, identity, token; `OK vault connection works`; no password or token in the output |
+| First check | `secretops add`: `Saved and verified.`; the agent account's `vault.read.check`: `OK secret exists: FIRST_CHECK_KEY` |
+| Backup | `backup.sh`: a 183 KB dump, mode 600, compressed inside the pod; no temporary file left |
+| Restore into an empty cluster | Helm release and namespace deleted (all volumes gone); the guide's restore steps, run twice (before and after the review's changes): the broker's saved configuration and CA still work (`OK vault connection works`), and the agent's check finds `FIRST_CHECK_KEY` |
+
+Found:
+
+- **The chart's Postgres and Redis put their passwords into the Deployment in plain text** (`DB_CONNECTION_URI` and `REDIS_URL` as `value:`), use `bitnamilegacy` images and default passwords, and the chart bundles ingress-nginx 4.0.13. They are off; `vault.yaml` runs the same Postgres, Redis and Caddy as the compose variant, and the connection strings are in the Secret `infisical-secrets`.
+- **Infisical as uid 61001 fails as in the compose variant** (Node's `uv_os_get_passwd ENOENT`, and the start script cannot rewrite `/etc/ssl/certs`). An init container, also uid 61001, writes a passwd file and a copy of the certificates into a scratch volume.
+- **Caddy with a root CA from a Secret** (`pki` → `root` with `pem_file`) keeps the CA across a lost volume or a new cluster, so the CA export of the compose variant is not needed here.
+
+Not tried: a multi-node cluster, another distribution (kubeadm, RKE2, microk8s), an existing ingress controller or cert-manager instead of the NodePort, a broker on another machine.

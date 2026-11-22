@@ -1,0 +1,57 @@
+# Values for Infisical's Helm chart infisical-standalone 1.12.4 (app
+# v0.167.14). Only Infisical comes from the chart: Postgres, Redis and TLS
+# are in vault.yaml, with passwords in Secrets rather than in the chart's
+# values, which would put them in the Deployment in plain text. Guide:
+# docs/VAULT_KUBERNETES.md.
+infisical:
+  fullnameOverride: infisical-backend   # Caddy's reverse_proxy target
+  replicaCount: 1
+  image:
+    tag: v0.167.14
+  # ENCRYPTION_KEY, AUTH_SECRET, SITE_URL, DB_CONNECTION_URI, REDIS_URL
+  kubeSecretRef: infisical-secrets
+  podSecurityContext:
+    fsGroup: 61001
+  containerSecurityContext:
+    runAsUser: 61001
+    runAsGroup: 61001
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    seccompProfile: {type: RuntimeDefault}
+    capabilities: {drop: [ALL]}
+  # Node needs a passwd entry for its uid, and the image's start script
+  # rewrites /etc/ssl/certs. An init container, also uid 61001, prepares
+  # both in a scratch volume.
+  extraInitContainers:
+    - name: prepare-uid
+      image: infisical/infisical:v0.167.14
+      command:
+        - sh
+        - -c
+        - >-
+          cp /etc/passwd /work/passwd &&
+          echo 'infisical:x:61001:61001::/backend:/sbin/nologin' >> /work/passwd &&
+          mkdir -p /work/certs && cp -a /etc/ssl/certs/. /work/certs/
+      securityContext:
+        runAsUser: 61001
+        runAsGroup: 61001
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        seccompProfile: {type: RuntimeDefault}
+        capabilities: {drop: [ALL]}
+      volumeMounts: [{name: uid-files, mountPath: /work}]
+  extraVolumes:
+    - {name: uid-files, emptyDir: {}}
+  extraVolumeMounts:
+    - {name: uid-files, mountPath: /etc/passwd, subPath: passwd, readOnly: true}
+    - {name: uid-files, mountPath: /etc/ssl/certs, subPath: certs}
+  # The chart also mounts its ServiceAccount token (a Role that can only
+  # read Jobs); it has no value to turn that off.
+ingress:
+  enabled: false
+  nginx: {enabled: false}
+postgresql:
+  enabled: false
+redis:
+  enabled: false

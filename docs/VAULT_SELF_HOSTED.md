@@ -2,7 +2,7 @@
 
 How to run your own Infisical for secretops on one machine, a server or a NAS, with TLS and a tested backup. The files are in [`examples/infisical/`](../examples/infisical/). Afterwards continue with [PREPARE.md](PREPARE.md) and [INSTALL.md](INSTALL.md).
 
-Tested: Ubuntu 22.04 with containerd and nerdctl 2.4.2, without Docker Engine; Infisical v0.167.14, Infisical CLI 0.45.14, secretops 0.1.13; and a Synology NAS with DSM 7.3.2, Docker 24.0.2 and Compose v2.20.1, with secretops 0.1.14 ([record](validation/self-hosted-infisical.md)). Kubernetes is not yet recorded. Infisical's own guide: [Docker Compose](https://infisical.com/docs/self-hosting/deployment-options/docker-compose).
+Tested: Ubuntu 22.04 with containerd and nerdctl 2.4.2, without Docker Engine; Infisical v0.167.14, Infisical CLI 0.45.14, secretops 0.1.13; and a Synology NAS with DSM 7.3.2, Docker 24.0.2 and Compose v2.20.1, with secretops 0.1.14 ([record](validation/self-hosted-infisical.md)). On Kubernetes, see [VAULT_KUBERNETES.md](VAULT_KUBERNETES.md). Infisical's own guide: [Docker Compose](https://infisical.com/docs/self-hosting/deployment-options/docker-compose).
 
 ## What you get
 
