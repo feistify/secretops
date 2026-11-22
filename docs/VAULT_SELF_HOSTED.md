@@ -61,17 +61,16 @@ COMPOSE="docker compose"       # Docker, for example a Synology NAS over SSH
 
 Install the broker as in [INSTALL.md](INSTALL.md) with `--infisical-domain https://HOST:8443`. The Infisical CLI on the broker must come from Infisical's current package repository (`artifacts-cli.infisical.com`, [install](https://infisical.com/docs/cli/install)); the old Cloudsmith repository stopped serving the CLI on 2026-09-16, so a CLI installed from it cannot be upgraded.
 
-Then, on the broker, put the root certificate in a root-owned place and configure in this order:
+Then, on the broker, put the root certificate in a root-owned place and configure:
 
 ```sh
 # Human, on the broker
 sudo install -d -m 755 /etc/secretops-ca
 sudo install -m 644 infisical-root.crt /etc/secretops-ca/infisical-root.pem
-sudo secretops-configure --ca-file /etc/secretops-ca/infisical-root.pem   # stores only the CA setting
-sudo secretops-configure                                                  # URL, project, folder, token
+sudo secretops-configure --ca-file /etc/secretops-ca/infisical-root.pem   # then URL, project, folder, token
 ```
 
-The second command ends with `OK vault connection works`. The certificate is trusted for the vault only; `gh` keeps the system store ([Operations](OPERATIONS.md#vault-behind-a-private-ca)).
+It ends with `OK vault connection works`. secretops 0.1.13 and older store only the CA setting here; run `sudo secretops-configure` after it. The certificate is trusted for the vault only; `gh` keeps the system store ([Operations](OPERATIONS.md#vault-behind-a-private-ca)).
 
 ## Back up
 

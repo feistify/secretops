@@ -196,6 +196,24 @@ def test_every_result_has_fixed_text_with_a_next_step(result):
         assert any("Next:" in line for line in lines)
 
 
+def test_working_text_no_longer_warns_about_empty_folders():
+    text = "\n".join(vault_check.result_lines(CheckResult.WORKING, "", "dev"))
+    assert "empty folder" not in text
+
+
+def test_unreachable_text_names_the_configured_ca_file():
+    text = "\n".join(vault_check.result_lines(CheckResult.UNREACHABLE, "", "dev", "/etc/secretops-ca/vault.pem"))
+    assert "trusts the CA in /etc/secretops-ca/vault.pem" in text
+    assert "secretops-configure --ca-file PATH" in text
+    assert "system CA store" not in text
+
+
+def test_unreachable_text_without_ca_file_offers_the_option():
+    text = "\n".join(vault_check.result_lines(CheckResult.UNREACHABLE, "", "dev"))
+    assert "sudo secretops-configure --ca-file PATH" in text
+    assert "system CA store" in text
+
+
 class _Handler(http.server.BaseHTTPRequestHandler):
     status = 200
     body = b'{"message":"Ok"}'
@@ -313,6 +331,22 @@ def test_command_prints_fixed_text_and_leaks_nothing(tmp_path, monkeypatch, stde
         assert MARKER not in text
         assert TOKEN not in text
     assert TOKEN not in argv_file.read_text(encoding="utf-8")
+
+
+def test_command_unreachable_names_the_configured_ca_file(tmp_path, monkeypatch, ca_dir):
+    ca = write_ca(ca_dir)
+    for key, value in ENVIRON.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("SECRETOPS_INFISICAL_CA_FILE", str(ca))
+    monkeypatch.setenv("SECRETOPS_AUDIT_PATH", str(tmp_path / "audit.jsonl"))
+    monkeypatch.setattr(vault_check, "probe_server", lambda domain: Probe.UNREACHABLE)
+
+    result = CliRunner().invoke(app, ["check-vault-connection"])
+
+    assert result.exit_code == 1
+    assert "FAIL vault not reachable" in result.output
+    assert f"trusts the CA in {ca}" in result.output
+    assert "BEGIN CERTIFICATE" not in result.output
 
 
 def test_command_working(tmp_path, monkeypatch):

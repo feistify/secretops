@@ -9,6 +9,11 @@ every value with shlex.quote. Errors name a line number, never its content.
     secretops-configure                 # destination settings and token
     secretops-configure --token-only    # replace only the token
     secretops-configure --check         # check the saved configuration
+    secretops-configure --ca-file PATH  # trust a private CA for the vault
+
+On a broker that has no project ID or token yet, --ca-file continues with
+the same questions as the plain command, so a vault behind a private CA is
+configured and checked in one run.
 
 After saving, and with --check, the vault connection is checked as the
 broker user through the broker wrapper (`check-vault-connection`), for the
@@ -354,6 +359,15 @@ def run_check(
     return result.returncode
 
 
+def is_configured(values: dict[str, str]) -> bool:
+    """True when a project ID and a token are saved, so a check can pass."""
+    return bool(values.get("SECRETOPS_INFISICAL_PROJECT_ID")) and bool(values.get(TOKEN_KEY))
+
+
+def is_interactive() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
 def init_values(domain: str, infisical_bin: str, gh_bin: str | None) -> dict[str, str]:
     values = dict(LAYOUT_DEFAULTS)
     values["INFISICAL_DOMAIN"] = validate_domain(domain)
@@ -399,6 +413,14 @@ def main(argv: list[str] | None = None) -> int:
                 updated.pop(CA_FILE_KEY, None)
             else:
                 updated[CA_FILE_KEY] = validate_ca_file(args.ca_file)
+            if not is_configured(values):
+                if not is_interactive():
+                    # Nothing to check yet: save the CA and say what is next.
+                    write_env(BROKER_ENV, updated, account.pw_uid, account.pw_gid)
+                    print("Broker configuration saved. No credential was displayed.")
+                    print("The vault is not configured yet. Next: sudo secretops-configure")
+                    return 0
+                updated = configure(updated, token_only=False)
             write_env(BROKER_ENV, updated, account.pw_uid, account.pw_gid)
         elif args.init:
             if BROKER_ENV.exists() or BROKER_ENV.is_symlink():
@@ -409,7 +431,7 @@ def main(argv: list[str] | None = None) -> int:
                       account.pw_uid, account.pw_gid)
             return 0
         else:
-            if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            if not is_interactive():
                 raise ConfigError("an interactive terminal is required; do not pipe credentials")
             values = read_env(BROKER_ENV, account.pw_uid)
             updated = configure(values, token_only=args.token_only)

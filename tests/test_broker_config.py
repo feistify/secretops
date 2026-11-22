@@ -475,17 +475,97 @@ def test_ca_file_under_an_unsearchable_directory_is_refused(ca_dir):
         closed.chmod(0o755)
 
 
+CONFIGURED = {"INFISICAL_TOKEN": "old", "SECRETOPS_INFISICAL_PROJECT_ID": "project-1"}
+
+
 def test_ca_file_option_sets_and_removes_only_that_key(interactive_root, ca_dir, capsys):
     env_file, checks, _ = interactive_root
+    write_env(env_file, CONFIGURED, os.getuid(), os.getgid())
     ca = write_ca(ca_dir)
     assert broker_config.main(["--ca-file", str(ca)]) == 0
     values = read_env(env_file, os.getuid())
-    assert values == {"INFISICAL_TOKEN": "old", "SECRETOPS_INFISICAL_CA_FILE": str(ca)}
+    assert values == {**CONFIGURED, "SECRETOPS_INFISICAL_CA_FILE": str(ca)}
     assert checks == ["dev"]
     assert broker_config.main(["--no-ca-file"]) == 0
-    assert read_env(env_file, os.getuid()) == {"INFISICAL_TOKEN": "old"}
+    assert read_env(env_file, os.getuid()) == CONFIGURED
+    assert checks == ["dev", "dev"]
     out = capsys.readouterr().out
     assert "old" not in out and "BEGIN CERTIFICATE" not in out
+
+
+def test_ca_file_on_a_configured_broker_asks_nothing(interactive_root, ca_dir, monkeypatch):
+    env_file, checks, _ = interactive_root
+    write_env(env_file, CONFIGURED, os.getuid(), os.getgid())
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+    monkeypatch.setattr(broker_config, "configure", lambda *a, **k: pytest.fail("must not ask"))
+    assert broker_config.main(["--ca-file", str(write_ca(ca_dir))]) == 0
+    assert checks == ["dev"]
+
+
+def test_ca_file_on_a_new_broker_continues_with_the_questions(interactive_root, ca_dir, monkeypatch, capsys):
+    env_file, checks, _ = interactive_root
+    write_env(env_file, {"INFISICAL_DOMAIN": "https://v.example.com"}, os.getuid(), os.getgid())
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+    ca = write_ca(ca_dir)
+    seen = []
+
+    def answer(values, token_only):
+        seen.append((dict(values), token_only))
+        return {**values, "SECRETOPS_INFISICAL_PROJECT_ID": "project-1", TOKEN_KEY: TOKEN}
+
+    monkeypatch.setattr(broker_config, "configure", answer)
+    assert broker_config.main(["--ca-file", str(ca), "--env", "staging"]) == 0
+    # The questions start from the saved values plus the new CA file.
+    assert seen == [({"INFISICAL_DOMAIN": "https://v.example.com", "SECRETOPS_INFISICAL_CA_FILE": str(ca)}, False)]
+    assert read_env(env_file, os.getuid()) == {
+        "INFISICAL_DOMAIN": "https://v.example.com",
+        TOKEN_KEY: TOKEN,
+        "SECRETOPS_INFISICAL_PROJECT_ID": "project-1",
+        "SECRETOPS_INFISICAL_CA_FILE": str(ca),
+    }
+    assert checks == ["staging"]
+    assert TOKEN not in capsys.readouterr().out
+
+
+def test_ca_file_on_a_new_broker_without_a_terminal_saves_only_the_ca(interactive_root, ca_dir, monkeypatch, capsys):
+    env_file, checks, _ = interactive_root
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    monkeypatch.setattr(broker_config, "configure", lambda *a, **k: pytest.fail("must not ask"))
+    ca = write_ca(ca_dir)
+    assert broker_config.main(["--ca-file", str(ca)]) == 0
+    assert read_env(env_file, os.getuid()) == {"INFISICAL_TOKEN": "old", "SECRETOPS_INFISICAL_CA_FILE": str(ca)}
+    assert checks == []
+    out = capsys.readouterr().out
+    assert "not configured yet. Next: sudo secretops-configure" in out
+    assert "old" not in out
+
+
+def test_refused_ca_file_on_a_new_broker_asks_nothing(interactive_root, ca_dir, monkeypatch):
+    env_file, checks, _ = interactive_root
+    before = env_file.read_text()
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+    monkeypatch.setattr(broker_config, "configure", lambda *a, **k: pytest.fail("must not ask"))
+    assert broker_config.main(["--ca-file", str(write_ca(ca_dir, "x.pem", "not a certificate"))]) == 1
+    assert env_file.read_text() == before
+    assert checks == []
+
+
+def test_cancelled_questions_after_ca_file_change_nothing(interactive_root, ca_dir, monkeypatch):
+    env_file, checks, _ = interactive_root
+    before = env_file.read_text()
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+
+    def cancel(values, token_only):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(broker_config, "configure", cancel)
+    assert broker_config.main(["--ca-file", str(write_ca(ca_dir))]) == 2
+    assert env_file.read_text() == before
+    assert checks == []
 
 
 def test_refused_ca_file_changes_nothing(interactive_root, ca_dir, capsys):
