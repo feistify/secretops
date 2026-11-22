@@ -2,6 +2,7 @@
 
 Date: 2026-11-22 (TODO 4k, "Agent-prepared installation")
 System: a fresh Ubuntu 22.04 VM (cloud image), 4 CPUs, 6 GB; a human account with sudo; no vault, no Docker
+Installed during the run: nerdctl 2.4.2, Infisical v0.167.14 from `examples/infisical/`, secretops 0.1.14 from the release bundle with `--python /usr/bin/python3.12` and `--create-agent-user agent`, the Infisical CLI from `artifacts-cli.infisical.com` (the newest that day; 0.45.14 in the script's test VM)
 Result: **done criterion reached**: the agent account's `vault.read.check` answered `OK secret exists: FIRST_CHECK_KEY`.
 
 ## How it was run
@@ -13,14 +14,14 @@ A fresh coding agent got SSH access to the human's account on the VM (no sudo pa
 | Time | Step |
 | --- | --- |
 | 14:06 | Start. The agent checks the machine (Ubuntu 22.04, Python 3.10, free ports, no secretops) and writes a checklist with **Infisical Cloud** |
-| | The human answers that the vault must be on-prem, without Docker Engine. The agent finds `VAULT_SELF_HOSTED.md`, copies the four files to the VM and writes a nine-step plan: Python 3.12, nerdctl 2.4.2 (with the correct SHA-256), `make-env.sh`, compose up, CA, web page steps, Infisical CLI, installer, `secretops-configure`, first check, backup |
+| | The human answers that the vault must be on-prem, without Docker Engine. The agent finds `VAULT_SELF_HOSTED.md`, copies the guide's files to the human's home directory and writes a nine-step plan: Python 3.12, nerdctl 2.4.2 (with the correct SHA-256), `make-env.sh`, compose up, CA, web page steps, Infisical CLI, installer, `secretops-configure`, first check, backup |
 | ~14:35 | Infisical runs (`/api/status` Ok), CA copied and checked |
 | | **Stuck at the web page steps** (first admin, project, machine identity, Token Auth, token). The human asks the agent to do them; it refuses correctly (admin password and token stay with the human), gives click-by-click steps, and notices that the vault already has an admin (the human had made one) |
 | ~14:50–16:00 | `examples/infisical/bootstrap-broker.py` written, tested in a second VM, reviewed twice and merged (PR #110) |
 | | The human wipes the vault (`down -v`), installs secretops 0.1.14 (`PASS`), runs `bootstrap-broker.py` (one email, one password, `OK vault connection works`), then `secretops add FIRST_CHECK_KEY --env dev` (`Saved and verified.`); the admin sees the project and the key in the web page |
-| 16:38 | The agent's check from the `agent` account (`sudo -iu agent`): `OK secret exists: FIRST_CHECK_KEY` |
+| 16:38 | The human opens a shell as the agent account (`sudo -iu agent`) and runs the agent's check there: `OK secret exists: FIRST_CHECK_KEY` |
 
-About 2.5 hours, of which about one hour was writing and reviewing the script; the human ran about ten blocks of commands and chose one password. The agent never ran `sudo`, never saw a token or password, and kept approval with the human. Not reached: the consumer template in a project's `AGENTS.md` (no real project; TODO 4h/4i).
+About 2.5 hours, of which about one hour was writing and reviewing the script; the human ran about ten blocks of commands and chose one password. The agent never ran `sudo`, never saw a token or password, and kept approval with the human. It worked in the human's own account, which can use sudo, so the boundary during the run was a convention; the agent said so in its first and last messages and told the human to run coding agents only in the `agent` account. Not reached: the consumer template in a project's `AGENTS.md` (no real project; TODO 4h/4i).
 
 ## Found
 

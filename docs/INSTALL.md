@@ -138,11 +138,11 @@ This needs no GitHub. Use a made-up name and value in `dev`, an environment the 
    YAML
    secretops-local write-recipe first-check.yaml < first-check.yaml
    secretops-local plan --file first-check.yaml --save      # prints plan_id
-   secretops-local execute-plan --id PLAN_ID                # the printed plan_id, not the word PLAN_ID
+   secretops-local execute-plan --id PLAN_ID                # the printed plan_id
    # OK secret exists: FIRST_CHECK_KEY
    ```
 
-   Replace `PLAN_ID` with the printed `plan_id`. You can run the same check yourself: `sudo -u secretops-broker /usr/local/bin/secretops-broker check-vault-read --name FIRST_CHECK_KEY --env dev`.
+   You can run the same check yourself: `sudo -u secretops-broker /usr/local/bin/secretops-broker check-vault-read --name FIRST_CHECK_KEY --env dev`.
 
 3. Delete `FIRST_CHECK_KEY` from the `dev` environment in the Infisical web UI. secretops never deletes secrets.
 
