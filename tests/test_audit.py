@@ -10,9 +10,11 @@ from secretops.audit import CORE_FIELDS, write_audit_event
 from secretops.plan_lifecycle import GITHUB_RESULT_CATEGORIES, _github_destination
 
 SOURCE_DIR = Path(__file__).resolve().parent.parent / "src" / "secretops"
-AUDIT_CALLS = {"write_audit_event", "_try_audit"}
-# `**name` unpacks inside details whose keys are checked below.
-KNOWN_UNPACKS = {"destination", "categories", "digests"}
+AUDIT_CALLS = {"write_audit_event", "_try_audit", "_record_write_start"}
+# `**name` unpacks inside details whose keys are checked below; `details`
+# is _record_write_start's own parameter and `start_details` the one that
+# _write_secrets_in_order passes on; the callers of both are checked here.
+KNOWN_UNPACKS = {"destination", "categories", "digests", "details", "start_details"}
 
 
 def test_core_fields_are_the_fields_every_event_carries(tmp_path, monkeypatch):
@@ -71,6 +73,7 @@ def test_no_caller_passes_details_that_replace_a_core_field():
     unpacked: set[str] = set()
     digest_keywords: set[str] = set()
     calls = 0
+    start_detail_calls = 0
     for path in SOURCE_DIR.rglob("*.py"):
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if not isinstance(node, ast.Call):
@@ -81,11 +84,18 @@ def test_no_caller_passes_details_that_replace_a_core_field():
                 for keyword in node.keywords:
                     if keyword.arg == "details":
                         keys |= _detail_keys(keyword.value, unpacked)
+            elif name == "_write_secrets_in_order":
+                # Its start_details reach _record_write_start's details.
+                for keyword in node.keywords:
+                    if keyword.arg == "start_details":
+                        keys |= _detail_keys(keyword.value, unpacked)
+                        start_detail_calls += 1
             elif name == "_audit" and path.name == "human_entry.py":
                 # human_entry._audit(plan, status, step, outcome, **digests)
                 digest_keywords |= {keyword.arg for keyword in node.keywords}
 
     assert calls > 40
+    assert start_detail_calls >= 1
     assert unpacked <= KNOWN_UNPACKS
     keys |= digest_keywords
     # `destination`: the GitHub target keys that _github_destination copies.

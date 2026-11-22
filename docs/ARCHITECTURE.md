@@ -138,6 +138,8 @@ Current safety behavior:
 
 Audit events record safe operation metadata and status. Approvals and rejections appear as events with the plan's action, `step` `approve` or `reject`, and `outcome` (`approved` or `rejected`); an approval also carries `approval_digest`.
 
+Before its first vault or GitHub write, `execute-plan` records `status` `started` with `step` `write_started` and the names it is about to write (`secret_names`, or `source_secret_names` and `target_secret_names` for GitHub; a copy also records `source_env` and its source names). The environment is the one the writes go to. If that event cannot be appended, nothing is written.
+
 Audit logs may include:
 
 - action
