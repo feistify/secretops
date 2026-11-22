@@ -1,4 +1,4 @@
-# Self-hosted Infisical with containerd: first run
+# Self-hosted Infisical: Ubuntu with containerd, and a Synology NAS
 
 Date: 2026-11-22
 Guide: [VAULT_SELF_HOSTED.md](../VAULT_SELF_HOSTED.md), files in `examples/infisical/`
@@ -37,20 +37,32 @@ A coding agent ran every step, including the human ones, in a throwaway VM with 
 - **`infisical bootstrap` exits 0 when it fails** (here: the CA was not readable). Check its JSON output, not the exit status.
 - **The Infisical CLI's Cloudsmith repository is gone** (since 2026-09-16); a CLI installed from it cannot be upgraded.
 
-## Not tried
+## Synology NAS: fresh install beside an old instance
 
-- Docker Engine at runtime, a Synology NAS, Kubernetes (Helm).
-- A browser login with the local CA.
-- The run on the owner's work machine.
-
-## Adopting an existing instance
-
-Template for the owner's run on the NAS; one line per step, no values.
+Date: 2026-11-22. A Synology NAS with DSM 7.3.2 (x86_64, 20 GB), Container Manager with Docker 24.0.2 and Compose v2.20.1. An older test Infisical (v0.161.10, Compose project `infisical`, port 8086) kept running. The coding agent did the NAS steps over a temporary SSH key limited to the laptop's address, with a temporary passwordless sudo rule, both removed afterwards. The human made the browser steps, pasted the broker token and ran `secretops add`; the laptop broker was secretops 0.1.14 with Infisical CLI 0.44.2.
 
 | Step | Result |
 | --- | --- |
-| Keys found and copied offline | |
-| Database dump | |
-| Restore proved on another machine | |
-| TLS in front, broker `--ca-file`, `secretops-configure --check` | |
-| What was hard | |
+| `sudo sh make-env.sh 192.168.0.94 8443` in `/volume1/docker/infisical-secretops` (root's, mode 755) | `.env` and `secrets/`; `secrets/` in Linux mode (no inherited Synology ACL), not readable by other accounts |
+| `sudo docker compose up -d` | Four containers; Infisical uid 61001, Redis 61002, Postgres 70; no key or password in the output |
+| TLS | The laptop verifies `https://192.168.0.94:8443` with the copied Caddy root |
+| First admin | Created through the bootstrap API; the human finished the setup page (invite-only, email login only) after accepting the browser's certificate warning; the CA was not imported into the browser |
+| Project, machine identity, token | Through the API; the token was stored root-only on the NAS, shown once in the human's terminal and deleted |
+| Laptop broker | `secretops-configure --ca-file`, then `secretops-configure` with the new URL, project and token: `OK vault connection works` |
+| First check: vault only | `secretops add FIRST_CHECK_KEY --env dev`; the agent account's `vault.read.check`: `OK secret exists: FIRST_CHECK_KEY` |
+| Backup | `backup.sh` with a scheduled task's environment: a 181 KB dump, mode 600 |
+| Restore | `down -v`, restore, new Caddy root: Infisical started and the project was there |
+
+Found on the NAS:
+
+- **DSM has no `getent`**, so `make-env.sh` skipped its uid check without a word. It now reads `/etc/passwd` when `getent` is missing.
+- **The fixed Compose project name `infisical` would have taken over the old instance's project.** The compose file no longer sets a name; the directory name is the project name.
+- **A non-interactive SSH command on DSM does not find `docker`** (`/usr/local/bin` is not on the path); an interactive login does. Noted in the guide.
+- **Switching a configured broker to a new vault with a private CA** takes `--ca-file` first (its check still uses the old vault) and then `secretops-configure`; the first check's result does not matter there.
+
+## Not tried
+
+- Docker Engine on Ubuntu at runtime, Kubernetes (Helm).
+- The run on the owner's work machine.
+- A browser that trusts the local CA (the warning was accepted instead).
+- Adopting an existing instance: the old NAS instance was a test and is replaced, not adopted.
