@@ -63,7 +63,7 @@ COMPOSE="docker compose"       # Docker, for example a Synology NAS over SSH
    curl -s --cacert infisical-root.crt https://HOST:8443/api/status   # must answer without -k
    ```
 
-5. Trust the certificate in your browser ([below](#trust-the-ca-in-your-browser)), then create the first admin account at `https://HOST:8443`. Choose invite-only sign-up and email login on the setup page. Then continue with [PREPARE.md](PREPARE.md#infisical-steps): project, environments and machine identity.
+5. Install the broker and let one command create the admin, project, machine identity and token: [Connect the broker](#connect-the-broker). Or do it by hand: trust the certificate in your browser ([below](#trust-the-ca-in-your-browser)), create the first admin account at `https://HOST:8443` (invite-only sign-up, email login), then follow [PREPARE.md](PREPARE.md#infisical-steps).
 6. Export the keys for your password manager: [Keep offline](#keep-offline).
 
 ## How TLS works here
@@ -101,12 +101,27 @@ openssl x509 -in infisical-root.crt -noout -fingerprint -sha256
 
 Install the broker as in [INSTALL.md](INSTALL.md) with `--infisical-domain https://HOST:8443`. The Infisical CLI on the broker must come from Infisical's current package repository (`artifacts-cli.infisical.com`, [install](https://infisical.com/docs/cli/install)); the old Cloudsmith repository stopped serving the CLI on 2026-09-16, so a CLI installed from it cannot be upgraded.
 
-Then, on the broker, put the root certificate in a root-owned place and configure:
+Then, on the broker, put the root certificate in a root-owned place:
 
 ```sh
 # Human, on the broker
 sudo install -d -m 755 /etc/secretops-ca
 sudo install -m 644 infisical-root.crt /etc/secretops-ca/infisical-root.pem
+```
+
+**New vault (no admin yet):** copy [`bootstrap-broker.py`](../examples/infisical/bootstrap-broker.py) to the broker and run it with the broker's Python:
+
+```sh
+# Human, on the broker
+sudo /opt/secretops/venv/bin/python -I bootstrap-broker.py --ca-file /etc/secretops-ca/infisical-root.pem
+```
+
+It asks for the first admin's email and password (hidden) and nothing else. Through Infisical's API it creates the admin and the organization `secretops`, the project `secretops` (`dev`, `staging`, `prod`), the machine identity `secretops-broker` (Token Auth, project member, no organization role) and a 30-day access token, saves them in the broker's configuration and ends with `OK vault connection works`. The token is not displayed; renew it before it expires with `sudo secretops-configure --token-only`. It deletes the full-rights identity that Infisical's bootstrap creates. Keep the admin password in your password manager. It refuses a vault that already has an admin, and a broker that already has a token. Needs secretops 0.1.14 or newer. An agent can copy the file but must not run it: it needs the admin password.
+
+**Vault with an admin already:** create the project, identity and token in the web page ([PREPARE.md](PREPARE.md#infisical-steps)), then:
+
+```sh
+# Human, on the broker
 sudo secretops-configure --ca-file /etc/secretops-ca/infisical-root.pem   # then URL, project, folder, token
 ```
 
