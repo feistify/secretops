@@ -414,7 +414,7 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 updated[CA_FILE_KEY] = validate_ca_file(args.ca_file)
             if not is_configured(values):
-                if not is_interactive():
+                if args.no_ca_file or not is_interactive():
                     # Nothing to check yet: save the CA and say what is next.
                     write_env(BROKER_ENV, updated, account.pw_uid, account.pw_gid)
                     print("Broker configuration saved. No credential was displayed.")

@@ -532,6 +532,7 @@ def test_ca_file_on_a_new_broker_continues_with_the_questions(interactive_root, 
 def test_ca_file_on_a_new_broker_without_a_terminal_saves_only_the_ca(interactive_root, ca_dir, monkeypatch, capsys):
     env_file, checks, _ = interactive_root
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True)
     monkeypatch.setattr(broker_config, "configure", lambda *a, **k: pytest.fail("must not ask"))
     ca = write_ca(ca_dir)
     assert broker_config.main(["--ca-file", str(ca)]) == 0
@@ -553,19 +554,35 @@ def test_refused_ca_file_on_a_new_broker_asks_nothing(interactive_root, ca_dir, 
     assert checks == []
 
 
-def test_cancelled_questions_after_ca_file_change_nothing(interactive_root, ca_dir, monkeypatch):
+@pytest.mark.parametrize(
+    ("error", "code"),
+    [(KeyboardInterrupt, 2), (EOFError, 2), (broker_config.ConfigError("Project ID is required; nothing was changed"), 1)],
+)
+def test_failed_questions_after_ca_file_change_nothing(interactive_root, ca_dir, monkeypatch, error, code):
     env_file, checks, _ = interactive_root
     before = env_file.read_text()
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     monkeypatch.setattr("sys.stdout.isatty", lambda: True)
 
-    def cancel(values, token_only):
-        raise KeyboardInterrupt
+    def fail(values, token_only):
+        raise error
 
-    monkeypatch.setattr(broker_config, "configure", cancel)
-    assert broker_config.main(["--ca-file", str(write_ca(ca_dir))]) == 2
+    monkeypatch.setattr(broker_config, "configure", fail)
+    assert broker_config.main(["--ca-file", str(write_ca(ca_dir))]) == code
     assert env_file.read_text() == before
     assert checks == []
+
+
+def test_no_ca_file_on_a_new_broker_asks_nothing(interactive_root, monkeypatch, capsys):
+    env_file, checks, _ = interactive_root
+    write_env(env_file, {"INFISICAL_TOKEN": "old", "SECRETOPS_INFISICAL_CA_FILE": "/etc/ca.pem"}, os.getuid(), os.getgid())
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+    monkeypatch.setattr(broker_config, "configure", lambda *a, **k: pytest.fail("must not ask"))
+    assert broker_config.main(["--no-ca-file"]) == 0
+    assert read_env(env_file, os.getuid()) == {"INFISICAL_TOKEN": "old"}
+    assert checks == []
+    assert "Next: sudo secretops-configure" in capsys.readouterr().out
 
 
 def test_refused_ca_file_changes_nothing(interactive_root, ca_dir, capsys):
