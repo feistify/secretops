@@ -238,7 +238,7 @@ Each route stays as protected as you keep that credential. A `command: [...]` en
 | PuTTY | no | refused |
 | Windows Terminal | no | refused |
 
-tmux answers the query itself instead of the outer terminal, so a pass inside tmux says nothing about the terminal around it. Until that is checked, enter values outside tmux. screen has not been tried. To see whether a terminal answers, run this in bash there:
+In one test, tmux 3.2a inside a VTE terminal did not answer the query, so `add` refused there. Another tmux (version unknown) answered the query itself instead of the outer terminal, so a pass inside tmux says nothing about the terminal around it. Until that case is checked, enter values outside tmux. screen has not been tried. To see whether a terminal answers, run this in bash there:
 
 ```bash
 printf '\033[?2004$p' > /dev/tty; IFS= read -rs -t2 -d y r < /dev/tty; printf 'reply: %q\n' "$r"
