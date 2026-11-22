@@ -68,7 +68,7 @@ COMPOSE="docker compose"       # Docker, for example a Synology NAS over SSH
 
 ## How TLS works here
 
-Caddy is its own small certificate authority (CA). At the first start it creates a root certificate, valid for ten years, and from it the server certificate for `HOST`, which it renews by itself. The root's private key (`root.key`) stays in Caddy's `caddy_data` volume.
+Caddy is its own small certificate authority (CA). At the first start it creates a root certificate, valid for about ten years, and from it a 7-day intermediate and the server certificate for `HOST`, both renewed by Caddy. The root's private key (`root.key`) stays in Caddy's `caddy_data` volume.
 
 The root certificate (`root.crt`) is public. Two places need it: the broker, through `secretops-configure --ca-file` ([Connect the broker](#connect-the-broker)), and your browser ([below](#trust-the-ca-in-your-browser)). Whoever has `root.key` can make certificates that both trust for any name, so treat it like the vault's keys: it is in the export from [Keep offline](#keep-offline) and nowhere else.
 
@@ -94,9 +94,8 @@ openssl x509 -in infisical-root.crt -noout -fingerprint -sha256
   ```
 
   Chromium from the snap store keeps its store in `~/snap/chromium/current/.pki/nssdb`; use that path there.
-
-  Or in Chrome: **Settings → Privacy and security → Security → Manage certificates**, import it as a trusted authority for websites.
 - **Firefox:** **Settings → Privacy & Security → Certificates → View Certificates → Authorities → Import**, and tick "Trust this CA to identify websites".
+- **macOS and Windows:** browsers use the system store (Keychain Access; the Windows certificate manager); not tested here.
 
 ## Connect the broker
 
@@ -121,7 +120,7 @@ Keep these in your password manager, as attachments of one entry, not only on th
 | --- | --- |
 | `secrets/backend.env` | `ENCRYPTION_KEY`: without it no database backup can be decrypted; `AUTH_SECRET` |
 | `secrets/db_password`, `secrets/redis.conf`, `.env` | to start a restored copy with the same settings |
-| Caddy's CA (`root.crt`, `root.key`, intermediate) | so a restored vault keeps its CA and nothing needs to trust a new one |
+| Caddy's root CA (`root.crt`, `root.key`) | so a restored vault keeps its CA and nothing needs to trust a new one |
 | The admin login (email and password) | to reach the web UI |
 
 `export-keys.sh` puts all files from the table into one archive, readable only by you:
@@ -145,14 +144,14 @@ It writes a compressed `pg_dump` (mode 600) and leaves no partial file when it f
 
 ## Restore
 
-On a new machine, copy `examples/infisical/` into a directory with the same name as before (it names the volumes), make it root's as in [Set up](#set-up), and put the keys back from your export before the first start:
+On a new machine, copy `examples/infisical/` into a directory, make it root's as in [Set up](#set-up), and put the keys back from your export before the first start (on the same host, keep the directory's old name: it names the volumes):
 
 ```sh
 # Human
 sudo COMPOSE="$COMPOSE" sh import-keys.sh infisical-keys-DATE.tar.gz
 ```
 
-It restores `.env`, `secrets/` and Caddy's CA, and refuses a directory that already has `.env` or `secrets/`. Then restore the database:
+It restores `.env`, `secrets/` and Caddy's root CA (Caddy makes a new intermediate from it), refuses a directory that already has `.env` or `secrets/`, and removes what it restored if it fails. Then restore the database:
 
 ```sh
 # Human

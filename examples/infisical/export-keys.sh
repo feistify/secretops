@@ -7,9 +7,9 @@
 #
 # It writes infisical-keys-DATE.tar.gz into DIR (default: your home),
 # readable only by you. It holds .env, secrets/ (ENCRYPTION_KEY, AUTH_SECRET,
-# passwords) and Caddy's local CA (root certificate and key), so that a
-# restored vault keeps its TLS certificate authority. Attach it to an entry
-# in your password manager, then delete it. It prints no key.
+# passwords) and Caddy's root CA (certificate and key), so that a restored
+# vault keeps its TLS certificate authority. Attach it to an entry in your
+# password manager, then delete it. It prints no key.
 set -eu
 
 die() { echo "$*" >&2; exit 1; }
@@ -18,30 +18,43 @@ owner=${SUDO_USER:-}
 [ -n "$owner" ] && [ "$owner" != root ] || die "run with sudo from your own account, not as root"
 [ -d secrets ] && [ -f .env ] || die "run it in the Infisical directory, after make-env.sh"
 home=$(awk -F: -v u="$owner" '$1 == u { print $6 }' /etc/passwd)
-[ -n "$home" ] || home=$(getent passwd "$owner" | cut -d: -f6)
+[ -n "$home" ] || home=$(getent passwd "$owner" 2>/dev/null | cut -d: -f6) || true
 dest=${1:-$home}
-[ -d "$dest" ] || die "$dest is not a directory"
+[ -n "$dest" ] || die "no home directory found for $owner; give DIR"
+[ -d "$dest" ] && [ ! -L "$dest" ] || die "$dest is not a directory"
+# Root writes the archive there: refuse a directory others can change.
+dest_owner=$(stat -c %U "$dest")
+[ "$dest_owner" = "$owner" ] || [ "$dest_owner" = root ] || die "$dest belongs to $dest_owner; give a directory of yours"
+[ -z "$(find "$dest" -maxdepth 0 -perm /022)" ] || die "$dest is writable by others; give a private directory"
 compose=${COMPOSE:-docker compose}
 PATH=/usr/local/sbin:/usr/local/bin:$PATH
 
 umask 077
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
-mkdir "$work/infisical-keys"
+tmp=$(mktemp "$dest/.infisical-keys.XXXXXX")
+trap 'rm -rf "$work"; rm -f "$tmp"' EXIT
+mkdir "$work/infisical-keys" "$work/ca"
 cp -p .env "$work/infisical-keys/"
 cp -rp secrets "$work/infisical-keys/"
+# Only the root: Caddy makes a new 7-day intermediate from it after a restore.
+ca_ok=no
 # shellcheck disable=SC2086  # COMPOSE holds several words
-if $compose cp caddy:/data/caddy/pki/authorities/local "$work/infisical-keys/caddy-ca" >/dev/null 2>&1 \
-    && [ -f "$work/infisical-keys/caddy-ca/root.key" ]; then
-    ca="and Caddy's CA"
-else
-    rm -rf "$work/infisical-keys/caddy-ca"
-    ca="but not Caddy's CA (is the caddy service running?); a restore will create a new CA"
+if $compose cp caddy:/data/caddy/pki/authorities/local "$work/ca/local" >/dev/null 2>&1 \
+    && [ -f "$work/ca/local/root.crt" ] && [ -f "$work/ca/local/root.key" ]; then
+    mkdir "$work/infisical-keys/caddy-ca"
+    cp -p "$work/ca/local/root.crt" "$work/ca/local/root.key" "$work/infisical-keys/caddy-ca/"
+    ca_ok=yes
 fi
 
 file="$dest/infisical-keys-$(date +%Y%m%d-%H%M%S).tar.gz"
-tar -C "$work" -czf "$file.tmp" infisical-keys
-chown "$owner" "$file.tmp"
-mv "$file.tmp" "$file"
-echo "Wrote $file (only $owner can read it): .env, secrets/ $ca."
-echo "Attach it to an entry in your password manager, then delete it: rm $file"
+tar -C "$work" -czf "$tmp" infisical-keys
+chown "$owner" "$tmp"
+mv "$tmp" "$file"
+if [ "$ca_ok" = yes ]; then
+    echo "Wrote $file (only $owner can read it): .env, secrets/ and Caddy's root CA."
+    echo "Attach it to an entry in your password manager, then delete it: rm $file"
+else
+    echo "WARNING: wrote $file with .env and secrets/ but WITHOUT Caddy's CA" >&2
+    echo "(is the caddy service running?). A restore from it will create a new CA." >&2
+    exit 1
+fi
