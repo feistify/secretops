@@ -124,6 +124,15 @@ sudo chmod 0600 /root/secretops-backup-*.tar.gz
 
 Keep the archive where the agent cannot read it. It contains names, destinations and approvals, but no values.
 
+## Lock files in the plan directory
+
+Beside each plan that `approve-plan`, `reject-plan`, `execute-plan` or `secretops add` has worked on, the plan directory holds an empty file `.PLAN_ID.lock`. It is the lock that keeps two commands off the same plan, and it stays after the command ends. That is normal: secretops never removes it, because removing a lock while another command opens it would let two commands run the same plan. To tidy up, remove them only while nothing can use them:
+
+```sh
+# Human, with the agent paused and no broker command running
+sudo find /opt/secretops/plans -maxdepth 1 -type f -name '.*.lock' -empty -delete
+```
+
 ## Restore
 
 After a fresh installation (see [INSTALL.md](INSTALL.md)), with the agent paused. The archive was made from broker-owned directories, so check it before root extracts or copies anything: it must contain only plain files and directories with the expected names. Both check commands must print nothing; if either prints a line, stop.
