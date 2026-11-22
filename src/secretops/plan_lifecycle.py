@@ -1456,8 +1456,9 @@ def _refuse_unapproved(plan_artifact, console: Console, *, secret_name: str | No
     """Refuse a plan that needs approval and is not approved.
 
     A `planned` plan still waits for the human: it is left unchanged, so the
-    same plan can be approved and executed later. Any other status (only
-    `failed` reaches this point) is refused as before and stays `failed`.
+    same plan can be approved and executed later. Final statuses are
+    refused before this point; any other status is refused and marked
+    `failed` as a defensive fallback.
     """
     pending = plan_artifact.status == "planned"
     source = _audit_source(plan_artifact)
@@ -1588,6 +1589,12 @@ def _execute_loaded_plan(plan_artifact, console: Console) -> None:
         console.print("[red]FAIL[/red] plan already executed; save a new plan to run it again")
         console.print("no provider call was made")
         raise typer.Exit(1)
+    # A failed plan is final too, for every action: checks are repeated
+    # with a new plan (they need no approval), writes with a new approval.
+    if plan_artifact.status == "failed":
+        console.print("[red]FAIL[/red] plan already failed; save a new plan to run it again")
+        console.print("no provider call was made")
+        raise typer.Exit(1)
 
     if plan_artifact.action in HUMAN_ENTRY_ACTIONS:
         # There is no value to execute with: a human enters it through the
@@ -1608,7 +1615,7 @@ def _execute_loaded_plan(plan_artifact, console: Console) -> None:
 
     # Order of checks, all before any provider call:
     # 1. environment policy (refused: marked failed);
-    # 2. approval (a planned plan stays planned; a failed one stays failed),
+    # 2. approval (a planned plan stays planned; final statuses were refused above),
     #    before the binding check, so a vault error or a changed destination
     #    cannot fail a plan that still waits for the human;
     # 3. binding: approval digest and vault destination (marked failed),

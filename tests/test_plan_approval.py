@@ -243,18 +243,6 @@ def test_refused_plan_can_still_be_approved_and_executed(broker):
             assert value not in line
 
 
-def test_failed_plan_that_needs_approval_stays_failed(broker):
-    plan_path = broker.write(generate_plan("already-failed", status="failed"))
-
-    code, lines = broker.execute("already-failed")
-
-    assert code == 1
-    assert lines[0] == "FAIL vault.secret.generate plan requires approval"
-    assert PENDING not in lines
-    assert read_plan(plan_path)["status"] == "failed"
-    assert broker.calls == []
-
-
 def test_planned_plan_refused_by_environment_policy_is_marked_failed(broker):
     plan = generate_plan("production-pending")
     plan["env"] = "production"
@@ -269,11 +257,29 @@ def test_planned_plan_refused_by_environment_policy_is_marked_failed(broker):
     assert broker.calls == []
 
 
+@pytest.mark.parametrize(
+    "plan",
+    [vault_plan("check-failed", "failed"), diff_envs_plan("diff-failed", "failed"), verify_many_plan("verify-failed", "failed")],
+    ids=["read_check", "diff_envs", "verify_many"],
+)
+def test_a_failed_check_is_repeated_with_a_new_plan_not_this_one(broker, plan):
+    plan_path = broker.write(plan)
+    before = plan_path.read_bytes()
+
+    code, lines = broker.execute(plan["plan_id"])
+
+    assert code == 1
+    assert lines == ["FAIL plan already failed; save a new plan to run it again", "no provider call was made"]
+    assert plan_path.read_bytes() == before
+    assert broker.calls == []
+
+
 @pytest.mark.parametrize("status,message", [
     ("rejected", "FAIL rejected plan cannot execute"),
     ("executed", "FAIL plan already executed; save a new plan to run it again"),
+    ("failed", "FAIL plan already failed; save a new plan to run it again"),
 ])
-def test_rejected_and_executed_plans_are_refused_unchanged(broker, status, message):
+def test_rejected_executed_and_failed_plans_are_refused_unchanged(broker, status, message):
     plan_path = broker.write(generate_plan(f"done-{status}", status=status))
     before = plan_path.read_bytes()
 
