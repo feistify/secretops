@@ -18,7 +18,7 @@ import time
 import unicodedata
 from typing import Any
 
-from secretops.audit import write_audit_event
+from secretops.audit import AuditWriteError, write_audit_event
 from secretops.plan_lifecycle import _binding_failures
 from secretops.plans import (
     DIGEST_PREFIX,
@@ -58,6 +58,22 @@ ENV_PATTERN = VAULT_ENVIRONMENT_PATTERN
 REQUEST_FIELDS = {"protocol": int, "plan_id": str, "digest": str, "value": str}
 # Line breaks other than CR/LF that a terminal or provider may treat as one.
 LINE_SEPARATORS = {"Zl", "Zp"}
+# No audit, no change: a step whose audit event cannot be written stops
+# before it saves a plan, records an approval or writes to the vault.
+AUDIT_STOP = (
+    "the audit record could not be written; nothing was saved or written; "
+    "ask the operator to fix the audit log before running this again"
+)
+CREATED_MESSAGE = "saved and verified"
+EXISTS_MESSAGE = "secret already exists; nothing was written by this invocation"
+UNKNOWN_MESSAGE = "write outcome is unknown; check the secret before any new attempt"
+# After a vault write the outcome stands; what could not be recorded is
+# added to the response message (the response fields stay the same, so
+# older clients still read it).
+# Each warning starts with WARNING and holds no "; ", which separates them.
+AUDIT_INCOMPLETE = "WARNING the audit record could not be completed, ask the operator to check the audit log"
+STATUS_UNSAVED = "WARNING the plan status could not be updated, ask the operator to record this outcome"
+WARNING_PREFIX = "WARNING "
 
 REVIEW_OUTCOMES = ("ready", "exists", "refused", "provider_error")
 SUBMIT_OUTCOMES = ("created", "exists", "refused", "provider_error", "unknown")
@@ -147,6 +163,27 @@ def _audit(plan_artifact, status: str, step: str, outcome: str, **digests: str) 
     )
 
 
+def _audited(plan_artifact, status: str, step: str, outcome: str, **digests: str) -> bool:
+    """Write the audit event; False when the audit log cannot be written."""
+    try:
+        _audit(plan_artifact, status, step, outcome, **digests)
+    except AuditWriteError:
+        return False
+    return True
+
+
+def _review_after_audit(plan_artifact, status: str, outcome: str, response: dict, **digests: str):
+    if not _audited(plan_artifact, status, "review", outcome, **digests):
+        return _review_response("refused", AUDIT_STOP, plan_artifact)
+    return response
+
+
+def _submit_after_audit(plan_artifact, status: str, outcome: str, response: dict, reviewed_digest: str):
+    if not _audited(plan_artifact, status, "submit", outcome, reviewed_digest=reviewed_digest):
+        return _submit_response("refused", AUDIT_STOP, plan_artifact.plan_id)
+    return response
+
+
 def _load_add_plan(plan_id: str):
     """Load a planned vault.secret.add plan, or return (None, refusal message)."""
     if not isinstance(plan_id, str) or not PLAN_ID_PATTERN.fullmatch(plan_id):
@@ -189,26 +226,39 @@ def review_add(plan_id: str) -> dict[str, Any]:
     try:
         refusal = _plan_refusal(plan_artifact)
         if refusal:
-            _audit(plan_artifact, "failure", "review", "refused")
-            return _review_response("refused", refusal, plan_artifact)
+            return _review_after_audit(
+                plan_artifact, "failure", "refused", _review_response("refused", refusal, plan_artifact)
+            )
         vault = get_vault(plan_artifact.vault_destination)
         exists = vault.secret_exists(plan_artifact.secret_name, plan_artifact.env)
     except VaultError as error:
-        _audit(plan_artifact, "failure", "review", "provider_error")
-        return _review_response("provider_error", f"vault error: {error}", plan_artifact)
+        return _review_after_audit(
+            plan_artifact,
+            "failure",
+            "provider_error",
+            _review_response("provider_error", f"vault error: {error}", plan_artifact),
+        )
     if exists:
-        _audit(plan_artifact, "failure", "review", "exists")
-        return _review_response(
-            "exists", "secret already exists; nothing was written", plan_artifact
+        return _review_after_audit(
+            plan_artifact,
+            "failure",
+            "exists",
+            _review_response("exists", "secret already exists; nothing was written", plan_artifact),
         )
     digest = plan_digest(plan_artifact.loaded_content)
-    _audit(plan_artifact, "success", "review", "ready", reviewed_digest=digest)
-    return _review_response(
-        "ready",
-        "checks passed; the secret is currently absent",
+    # Without the review record the human is never asked for the value.
+    return _review_after_audit(
         plan_artifact,
-        digest=digest,
-        atomic_create=bool(vault.atomic_create),
+        "success",
+        "ready",
+        _review_response(
+            "ready",
+            "checks passed; the secret is currently absent",
+            plan_artifact,
+            digest=digest,
+            atomic_create=bool(vault.atomic_create),
+        ),
+        reviewed_digest=digest,
     )
 
 
@@ -237,16 +287,35 @@ def prepare_add(name: str, env: str) -> dict[str, Any]:
         value_source=HUMAN_PROMPT_SOURCE,
     )
     plan_artifact = build_plan_artifact(recipe, destination)
-    save_plan_artifact(plan_artifact)
-    write_audit_event(
-        action=ACTION,
-        secret_name=name,
-        env=env,
-        status="planned",
-        plan_id=plan_artifact.plan_id,
-        details={"channel": CHANNEL, "step": "prepare", "outcome": "planned"},
-    )
-    return review_add(plan_artifact.plan_id)
+    # Recorded before the plan is saved, as `plan --save` does: without the
+    # record, no plan exists.
+    try:
+        write_audit_event(
+            action=ACTION,
+            secret_name=name,
+            env=env,
+            status="planned",
+            plan_id=plan_artifact.plan_id,
+            details={"channel": CHANNEL, "step": "prepare", "outcome": "planned"},
+        )
+    except AuditWriteError:
+        return _review_response("refused", AUDIT_STOP)
+    try:
+        save_plan_artifact(plan_artifact)
+    except OSError:
+        return _review_response(
+            "refused",
+            "the plan could not be saved; nothing was written; ask the operator to check the plan directory",
+        )
+    response = review_add(plan_artifact.plan_id)
+    if response["outcome"] == "refused" and response["message"] == AUDIT_STOP:
+        # The plan exists now: say so, so the same plan is used again.
+        response["message"] = (
+            f"the audit record could not be written; plan {plan_artifact.plan_id} was saved, "
+            "nothing was written; ask the operator to fix the audit log, then run: "
+            f"secretops add --plan {plan_artifact.plan_id}"
+        )
+    return response
 
 
 def read_request(fd: int, *, limit: int = MAX_REQUEST_BYTES,
@@ -325,60 +394,79 @@ def _submit_locked(plan_id: str, reviewed_digest: str, value: str) -> dict[str, 
     if plan_artifact is None:
         return _submit_response("refused", refusal, plan_id)
     if plan_digest(plan_artifact.loaded_content) != reviewed_digest:
-        _audit(plan_artifact, "failure", "submit", "refused", reviewed_digest=reviewed_digest)
-        return _submit_response(
-            "refused", "plan changed after review; nothing was written", plan_id
+        return _submit_after_audit(
+            plan_artifact,
+            "failure",
+            "refused",
+            _submit_response("refused", "plan changed after review; nothing was written", plan_id),
+            reviewed_digest,
         )
     try:
         refusal = _plan_refusal(plan_artifact)
     except VaultError as error:
-        _audit(plan_artifact, "failure", "submit", "provider_error", reviewed_digest=reviewed_digest)
-        return _submit_response("provider_error", f"vault error: {error}", plan_id)
+        return _submit_after_audit(
+            plan_artifact,
+            "failure",
+            "provider_error",
+            _submit_response("provider_error", f"vault error: {error}", plan_id),
+            reviewed_digest,
+        )
     if refusal:
-        _audit(plan_artifact, "failure", "submit", "refused", reviewed_digest=reviewed_digest)
-        return _submit_response("refused", refusal, plan_id)
+        return _submit_after_audit(
+            plan_artifact, "failure", "refused", _submit_response("refused", refusal, plan_id), reviewed_digest
+        )
 
     # The human confirmed this digest; approval is recorded with it here,
     # on the authenticated human path, and executed with the same object.
-    # The approval time is recorded as for approve-plan; no expiry applies,
-    # because execution follows at once.
-    plan_artifact = set_plan_status(
-        plan_artifact,
-        "approved",
-        approval_digest=reviewed_digest,
-        approved_at=format_timestamp(utc_now()),
-    )
-    _audit(
+    # No audit, no write: the approval event is appended before the status
+    # is saved and before the vault write; without it nothing changes and
+    # the plan stays planned. The approval time is recorded as for
+    # approve-plan; no expiry applies, because execution follows at once.
+    if not _audited(
         plan_artifact, "success", "approve", "approved",
         reviewed_digest=reviewed_digest, approval_digest=reviewed_digest,
-    )
+    ):
+        return _submit_response("refused", AUDIT_STOP, plan_id)
+    try:
+        plan_artifact = set_plan_status(
+            plan_artifact,
+            "approved",
+            approval_digest=reviewed_digest,
+            approved_at=format_timestamp(utc_now()),
+        )
+    except Exception:  # noqa: BLE001 - nothing was written; refuse instead of a traceback
+        # The plan file is replaced atomically: it is still planned.
+        _audited(plan_artifact, "failure", "submit", "refused", reviewed_digest=reviewed_digest)
+        return _submit_response(
+            "refused",
+            "the approval could not be saved; nothing was written; ask the operator to check the plan directory",
+            plan_id,
+        )
+
+    def finish(status: str, audit_status: str, outcome: str, response_outcome: str, message: str):
+        # After the vault call the outcome stands; failures to record it are
+        # reported with it, never instead of it.
+        warnings = []
+        try:
+            set_plan_status(plan_artifact, status)
+        except Exception:  # noqa: BLE001 - report the outcome even if the store fails
+            warnings.append(STATUS_UNSAVED)
+        if not _audited(plan_artifact, audit_status, "submit", outcome, reviewed_digest=reviewed_digest):
+            warnings.append(AUDIT_INCOMPLETE)
+        return _submit_response(response_outcome, "; ".join([message, *warnings]), plan_id)
+
     try:
         vault = get_vault(plan_artifact.vault_destination)
         outcome = vault.create_secret(plan_artifact.secret_name, plan_artifact.env, value)
     except VaultError as error:
-        set_plan_status(plan_artifact, "failed")
-        _audit(plan_artifact, "failure", "submit", "provider_error", reviewed_digest=reviewed_digest)
-        return _submit_response("provider_error", f"vault error: {error}", plan_id)
+        return finish("failed", "failure", "provider_error", "provider_error", f"vault error: {error}")
     except Exception:  # noqa: BLE001 - an unexpected failure may follow a write
-        set_plan_status(plan_artifact, "failed")
-        _audit(plan_artifact, "outcome_unknown", "submit", "unknown", reviewed_digest=reviewed_digest)
-        return _submit_response(
-            "unknown", "write outcome is unknown; check the secret before any new attempt", plan_id
-        )
+        return finish("failed", "outcome_unknown", "unknown", "unknown", UNKNOWN_MESSAGE)
     if outcome is CreateOutcome.CONFIRMED:
-        set_plan_status(plan_artifact, "executed")
-        _audit(plan_artifact, "success", "submit", "created", reviewed_digest=reviewed_digest)
-        return _submit_response("created", "saved and verified", plan_id)
-    set_plan_status(plan_artifact, "failed")
+        return finish("executed", "success", "created", "created", CREATED_MESSAGE)
     if outcome is CreateOutcome.EXISTS:
-        _audit(plan_artifact, "failure", "submit", "exists", reviewed_digest=reviewed_digest)
-        return _submit_response(
-            "exists", "secret already exists; nothing was written by this invocation", plan_id
-        )
-    _audit(plan_artifact, "outcome_unknown", "submit", "unknown", reviewed_digest=reviewed_digest)
-    return _submit_response(
-        "unknown", "write outcome is unknown; check the secret before any new attempt", plan_id
-    )
+        return finish("failed", "failure", "exists", "exists", EXISTS_MESSAGE)
+    return finish("failed", "outcome_unknown", "unknown", "unknown", UNKNOWN_MESSAGE)
 
 
 def response_line(response: dict[str, Any]) -> str:
