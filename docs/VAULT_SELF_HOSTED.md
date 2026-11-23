@@ -2,7 +2,7 @@
 
 How to run your own Infisical for secretops on one machine, a server or a NAS, with TLS and a tested backup. The files are in [`examples/infisical/`](../examples/infisical/). Afterwards continue with [PREPARE.md](PREPARE.md) and [INSTALL.md](INSTALL.md).
 
-Tested: Ubuntu 22.04 with containerd and nerdctl 2.4.2, without Docker Engine; Infisical v0.167.14, Infisical CLI 0.45.14, secretops 0.1.13; and a Synology NAS with DSM 7.3.2, Docker 24.0.2 and Compose v2.20.1, with secretops 0.1.14 ([record](validation/self-hosted-infisical.md)). On Kubernetes, see [VAULT_KUBERNETES.md](VAULT_KUBERNETES.md). Infisical's own guide: [Docker Compose](https://infisical.com/docs/self-hosting/deployment-options/docker-compose).
+Tested: Ubuntu 22.04 with containerd and nerdctl 2.4.2, without Docker Engine; Infisical v0.167.14, Infisical CLI 0.45.14, secretops 0.1.13; and a Synology NAS with DSM 7.3.2, Docker 24.0.2 and Compose v2.20.1, with secretops 0.1.14; `install-single-machine.sh` in an Ubuntu 22.04 VM with nerdctl 2.4.2 and secretops 0.1.15 ([record](validation/self-hosted-infisical.md)). On Kubernetes, see [VAULT_KUBERNETES.md](VAULT_KUBERNETES.md). Infisical's own guide: [Docker Compose](https://infisical.com/docs/self-hosting/deployment-options/docker-compose).
 
 ## One script for one machine
 
@@ -13,7 +13,13 @@ When the vault and the broker run on the same Linux host and a container tool (n
 sudo bash install-single-machine.sh --host HOST --create-agent-user agent
 ```
 
-It shows what it will change and asks first, skips what is already done (so it can run again after a stop), never installs or changes a container runtime, and prints no key, password or token. It asks only for the first admin's email and password. At the end it prints the next steps: [Keep offline](#keep-offline), the first check, [Back up](#back-up). `--port`, `--dir` and `--agent-user` change the defaults; `--help` lists them. The rest of this page is the same work by hand, and what to do afterwards.
+It shows what it will change and asks first (`--yes` skips the question), skips what is already done (so it can run again after a stop), and prints no key, password or token; it asks only for the first admin's email and password. `HOST` must be an address of this machine. Use `--agent-user USER` instead for an existing agent account; `--port` and `--dir` change the defaults; `--help` lists them. Copy the directory so that only you and root can change it: root runs its files.
+
+- **Kubernetes node.** It never installs or restarts a container runtime, runs the vault in containerd's `default` namespace, refuses a port that a pod or container already publishes, and stops if nerdctl's network file would come before the cluster's in `/etc/cni/net.d`. The vault needs about 1 to 2 GB of memory outside the kubelet's accounting. Run `check-node.sh` with sudo first.
+- **Checks.** The Infisical CLI's apt source trusts only Infisical's signing key with the fingerprint pinned in the script. The release bundle is compared with the release's `SHA256SUMS`, which comes from the same place: that catches a broken download, not a forged release; the bundle pins the program's hash, which pip checks against PyPI.
+- **Proxy.** Downloads go direct; to use a proxy, pass it: `sudo https_proxy=http://PROXY:PORT bash install-single-machine.sh ...`. The vault is always reached directly.
+
+At the end it prints the next steps: [Keep offline](#keep-offline), the first check, [Back up](#back-up). The rest of this page is the same work by hand, and what to do afterwards.
 
 ## What you get
 

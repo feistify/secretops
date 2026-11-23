@@ -6,47 +6,59 @@
 #
 #   sudo bash install-single-machine.sh --host HOST --create-agent-user agent
 #
-# Run it from a copy of examples/infisical/ (a repository checkout or the
-# release's source archive), in your own terminal, with sudo. It does, and
-# skips what is already done, so it can be run again after a stop:
+# Run it from a copy of examples/infisical/ that only you and root can
+# change, in your own terminal, with sudo. It does, and skips what is already
+# done, so it can be run again after a stop:
 #
 #   1. checks the host: Ubuntu 22.04/24.04 or Debian 12, a container tool
-#      (nerdctl or docker compose) already installed, free ports
-#   2. Python 3.11+ for the broker; on Ubuntu 22.04 python3.12 from the
-#      deadsnakes PPA
+#      (nerdctl or docker compose) already installed, HOST is this machine,
+#      the port is free, the broker's prerequisites
+#   2. Python 3.11+ for the broker: python3.12 from the deadsnakes PPA on
+#      Ubuntu 22.04, otherwise python3-venv
 #   3. the vault in --dir (default /opt/infisical): make-env.sh, compose up,
 #      waits for the API, copies Caddy's root certificate to
 #      /etc/secretops-ca/infisical-root.pem
-#   4. the Infisical CLI from Infisical's apt repository (signing key checked
-#      against a pinned fingerprint), version pinned and held
-#   5. secretops from the release bundle (SHA-256 checked against the
-#      release's SHA256SUMS), with the agent account
+#   4. the Infisical CLI from Infisical's apt repository: only the signing
+#      key with the pinned fingerprint is trusted; version pinned and held
+#   5. secretops from the GitHub release bundle, with the agent account. The
+#      bundle is compared with the release's SHA256SUMS, which comes from the
+#      same place, so that catches a broken download, not a forged release;
+#      the bundle pins the wheel's hash, and pip checks it against PyPI
 #   6. bootstrap-broker.py: asks for the first admin's email and password,
 #      creates project, machine identity and token, ends with the vault check
 #
 # It never installs or changes a container runtime: on a Kubernetes node the
 # nerdctl full bundle would replace the node's containerd (docs/TRIAL.md).
-# It prints no key, password or token, and asks before it changes anything.
-# Afterwards it prints the next steps: export the keys, the first check,
-# backups. Guide: docs/VAULT_SELF_HOSTED.md.
+# It shows what it will change and asks first, and prints no key, password or
+# token. Downloads go direct; for a proxy, pass it: sudo https_proxy=URL bash
+# install-single-machine.sh ... (the vault itself is always reached
+# directly). Guide: docs/VAULT_SELF_HOSTED.md.
 set -Eeuo pipefail
 umask 022
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export LC_COLLATE=C
 
 SECRETOPS_VERSION=0.1.15
+BOOTSTRAP_MIN_VERSION=0.1.14
 INFISICAL_CLI_VERSION=0.45.14
 # Primary key of "Infisical code artifacts", which signs artifacts-cli.infisical.com.
 INFISICAL_KEY_FINGERPRINT=698CE22DCBD9C67562F3C4749CC397EDC268078E
 INFISICAL_REPO=https://artifacts-cli.infisical.com
 KEYRING=/usr/share/keyrings/infisical-archive-keyring.gpg
+APT_SOURCE=/etc/apt/sources.list.d/infisical.list
 CA_DIR=/etc/secretops-ca
 CA_FILE=$CA_DIR/infisical-root.pem
 BROKER_ROOT=/opt/secretops
-VAULT_FILES="compose.yaml Caddyfile make-env.sh backup.sh export-keys.sh import-keys.sh"
+BROKER_USER=secretops-broker
+BROKER_SSH_PORT=22222
+VAULT_FILES=(compose.yaml Caddyfile make-env.sh backup.sh export-keys.sh import-keys.sh bootstrap-broker.py)
 API_WAIT_SECONDS=600
 
 host='' port=8443 dir=/opt/infisical agent_user='' create_agent='' assume_yes=0
 here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+cleanup=()
+trap 'rm -rf -- ${cleanup[@]+"${cleanup[@]}"}' EXIT
+trap 'printf "FAIL at line %s (output above); fix the cause and run again: finished steps are skipped\n" "$LINENO" >&2' ERR
 
 usage() {
     cat <<'EOF'
@@ -54,12 +66,13 @@ usage:
   sudo bash install-single-machine.sh --host HOST (--create-agent-user NAME | --agent-user USER)
                                       [--port PORT] [--dir DIR] [--yes]
 
-  --host HOST              DNS name or IPv4 address the broker and your browser use for the vault
+  --host HOST              DNS name or IPv4 address of this machine, which the broker and your
+                           browser use for the vault
+  --create-agent-user NAME create a separate account without sudo for the coding agent
+  --agent-user USER        or: an existing account the coding agent runs as
   --port PORT              HTTPS port of the vault (default 8443)
   --dir DIR                where the vault's files go (default /opt/infisical); its name
                            names the Compose project and its volumes
-  --create-agent-user NAME create a separate account without sudo for the coding agent
-  --agent-user USER        an existing account the coding agent runs as
   --yes                    do not ask before changing the system
 EOF
 }
@@ -68,7 +81,32 @@ say() { printf '%s\n' "$*"; }
 step() { printf '\n== %s\n' "$*"; }
 ok() { printf 'OK   %s\n' "$*"; }
 skip() { printf 'SKIP %s\n' "$*"; }
+warn() { printf 'WARN %s\n' "$*"; }
 die() { printf 'FAIL %s\n' "$*" >&2; exit 1; }
+
+# apt without questions, without removing packages and without restarting
+# services (needrestart only lists them).
+apt_get() { DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get -q -y -o Dpkg::Options::=--force-confold "$@"; }
+
+# Write only the key with the pinned fingerprint from the downloaded file
+# $1 to the keyring $2; any other key in the download is left out.
+pinned_key() {
+    local home status=0
+    home=$(mktemp -d)
+    if gpg --batch --quiet --homedir "$home" --import "$1" 2>/dev/null \
+        && gpg --batch --homedir "$home" --export "$INFISICAL_KEY_FINGERPRINT" > "$2" 2>/dev/null \
+        && [[ -s $2 ]] \
+        && [[ $(gpg --batch --show-keys --with-colons "$2" 2>/dev/null | awk -F: '$1 == "pub"' | wc -l) == 1 ]] \
+        && [[ $(gpg --batch --show-keys --with-colons "$2" 2>/dev/null | awk -F: '$1 == "fpr" { print $10; exit }') == "$INFISICAL_KEY_FINGERPRINT" ]]; then
+        status=0
+    else
+        status=1
+    fi
+    rm -rf -- "$home"
+    return "$status"
+}
+
+version_at_least() { [[ $(printf '%s\n%s\n' "$2" "$1" | sort -V | head -1) == "$2" ]]; }
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -95,12 +133,18 @@ if [[ -n $agent_user && -n $create_agent ]] || [[ -z $agent_user && -z $create_a
     die "give exactly one of --create-agent-user NAME or --agent-user USER"
 fi
 [[ $(id -u) == 0 ]] || die "run with sudo from your own terminal"
-human=${SUDO_USER:-}
-[[ -n $human && $human != root ]] || die "run with sudo from your own (non-root) account, not as root directly"
-for file in $VAULT_FILES bootstrap-broker.py; do
-    [[ -f $here/$file ]] || die "$file is missing next to this script; run it from a copy of examples/infisical/"
+[[ -n ${SUDO_USER:-} && $SUDO_USER != root && -n ${SUDO_UID:-} ]] \
+    || die "run with sudo from your own (non-root) account, not as root directly"
+
+# Root runs these files; nobody else may be able to change them.
+for path in "$here" "${VAULT_FILES[@]/#/$here/}"; do
+    [[ -e $path ]] || die "$path is missing; run this from a copy of examples/infisical/"
+    read -r owner mode < <(stat -c '%u %a' -- "$path")
+    if [[ -L $path ]] || [[ $owner != 0 && $owner != "$SUDO_UID" ]] || (( (8#$mode & 8#022) != 0 )); then
+        die "$path must belong to you or root and be writable by nobody else (chmod go-w), because root runs it"
+    fi
 done
-for tool in curl tar sha256sum gpg awk ss openssl cmp; do
+for tool in curl tar sha256sum gpg awk ss openssl cmp getent ip sort; do
     command -v "$tool" >/dev/null || die "$tool is required (apt install curl tar coreutils gnupg gawk iproute2 openssl diffutils)"
 done
 
@@ -113,46 +157,104 @@ esac
 command -v apt-get >/dev/null || die "apt-get is required"
 
 if command -v nerdctl >/dev/null; then
-    compose="nerdctl compose"
+    # The default namespace, also where nerdctl.toml names another (such as
+    # Kubernetes' k8s.io, whose images the kubelet may remove).
+    compose="nerdctl --namespace default compose"
 elif command -v docker >/dev/null && docker compose version >/dev/null 2>&1; then
     compose="docker compose"
 else
     die "no container tool: install nerdctl (containerd) or Docker with the Compose plugin first; see 'Choose the container tool' in docs/VAULT_SELF_HOSTED.md. This script never installs one."
 fi
 ok "container tool: $compose"
+node=0
 if systemctl is-active --quiet kubelet 2>/dev/null; then
-    say "NOTE this is a Kubernetes node: the vault runs beside the cluster in containerd's default namespace, and whoever has root here can approve plans and read the vault's keys (docs/SECURITY_MODEL.md, 'Who can act as the broker')."
+    node=1
+    warn "this is a Kubernetes node: the vault runs beside the cluster (about 1-2 GB of memory, outside the kubelet's accounting), and whoever has root here can approve plans and read the vault's keys (docs/SECURITY_MODEL.md, 'Who can act as the broker')"
 fi
 
-env_matches() { [[ $(cat "$dir/.env") == "INFISICAL_HOST=$host"$'\n'"HTTPS_PORT=$port" ]]; }
-if [[ -f $dir/.env ]] && ! env_matches; then
-    die "$dir/.env was written for another host or port; use those, or another --dir"
+# HOST must be this machine: the vault is reached at its address, directly.
+if [[ $host =~ ^[0-9.]+$ ]]; then
+    address=$host
+else
+    address=$(getent ahostsv4 "$host" | awk 'NR == 1 { print $1 }') || address=''
+    [[ -n $address ]] || die "$host does not resolve here; add it to DNS or /etc/hosts, or give this machine's IPv4 address"
 fi
+ip -o -4 addr show | awk '{ split($4, a, "/"); print a[1] }' | grep -qxF "$address" \
+    || die "$host is $address, which is not an address of this machine"
 url=https://$host:$port
-vault_running() { curl -fsk -m 5 "$url/api/status" 2>/dev/null | grep -q '"message":"Ok"'; }
-if ! vault_running && ss -Htln "sport = :$port" | grep -q .; then
-    die "port $port is in use; choose another --port"
+vault_curl() { curl --noproxy '*' --resolve "$host:$port:$address" -fs -m 10 "$@"; }
+vault_answers() { vault_curl -k "$url/api/status" 2>/dev/null | grep -q '"message":"Ok"'; }
+
+fresh_vault=1
+if [[ -f $dir/.env ]]; then
+    fresh_vault=0
+    # shellcheck disable=SC2015  # both failing tests stop the run
+    grep -qx "INFISICAL_HOST=$host" "$dir/.env" && grep -qx "HTTPS_PORT=$port" "$dir/.env" \
+        || die "$dir/.env was written for another host or port; use those, or another --dir"
+fi
+[[ ! -e $dir/secrets.tmp ]] || die "a stopped make-env.sh left $dir/secrets.tmp; remove it (sudo rm -rf $dir/secrets.tmp) and run again"
+if (( fresh_vault )); then
+    if ss -Htln "sport = :$port" | grep -q .; then die "port $port is in use; choose another --port"; fi
+    if command -v iptables-save >/dev/null && iptables-save -t nat 2>/dev/null | grep -Eq -- "--dport $port( |$)"; then
+        die "port $port is published by a container or a pod (iptables); choose another --port"
+    fi
+    if [[ $compose == nerdctl* ]]; then
+        # containerd's CRI uses the first network file in name order: nerdctl's
+        # own file must not come before the cluster's.
+        first=$(find /etc/cni/net.d -maxdepth 1 -type f \( -name '*.conf' -o -name '*.conflist' -o -name '*.json' \) \
+            ! -name 'nerdctl-*' -printf '%f\n' 2>/dev/null | sort | head -1)
+        if [[ -n $first && ! $first < nerdctl- ]]; then
+            die "/etc/cni/net.d/$first would come after nerdctl's network file, and the cluster could switch to it; run the vault elsewhere, or by hand with nerdctl's --cni-netconfpath"
+        fi
+    fi
 fi
 
-python=''
+python='' python_todo=''
 for candidate in /usr/bin/python3.12 /usr/bin/python3.11 /usr/bin/python3; do
     if [[ -x $candidate ]] && "$candidate" -c 'import sys, ensurepip, venv; sys.exit(sys.version_info < (3, 11))' 2>/dev/null; then
         python=$candidate
         break
     fi
 done
+if [[ -z $python ]]; then
+    if [[ $ID:$VERSION_ID == ubuntu:22.04 ]]; then
+        python_todo="add the deadsnakes PPA (stays as an apt source) and install python3.12 and python3.12-venv"
+    else
+        python_todo="install python3-venv"
+    fi
+fi
 
-# What is still to do, for the confirmation.
-todo=()  # what is still to do
-[[ -n $python ]] || todo+=("install Python 3.12 (Ubuntu 22.04: deadsnakes PPA)")
-[[ -f $dir/compose.yaml ]] || todo+=("copy the vault files to $dir (root-owned)")
-[[ -f $dir/.env ]] || todo+=("write the vault's keys and passwords to $dir/secrets (root only; make-env.sh)")
-vault_running || todo+=("start the vault: $compose up -d in $dir (downloads images)")
-[[ -f $CA_FILE ]] || todo+=("copy the vault's root certificate to $CA_FILE")
-[[ -x /usr/bin/infisical ]] || todo+=("install the Infisical CLI $INFISICAL_CLI_VERSION from $INFISICAL_REPO (apt; held)")
-[[ -x $BROKER_ROOT/bin/secretops ]] || todo+=("install secretops $SECRETOPS_VERSION from the release bundle, agent account ${create_agent:-$agent_user}")
+broker_installed=0
+if [[ -x $BROKER_ROOT/bin/secretops ]]; then
+    broker_installed=1
+    broker_version=$("$BROKER_ROOT/bin/secretops" version 2>/dev/null | awk '{ print $2 }') || broker_version=''
+    version_at_least "${broker_version:-0}" "$BOOTSTRAP_MIN_VERSION" \
+        || die "the installed secretops ${broker_version:-?} is older than $BOOTSTRAP_MIN_VERSION; upgrade it with the release bundle's install.sh --upgrade first"
+else
+    [[ ! -e $BROKER_ROOT ]] \
+        || die "$BROKER_ROOT exists without a working install; remove it as in docs/INSTALL.md, 'Remove a failed installation', then run again"
+    ! getent passwd "$BROKER_USER" >/dev/null || die "account $BROKER_USER exists without a broker install; remove it as in docs/INSTALL.md, 'Remove a failed installation'"
+    [[ -x /usr/sbin/sshd ]] || die "OpenSSH server is required: sudo apt install openssh-server (docs/INSTALL.md, 'Prerequisites')"
+    if ss -Htln "sport = :$BROKER_SSH_PORT" | grep -q .; then die "TCP port $BROKER_SSH_PORT is in use; the broker's SSH service needs it"; fi
+    if [[ -n $create_agent ]]; then
+        ! getent passwd "$create_agent" >/dev/null || die "account $create_agent already exists; use --agent-user $create_agent"
+    else
+        getent passwd "$agent_user" >/dev/null || die "account $agent_user does not exist; use --create-agent-user $agent_user"
+    fi
+fi
 has_token() { grep -q '^INFISICAL_TOKEN=' "$BROKER_ROOT/broker.env" 2>/dev/null; }
-has_token || todo+=("connect the broker to a new vault: bootstrap-broker.py asks for the first admin's email and password")
+
+todo=()
+[[ -z $python_todo ]] || todo+=("$python_todo")
+missing_files=()
+for file in "${VAULT_FILES[@]}"; do [[ -f $dir/$file ]] || missing_files+=("$file"); done
+(( ${#missing_files[@]} == 0 )) || todo+=("copy the vault files to $dir (root-owned): ${missing_files[*]}")
+(( ! fresh_vault )) || todo+=("write the vault's keys and passwords to $dir/secrets (root only; make-env.sh)")
+vault_answers || todo+=("start the vault: $compose up -d in $dir (downloads images; restarts with the machine)")
+[[ -f $CA_FILE ]] || todo+=("copy the vault's root certificate to $CA_FILE")
+[[ -x /usr/bin/infisical ]] || todo+=("add Infisical's apt source (stays) and install the Infisical CLI $INFISICAL_CLI_VERSION (held)")
+(( broker_installed )) || todo+=("install secretops $SECRETOPS_VERSION: account $BROKER_USER, $BROKER_ROOT, programs in /usr/local, an SSH service on 127.0.0.1:$BROKER_SSH_PORT, agent account ${create_agent:-$agent_user}${create_agent:+ (new)}")
+has_token || todo+=("connect the broker to the new vault: bootstrap-broker.py asks for the first admin's email and password")
 
 step "Plan"
 if (( ${#todo[@]} == 0 )); then say " - nothing to change; only checks"; fi
@@ -166,55 +268,58 @@ fi
 # --- 2. Python ------------------------------------------------------------
 
 step "2. Python for the broker"
-if [[ -n $python ]]; then
-    ok "$python ($("$python" -V 2>&1))"
-else
-    [[ $ID == ubuntu ]] || die "no Python 3.11 or newer with venv; install one and run again"
-    apt-get update -q >/dev/null
-    apt-get install -y -q software-properties-common >/dev/null
-    add-apt-repository -y ppa:deadsnakes/ppa >/dev/null || die "could not add the deadsnakes PPA (network or proxy?); install Python 3.12 and run again"
-    apt-get install -y -q python3.12 python3.12-venv >/dev/null || die "could not install python3.12"
-    python=/usr/bin/python3.12
-    ok "$python ($("$python" -V 2>&1))"
+if [[ -z $python ]]; then
+    apt_get update >/dev/null
+    if [[ $ID:$VERSION_ID == ubuntu:22.04 ]]; then
+        apt_get install --no-remove software-properties-common >/dev/null
+        add-apt-repository -y ppa:deadsnakes/ppa >/dev/null \
+            || die "could not add the deadsnakes PPA (network or proxy?); install Python 3.12 and run again"
+        apt_get install --no-remove python3.12 python3.12-venv >/dev/null || die "could not install python3.12"
+        python=/usr/bin/python3.12
+    else
+        apt_get install --no-remove python3-venv >/dev/null || die "could not install python3-venv"
+        python=/usr/bin/python3
+    fi
 fi
+ok "$python ($("$python" -V 2>&1))"
 
 # --- 3. vault -------------------------------------------------------------
 
 step "3. Vault in $dir"
-if [[ -f $dir/compose.yaml ]]; then
-    skip "$dir already has the vault files"
+install -d -o root -g root -m 755 "$dir"
+if (( ${#missing_files[@]} == 0 )); then
+    skip "$dir has the vault files"
 else
-    install -d -o root -g root -m 755 "$dir"
-    for file in $VAULT_FILES; do install -o root -g root -m 644 "$here/$file" "$dir/$file"; done
-    ok "files copied to $dir"
+    for file in "${missing_files[@]}"; do install -o root -g root -m 644 "$here/$file" "$dir/$file"; done
+    ok "copied: ${missing_files[*]}"
 fi
-[[ $(stat -c '%u %a' "$dir") == "0 755" ]] || die "$dir must be root's and writable by nobody else (sudo chown root:root $dir && sudo chmod 755 $dir)"
+for path in "$dir" "${VAULT_FILES[@]/#/$dir/}"; do
+    read -r owner mode < <(stat -c '%u %a' -- "$path")
+    # shellcheck disable=SC2015  # both failing tests stop the run
+    [[ $owner == 0 ]] && (( (8#$mode & 8#022) == 0 )) \
+        || die "$path must be root's and writable by nobody else: sudo chown -R root:root $dir && sudo chmod -R go-w $dir"
+done
 cd -- "$dir"
-if [[ -f .env ]]; then
-    skip ".env and secrets/ exist"
-else
+if (( fresh_vault )); then
     sh make-env.sh "$host" "$port"
-fi
-env_matches || die "$dir/.env was written for another host or port; use those, or another --dir"
-if vault_running; then
-    skip "the vault runs"
 else
-    $compose up -d
+    skip ".env and secrets/ exist"
 fi
+$compose up -d
 say "waiting for $url/api/status (the first start downloads images) ..."
 deadline=$(( SECONDS + API_WAIT_SECONDS ))
-until vault_running; do
-    (( SECONDS < deadline )) || die "the vault did not answer within $API_WAIT_SECONDS seconds; see: sudo $compose logs (in $dir)"
+until vault_answers; do
+    (( SECONDS < deadline )) || die "the vault did not answer within $API_WAIT_SECONDS seconds; see: cd $dir && sudo $compose logs"
     sleep 5
 done
-ok "the vault answers at $url"
-
 if [[ ! -f infisical-root.crt ]]; then
-    $compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./infisical-root.crt
+    $compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./infisical-root.crt \
+        || die "could not copy the root certificate from this directory's caddy container"
     chmod 644 infisical-root.crt
 fi
-curl -fs -m 10 --cacert infisical-root.crt "$url/api/status" >/dev/null \
-    || die "the vault's certificate does not verify with $dir/infisical-root.crt for $host"
+vault_curl --cacert infisical-root.crt "$url/api/status" >/dev/null \
+    || die "the vault at $url does not present this directory's certificate ($dir/infisical-root.crt); is another service on port $port?"
+ok "the vault answers at $url"
 if [[ -f $CA_FILE ]]; then
     cmp -s infisical-root.crt "$CA_FILE" \
         || die "$CA_FILE exists with another certificate; compare it with $dir/infisical-root.crt and replace it by hand if this vault is the right one"
@@ -224,26 +329,31 @@ else
     install -o root -g root -m 644 infisical-root.crt "$CA_FILE"
     ok "root certificate in $CA_FILE"
 fi
-say "     its SHA-256 fingerprint, for your browser: $(openssl x509 -in "$CA_FILE" -noout -fingerprint -sha256 2>/dev/null | cut -d= -f2)"
+say "     SHA-256 fingerprint, to compare in your browser: $(openssl x509 -in "$CA_FILE" -noout -fingerprint -sha256 | cut -d= -f2)"
 
 # --- 4. Infisical CLI -----------------------------------------------------
 
 step "4. Infisical CLI"
 if [[ -x /usr/bin/infisical ]]; then
-    skip "installed: $(/usr/bin/infisical --version 2>/dev/null | head -1)"
+    installed=$(/usr/bin/infisical --version 2>/dev/null | awk '{ print $NF; exit }') || installed=''
+    if [[ $installed == "$INFISICAL_CLI_VERSION" ]]; then
+        skip "infisical $installed installed"
+    else
+        warn "infisical ${installed:-?} is installed; tested: $INFISICAL_CLI_VERSION (docs/LIMITATIONS.md). Kept as it is."
+    fi
 else
     keydir=$(mktemp -d)
-    trap 'rm -rf -- "$keydir"' EXIT
-    curl -fsSL -m 60 "$INFISICAL_REPO/infisical.gpg" -o "$keydir/key.asc" || die "could not download Infisical's signing key"
-    fingerprint=$(gpg --show-keys --with-colons "$keydir/key.asc" 2>/dev/null | awk -F: '$1 == "fpr" { print $10; exit }')
-    [[ $fingerprint == "$INFISICAL_KEY_FINGERPRINT" ]] \
-        || die "Infisical's signing key has an unexpected fingerprint; nothing was installed"
-    gpg --dearmor < "$keydir/key.asc" > "$keydir/key.gpg"
+    cleanup+=("$keydir")
+    curl --proto '=https' -fsSL -m 60 "$INFISICAL_REPO/infisical.gpg" -o "$keydir/key.asc" \
+        || die "could not download Infisical's signing key"
+    pinned_key "$keydir/key.asc" "$keydir/key.gpg" \
+        || die "Infisical's signing key with fingerprint $INFISICAL_KEY_FINGERPRINT was not in the download; nothing was installed"
     install -o root -g root -m 644 "$keydir/key.gpg" "$KEYRING"
-    printf 'deb [arch=%s signed-by=%s] %s/deb stable main\n' "$(dpkg --print-architecture)" "$KEYRING" "$INFISICAL_REPO" \
-        > /etc/apt/sources.list.d/infisical.list
-    apt-get update -q >/dev/null
-    apt-get install -y -q "infisical=$INFISICAL_CLI_VERSION" >/dev/null || die "could not install infisical=$INFISICAL_CLI_VERSION"
+    printf 'deb [arch=%s signed-by=%s] %s/deb stable main\n' "$(dpkg --print-architecture)" "$KEYRING" "$INFISICAL_REPO" > "$APT_SOURCE"
+    if ! apt_get update >/dev/null || ! apt_get install --no-remove "infisical=$INFISICAL_CLI_VERSION" >/dev/null; then
+        rm -f -- "$APT_SOURCE"
+        die "could not install infisical=$INFISICAL_CLI_VERSION; Infisical's apt source was removed again"
+    fi
     apt-mark hold infisical >/dev/null
     ok "infisical $INFISICAL_CLI_VERSION installed and held (apt-mark unhold infisical before a deliberate upgrade)"
 fi
@@ -251,16 +361,18 @@ fi
 # --- 5. secretops ---------------------------------------------------------
 
 step "5. secretops broker"
-if [[ -x $BROKER_ROOT/bin/secretops ]]; then
-    skip "installed: $("$BROKER_ROOT/bin/secretops" version 2>/dev/null || echo unknown); upgrade with the release bundle's install.sh --upgrade"
+if (( broker_installed )); then
+    skip "secretops $broker_version installed; the agent account is the one it was installed with"
 else
     work=$(mktemp -d)
-    trap 'rm -rf -- "$work" "${keydir:-}"' EXIT
+    cleanup+=("$work")
     base=https://github.com/feistify/secretops/releases/download/v$SECRETOPS_VERSION
     bundle=secretops-$SECRETOPS_VERSION-installer.tar.gz
-    curl -fsSL -m 300 "$base/$bundle" -o "$work/$bundle" || die "could not download $bundle"
-    curl -fsSL -m 60 "$base/SHA256SUMS" -o "$work/SHA256SUMS" || die "could not download SHA256SUMS"
-    (cd "$work" && grep " $bundle\$" SHA256SUMS | sha256sum -c --quiet -) || die "$bundle does not match the release's SHA256SUMS"
+    curl --proto '=https' -fsSL -m 300 "$base/$bundle" -o "$work/$bundle" || die "could not download $bundle"
+    curl --proto '=https' -fsSL -m 60 "$base/SHA256SUMS" -o "$work/SHA256SUMS" || die "could not download SHA256SUMS"
+    expected=$(awk -v file="$bundle" '$2 == file { print $1 }' "$work/SHA256SUMS")
+    [[ -n $expected && $(sha256sum -- "$work/$bundle" | awk '{ print $1 }') == "$expected" ]] \
+        || die "$bundle does not match the release's SHA256SUMS"
     tar -xzf "$work/$bundle" -C "$work"
     if [[ -n $create_agent ]]; then agent=(--create-agent-user "$create_agent"); else agent=(--agent-user "$agent_user"); fi
     (cd "$work/secretops-$SECRETOPS_VERSION-installer" && ./install.sh "${agent[@]}" --infisical-domain "$url" --python "$python")
@@ -270,14 +382,15 @@ fi
 
 step "6. Connect the broker"
 if has_token; then
-    skip "the broker already has a token; check it with: sudo secretops-configure --check"
+    skip "the broker has a token; check it with: sudo secretops-configure --check"
 else
     say "bootstrap-broker.py creates the first admin, the project secretops (dev, staging, prod) and the broker's"
     say "machine identity and token. It asks only for the admin's email and a password of at least 14 characters."
     status=0
-    "$BROKER_ROOT/venv/bin/python" -I "$here/bootstrap-broker.py" --ca-file "$CA_FILE" || status=$?
+    env no_proxy="$host" NO_PROXY="$host" "$BROKER_ROOT/venv/bin/python" -I "$dir/bootstrap-broker.py" \
+        --url "$url" --ca-file "$CA_FILE" || status=$?
     if (( status != 0 )); then
-        say "The vault may already have an admin: then create the project, identity and token in the web page"
+        say "If the vault already has an admin, create the project, identity and token in the web page"
         say "(docs/PREPARE.md) and run: sudo secretops-configure --ca-file $CA_FILE"
         exit "$status"
     fi
@@ -292,7 +405,8 @@ cat <<EOF
 2. First check, in your own terminal (made-up name and value):
      secretops add FIRST_CHECK_KEY --env dev
    then as the agent account: see "First check: vault only" in docs/INSTALL.md.
-3. Back ups: docs/VAULT_SELF_HOSTED.md, "Back up" (a root cron job with backup.sh).
+3. Backups: docs/VAULT_SELF_HOSTED.md, "Back up" (a root cron job with backup.sh).
 4. Browser access to $url: trust $CA_FILE ("Trust the CA in your browser").
 5. Optional: a message when a plan waits: docs/OPERATIONS.md, "Notify the human when a plan waits".
 EOF
+(( ! node )) || say "On this Kubernetes node, use COMPOSE=\"$compose\" for every compose command in the guide."
