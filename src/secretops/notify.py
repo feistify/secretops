@@ -16,6 +16,7 @@ import ipaddress
 import os
 import re
 import ssl
+import threading
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
@@ -28,7 +29,10 @@ NTFY_TOKEN_KEY = "SECRETOPS_NOTIFY_NTFY_TOKEN"
 NOTIFY_CA_FILE_KEY = "SECRETOPS_NOTIFY_CA_FILE"
 NOTIFY_KEYS = (NTFY_URL_KEY, NTFY_TOKEN_KEY, NOTIFY_CA_FILE_KEY)
 CHANNEL = "ntfy"
+# Each network step may take TIMEOUT_SECONDS; the whole send, name
+# resolution included, is abandoned after TOTAL_SECONDS.
 TIMEOUT_SECONDS = 5
+TOTAL_SECONDS = 8
 # ntfy topic names: letters, digits, '-' and '_', at most 64 characters.
 TOPIC = re.compile(r"[A-Za-z0-9_-]{1,64}")
 TOKEN = re.compile(r"[!-~]{1,512}")
@@ -113,7 +117,9 @@ def settings(environ: Mapping[str, str]) -> tuple[str, str | None, str | None]:
     ca_file = environ.get(NOTIFY_CA_FILE_KEY) or None
     if ca_file is not None and ca_file_problem(ca_file) is not None:
         raise NotifySettingsError(f"{NOTIFY_CA_FILE_KEY} is not a root-protected certificate file")
-    if token is not None and urlsplit(url).scheme != "https" and not _is_loopback(urlsplit(url).hostname or ""):
+    # Not even to this machine: while a local server is down, any local
+    # account could take its port and receive the token.
+    if token is not None and urlsplit(url).scheme != "https":
         raise NotifySettingsError("ntfy token needs an https URL")
     return url, token, ca_file
 
@@ -132,8 +138,13 @@ def send(
     *,
     opener_factory: Callable[[str | None], urllib.request.OpenerDirector] = _opener,
     timeout: float = TIMEOUT_SECONDS,
+    total: float = TOTAL_SECONDS,
 ) -> str:
-    """Send one message; return SENT or a fixed failure reason. Never raises."""
+    """Send one message; return SENT or a fixed failure reason. Never raises.
+
+    The request runs in a daemon thread, so a stalled name lookup or a
+    server that answers slowly costs at most `total` seconds.
+    """
     environ = os.environ if environ is None else environ
     if not is_configured(environ):
         return NOT_CONFIGURED
@@ -141,6 +152,25 @@ def send(
         url, token, ca_file = settings(environ)
     except NotifySettingsError:
         return INVALID_SETTINGS
+    outcome: list[str] = []
+
+    def run() -> None:
+        outcome.append(_post(url, token, ca_file, message, opener_factory, timeout))
+
+    worker = threading.Thread(target=run, name="secretops-notify", daemon=True)
+    worker.start()
+    worker.join(total)
+    return outcome[0] if outcome else TIMED_OUT
+
+
+def _post(
+    url: str,
+    token: str | None,
+    ca_file: str | None,
+    message: str,
+    opener_factory: Callable[[str | None], urllib.request.OpenerDirector],
+    timeout: float,
+) -> str:
     headers = {"Title": "secretops", "Content-Type": "text/plain; charset=utf-8"}
     if token is not None:
         headers["Authorization"] = f"Bearer {token}"
@@ -150,6 +180,7 @@ def send(
         with opener.open(request, timeout=timeout) as response:
             status = response.status
     except urllib.error.HTTPError as error:
+        error.close()
         if 300 <= error.code < 400:
             return REDIRECTED
         if 400 <= error.code < 500:

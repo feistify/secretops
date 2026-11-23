@@ -843,12 +843,17 @@ def _pending_where_lines(plan_artifact) -> list[str]:
 def notify_human(plan_artifact, console: Console, environ=None) -> None:
     """After a plan is saved: tell the human when it waits for them.
 
-    Only when ntfy is configured. The message carries the plan ID and what
+    Only when ntfy is configured and the environment policy lets the plan
+    run. The message carries the plan ID and what
     the plan waits for, nothing else. A failure is printed and audited with
     a fixed reason and never stops planning: the plan is already saved.
     """
     needed = _human_action_needed(plan_artifact)
     if needed is None or not notify.is_configured(os.environ if environ is None else environ):
+        return
+    # Approval cannot make such a plan run; asking for it would teach the
+    # human to approve without reading. pending-plans marks it instead.
+    if _environment_policy_refuses(plan_artifact):
         return
     outcome = notify.send(notify.waiting_message(plan_artifact.plan_id, needed), environ)
     sent = outcome == notify.SENT

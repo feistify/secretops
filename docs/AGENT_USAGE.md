@@ -35,6 +35,7 @@ Agents must not run:
 approve-plan
 reject-plan
 pending-plans
+check-notify
 infisical
 infisical secrets
 gh secret

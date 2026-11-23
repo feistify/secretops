@@ -4,7 +4,10 @@ import http.server
 import json
 import os
 import socket
+import ssl
+import subprocess
 import threading
+import time
 
 import pytest
 from conftest import write_ca
@@ -23,7 +26,7 @@ TOPIC = "secretops-test-topic"
 class _Server:
     """A local HTTP server that records requests and answers with `status`."""
 
-    def __init__(self, status=200, headers=None, hang=False):
+    def __init__(self, status=200, headers=None, hang=False, tls=None):
         self.requests = []
         self.status = status
         outer = self
@@ -48,7 +51,13 @@ class _Server:
 
         self.httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.httpd.daemon_threads = True
-        self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}/{TOPIC}"
+        scheme = "http"
+        if tls is not None:
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(*tls)
+            self.httpd.socket = context.wrap_socket(self.httpd.socket, server_side=True)
+            scheme = "https"
+        self.url = f"{scheme}://127.0.0.1:{self.httpd.server_address[1]}/{TOPIC}"
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
 
     def close(self):
@@ -67,6 +76,44 @@ def server():
     yield start
     for item in started:
         item.close()
+
+
+@pytest.fixture(scope="session")
+def tls_files(tmp_path_factory):
+    """A private CA and a server certificate for 127.0.0.1, made with openssl."""
+    directory = tmp_path_factory.mktemp("tls")
+
+    def openssl(*args):
+        subprocess.run(["openssl", *args], cwd=directory, check=True, capture_output=True)
+
+    (directory / "ca.ext").write_text(
+        "basicConstraints=critical,CA:TRUE\nkeyUsage=critical,keyCertSign,cRLSign\n"
+        "subjectKeyIdentifier=hash\n"
+    )
+    (directory / "server.ext").write_text(
+        "basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\n"
+        "extendedKeyUsage=serverAuth\nsubjectAltName=IP:127.0.0.1\n"
+        "authorityKeyIdentifier=keyid\nsubjectKeyIdentifier=hash\n"
+    )
+    openssl("req", "-new", "-newkey", "rsa:2048", "-nodes", "-keyout", "ca.key", "-out", "ca.csr", "-subj", "/CN=test-ca")
+    openssl("x509", "-req", "-in", "ca.csr", "-signkey", "ca.key", "-out", "ca.pem", "-days", "2", "-extfile", "ca.ext")
+    openssl("req", "-new", "-newkey", "rsa:2048", "-nodes", "-keyout", "server.key", "-out", "server.csr",
+            "-subj", "/CN=127.0.0.1")
+    openssl("x509", "-req", "-in", "server.csr", "-CA", "ca.pem", "-CAkey", "ca.key", "-CAcreateserial",
+            "-out", "server.pem", "-days", "2", "-extfile", "server.ext")
+    return directory
+
+
+@pytest.fixture
+def https(server, tls_files, ca_dir):
+    """An https server and the environment that trusts its private CA."""
+
+    def start(**kwargs):
+        srv = server(tls=(str(tls_files / "server.pem"), str(tls_files / "server.key")), **kwargs)
+        ca = write_ca(ca_dir, "ntfy-ca.pem", text=(tls_files / "ca.pem").read_text())
+        return srv, {notify.NTFY_URL_KEY: srv.url, notify.NTFY_TOKEN_KEY: TOKEN, notify.NOTIFY_CA_FILE_KEY: str(ca)}
+
+    return start
 
 
 def _closed_port_url():
@@ -108,6 +155,8 @@ def test_ntfy_url_accepted(url):
         "https://ntfy.example.com/" + "a" * 65,
         "https://ntfy.example.com:99999/plans",
         "ftp://ntfy.example.com/plans",
+        "http://localhost.evil.example/plans",
+        "http://0.0.0.0/plans",
         "https://ntfy.example.com/plänä",
     ],
 )
@@ -135,9 +184,14 @@ def test_settings_check_the_ca_file_at_every_use(ca_dir):
 # --- sending --------------------------------------------------------------
 
 
-def test_send_posts_the_message_with_the_token(server):
-    srv = server()
-    environ = {notify.NTFY_URL_KEY: srv.url, notify.NTFY_TOKEN_KEY: TOKEN}
+@pytest.mark.parametrize("url", ["http://127.0.0.1:8080/plans", "http://localhost/plans", "http://ntfy.example.com/x"])
+def test_a_token_needs_https_even_to_this_machine(url):
+    with pytest.raises(notify.NotifySettingsError):
+        notify.settings({notify.NTFY_URL_KEY: url, notify.NTFY_TOKEN_KEY: TOKEN})
+
+
+def test_send_posts_the_message_with_the_token(https):
+    srv, environ = https()
     assert notify.send("secretops: plan abc waits for approval", environ) == notify.SENT
     [request] = srv.requests
     assert request["path"] == f"/{TOPIC}"
@@ -163,10 +217,27 @@ def test_send_without_a_token_sends_no_authorization(server):
 )
 def test_send_reports_a_fixed_reason_for_an_answer(server, status, headers, reason):
     srv = server(status=status, headers=headers)
-    environ = {notify.NTFY_URL_KEY: srv.url, notify.NTFY_TOKEN_KEY: TOKEN}
-    assert notify.send("m", environ) == reason
+    assert notify.send("m", {notify.NTFY_URL_KEY: srv.url}) == reason
     # A redirect is not followed, so the token goes nowhere else.
     assert len(srv.requests) == 1
+
+
+def test_send_reports_an_untrusted_certificate(https):
+    srv, environ = https()
+    del environ[notify.NOTIFY_CA_FILE_KEY]
+    assert notify.send("m", environ) == notify.TLS_FAILED
+    assert srv.requests == []
+
+
+def test_send_gives_up_after_the_total_deadline():
+    def stalled(ca_file):
+        time.sleep(3)
+        raise AssertionError("never reached in time")
+
+    started = time.monotonic()
+    outcome = notify.send("m", {notify.NTFY_URL_KEY: "http://127.0.0.1/x"}, opener_factory=stalled, total=0.5)
+    assert outcome == notify.TIMED_OUT
+    assert time.monotonic() - started < 2
 
 
 def test_send_reports_an_unreachable_server():
@@ -233,7 +304,7 @@ def _console():
 def test_a_waiting_plan_notifies_with_its_id_only(server, audit_path):
     srv = server()
     console = _console()
-    notify_human(_plan(), console, {notify.NTFY_URL_KEY: srv.url, notify.NTFY_TOKEN_KEY: TOKEN})
+    notify_human(_plan(), console, {notify.NTFY_URL_KEY: srv.url})
     assert srv.requests[0]["body"] == f"secretops: plan {'a' * 32} waits for approval"
     assert "API_KEY" not in srv.requests[0]["body"] and "dev" not in srv.requests[0]["body"]
     assert "- human notified: plan waits for approval" in console.export_text()
@@ -250,10 +321,10 @@ def test_a_human_entry_plan_says_it_waits_for_entry(server, audit_path):
     assert srv.requests[0]["body"].endswith("waits for your entry")
 
 
-def test_a_failed_notification_warns_and_audits_without_url_or_token(server, audit_path):
-    srv = server(status=403)
+def test_a_failed_notification_warns_and_audits_without_url_or_token(https, audit_path):
+    srv, environ = https(status=403)
     console = _console()
-    notify_human(_plan(), console, {notify.NTFY_URL_KEY: srv.url, notify.NTFY_TOKEN_KEY: TOKEN})
+    notify_human(_plan(), console, environ)
     text = console.export_text()
     assert f"WARNING the human could not be notified: {notify.REFUSED}" in text
     assert "tell the human that this plan waits for approval" in text
@@ -270,6 +341,8 @@ def test_no_notification_when_not_configured_or_nothing_waits(server, audit_path
     console = _console()
     notify_human(_plan(), console, {})
     notify_human(_plan(action="vault.read.check"), console, {notify.NTFY_URL_KEY: srv.url})
+    # Approval cannot make a plan run that the environment policy refuses.
+    notify_human(_plan(env="production"), console, {notify.NTFY_URL_KEY: srv.url})
     assert srv.requests == []
     assert console.export_text() == ""
     assert _events(audit_path) == []
@@ -290,7 +363,6 @@ def test_an_audit_failure_after_a_notification_is_reported_not_raised(server, tm
 def test_plan_save_notifies_the_human(server, tmp_path, monkeypatch):
     srv = server()
     monkeypatch.setenv(notify.NTFY_URL_KEY, srv.url)
-    monkeypatch.setenv(notify.NTFY_TOKEN_KEY, TOKEN)
     audit = tmp_path / "audit.jsonl"
     result = run_secretops("plan", "--file", ROTATE_RECIPE, "--save", audit_path=audit, plan_dir=tmp_path / "plans")
     assert result.returncode == 0, result.stdout + result.stderr
@@ -298,7 +370,7 @@ def test_plan_save_notifies_the_human(server, tmp_path, monkeypatch):
     [request] = srv.requests
     plan_id = next(path.stem for path in (tmp_path / "plans").glob("*.json"))
     assert request["body"] == f"secretops: plan {plan_id} waits for approval"
-    assert TOKEN not in result.stdout + result.stderr + audit.read_text()
+    assert TOPIC not in result.stdout + result.stderr + audit.read_text()
 
 
 def test_plan_save_keeps_the_plan_when_the_notification_fails(tmp_path, monkeypatch):
@@ -402,6 +474,21 @@ def test_configure_notify_token_rules(ca_dir):
     assert only_ca[notify.NTFY_TOKEN_KEY] == "previous"
 
 
+def test_enter_keeps_a_saved_token_only_for_the_same_server():
+    base = {notify.NTFY_URL_KEY: "https://ntfy.example.com/old", notify.NTFY_TOKEN_KEY: "previous"}
+    prompts = []
+
+    def enter(prompt):
+        prompts.append(prompt)
+        return ""
+
+    same = broker_config.configure_notify(base, url="https://ntfy.example.com/new", ca_file=None, read_hidden=enter)
+    assert same[notify.NTFY_TOKEN_KEY] == "previous"
+    other = broker_config.configure_notify(base, url="https://other.example.com/new", ca_file=None, read_hidden=enter)
+    assert notify.NTFY_TOKEN_KEY not in other
+    assert "Enter keeps the current token" in prompts[0] and "Enter for none" in prompts[1]
+
+
 def test_refused_settings_change_nothing(root, monkeypatch, capsys):
     env_file, tests, _ = root
     before = env_file.read_text()
@@ -420,13 +507,16 @@ def test_ntfy_url_needs_a_terminal(root, monkeypatch):
     assert env_file.read_text() == before
 
 
-def test_a_failed_test_keeps_the_save(root, monkeypatch, capsys):
+@pytest.mark.parametrize("code", [1, broker_config.CHECK_INTERRUPTED])
+def test_a_failed_test_keeps_the_save(root, monkeypatch, capsys, code):
     env_file, tests, fake = root
-    fake.code = 1
+    fake.code = code
     monkeypatch.setattr(broker_config, "hidden_input", _hidden(""))
     assert broker_config.main(["--notify-ntfy", "https://ntfy.example.com/plans"]) == 0
     assert read_env(env_file, os.getuid())[notify.NTFY_URL_KEY] == "https://ntfy.example.com/plans"
-    assert "sudo secretops-configure --check-notify" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "sudo secretops-configure --check-notify" in out
+    assert ("interrupted" in out) is (code == broker_config.CHECK_INTERRUPTED)
 
 
 def test_ca_file_alone_without_a_topic_sends_no_test(root, ca_dir, capsys):

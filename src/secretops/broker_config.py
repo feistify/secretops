@@ -329,10 +329,16 @@ def configure_notify(
         updated[notify.NOTIFY_CA_FILE_KEY] = validate_ca_file(ca_file)
     if url is not None:
         updated[notify.NTFY_URL_KEY] = validate_ntfy_url(url)
-        token = read_hidden("ntfy access token (hidden; Enter for none): ")
+        # A saved token is kept only for the same server, so Enter never
+        # sends it to a server it was not made for.
+        old_url = values.get(notify.NTFY_URL_KEY, "")
+        same_server = bool(old_url) and urlsplit(old_url).netloc == urlsplit(url).netloc
+        keeps = same_server and bool(values.get(notify.NTFY_TOKEN_KEY))
+        hint = "Enter keeps the current token" if keeps else "Enter for none"
+        token = read_hidden(f"ntfy access token (hidden; {hint}): ")
         if token:
             updated[notify.NTFY_TOKEN_KEY] = validate_ntfy_token(token)
-        else:
+        elif not keeps:
             updated.pop(notify.NTFY_TOKEN_KEY, None)
     try:
         if notify.is_configured(updated):
@@ -355,7 +361,7 @@ def check_command(env: str) -> list[str]:
 
 
 NOTIFY_CHECK_COMMAND = [BROKER_COMMAND, "check-notify"]
-NOTIFY_CHECK_TIMEOUT = notify.TIMEOUT_SECONDS + CHECK_MARGIN_SECONDS
+NOTIFY_CHECK_TIMEOUT = notify.TOTAL_SECONDS + CHECK_MARGIN_SECONDS
 
 
 def check_timeout(values: dict[str, str]) -> int:
@@ -447,9 +453,9 @@ def init_values(domain: str, infisical_bin: str, gh_bin: str | None) -> dict[str
 
 def configure_notifications(account: pwd.struct_passwd, args: argparse.Namespace) -> int:
     """Save the notification settings, then send a test as the broker user."""
-    values = read_env(BROKER_ENV, account.pw_uid)
     if args.check_notify:
         return run_notify_check(account)
+    values = read_env(BROKER_ENV, account.pw_uid)
     if args.no_notify:
         updated = {key: value for key, value in values.items() if key not in notify.NOTIFY_KEYS}
         write_env(BROKER_ENV, updated, account.pw_uid, account.pw_gid)
@@ -463,7 +469,11 @@ def configure_notifications(account: pwd.struct_passwd, args: argparse.Namespace
     if not notify.is_configured(updated):
         print("No ntfy topic is set yet. Next: sudo secretops-configure --notify-ntfy URL")
         return 0
-    if run_notify_check(account) != 0:
+    code = run_notify_check(account)
+    if code == CHECK_INTERRUPTED:
+        print("The settings were saved; the test notification was interrupted.")
+        print("Send another test with: sudo secretops-configure --check-notify")
+    elif code != 0:
         print("The settings were saved, but the test notification failed. Fix the cause above,")
         print("then send another test: sudo secretops-configure --check-notify")
     return 0
