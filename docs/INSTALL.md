@@ -183,6 +183,8 @@ Copy the [consumer-project instructions](AGENT_USAGE.md#instructions-for-agents-
 
 If you have not done them yet, first do [Configure the vault](#configure-the-vault) and [First check: vault only](#first-check-vault-only). Then follow the [demo](DEMO.md) with synthetic data in a test Infisical project and a test GitHub repository with a `dev` environment. It covers human entry, agent planning, human review and approval, sync, metadata verification and cleanup. Run human commands in your own terminal and agent commands as the configured agent account.
 
+Optional: to get a message on your phone when a plan waits for you, see [Notify the human when a plan waits](OPERATIONS.md#notify-the-human-when-a-plan-waits).
+
 ## Remove a failed installation
 
 If the installer stops partway, it changed only these paths. If you configured the vault, first write down the vault URL, project ID and folder (not the token). Inspect the paths, then remove them before retrying:

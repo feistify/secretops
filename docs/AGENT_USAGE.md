@@ -150,6 +150,11 @@ done yet; failed means ask the human what their terminal showed, and if it said
 the outcome is unknown, do not plan that name again until they resolve it.
 Never ask for the value.
 
+plan --save may also say "- human notified: plan waits for ..." or
+"WARNING the human could not be notified: ...". Either way, give the full
+handoff for that action (approval, or secretops add): a notification is only
+a reminder, and the human may not have seen it. Pass on any WARNING line.
+
 Stop on preflight failure. If preflight or execution reports a changed vault
 destination, changed plan content, or "replan required", tell the human. A new
 plan needs a new human approval. Never approve or reject plans yourself, inspect broker
