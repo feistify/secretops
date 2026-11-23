@@ -36,7 +36,7 @@
 set -Eeuo pipefail
 umask 022
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-export LC_COLLATE=C
+export LC_ALL=C
 
 SECRETOPS_VERSION=0.1.15
 BOOTSTRAP_MIN_VERSION=0.1.14
@@ -183,7 +183,7 @@ else
     [[ -n $address ]] || die "$host does not resolve here; add it to DNS or /etc/hosts, or give this machine's IPv4 address"
 fi
 ip -o -4 addr show | awk '{ split($4, a, "/"); print a[1] }' | grep -qxF "$address" \
-    || die "$host is $address, which is not an address of this machine"
+    || die "$host is $address, which is not an address of this machine; use its LAN IPv4 address or a DNS name that resolves to it"
 url=https://$host:$port
 vault_curl() { curl --noproxy '*' --resolve "$host:$port:$address" -fs -m 10 "$@"; }
 vault_answers() { vault_curl -k "$url/api/status" 2>/dev/null | grep -q '"message":"Ok"'; }
@@ -207,15 +207,18 @@ fi
 [[ ! -e $dir/secrets.tmp ]] || die "a stopped make-env.sh left $dir/secrets.tmp; remove it (sudo rm -rf $dir/secrets.tmp) and run again"
 if (( fresh_vault )); then
     if ss -Htln "sport = :$port" | grep -q .; then die "port $port is in use; choose another --port"; fi
-    if command -v iptables-save >/dev/null && iptables-save -t nat 2>/dev/null | grep -Eq -- "--dport $port( |$)"; then
+    # Captured first: grep -q would stop the pipe early, and with pipefail a
+    # large rule set (kube-proxy) would then hide the match.
+    nat=$(iptables-save -t nat 2>/dev/null || true)
+    if grep -Eq -- "--dport $port( |$)" <<<"$nat"; then
         die "port $port is published by a container or a pod (iptables); choose another --port"
     fi
     if [[ $compose == nerdctl* && ! -e /etc/cni/net.d/nerdctl-bridge.conflist ]]; then
         # nerdctl may write nerdctl-bridge.conflist into /etc/cni/net.d (the
         # compose network goes to a subdirectory). containerd's CRI uses the
         # first file there in name order: it must not come before the cluster's.
-        first=$(find /etc/cni/net.d -maxdepth 1 -type f \( -name '*.conf' -o -name '*.conflist' -o -name '*.json' \) \
-            -printf '%f\n' 2>/dev/null | sort | head -1)
+        first=$( { find /etc/cni/net.d -maxdepth 1 -type f \( -name '*.conf' -o -name '*.conflist' -o -name '*.json' \) \
+            -printf '%f\n' 2>/dev/null || true; } | sort | head -1)
         if [[ -n $first && ! $first < nerdctl-bridge.conflist ]]; then
             die "/etc/cni/net.d/$first would come after nerdctl's nerdctl-bridge.conflist, and the cluster could switch to it; run the vault elsewhere"
         fi
@@ -318,7 +321,11 @@ if (( fresh_vault )); then
 else
     skip ".env and secrets/ exist"
 fi
-$compose up -d
+if vault_answers; then
+    skip "the vault runs"
+else
+    $compose up -d
+fi
 say "waiting for $url/api/status (the first start downloads images) ..."
 deadline=$(( SECONDS + API_WAIT_SECONDS ))
 until vault_answers; do
@@ -388,7 +395,8 @@ else
         || die "$bundle does not match the release's SHA256SUMS"
     tar -xzf "$work/$bundle" -C "$work"
     if [[ -n $create_agent ]]; then agent=(--create-agent-user "$create_agent"); else agent=(--agent-user "$agent_user"); fi
-    (cd "$work/secretops-$SECRETOPS_VERSION-installer" && ./install.sh "${agent[@]}" --infisical-domain "$url" --python "$python")
+    (cd "$work/secretops-$SECRETOPS_VERSION-installer" && ./install.sh "${agent[@]}" --infisical-domain "$url" --python "$python") \
+        || die "the secretops installer stopped (see above); fix the cause, then run this again"
 fi
 
 # --- 6. connect the broker to the vault ----------------------------------
