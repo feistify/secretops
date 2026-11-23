@@ -49,7 +49,7 @@ Evidence: the same action in the same environment is allowed, sent to approval, 
 
 Let the human review and decide a plan outside the shell, in stages; each stage is useful on its own, and the terminal path stays:
 
-1. **Notification only.** The broker tells the human that a plan waits; the decision stays in the terminal.
+1. **Notification only.** The broker tells the human that a plan waits; the decision stays in the terminal. Done in 0.1.15 with ntfy ([how](OPERATIONS.md#notify-the-human-when-a-plan-waits)).
 2. **A page with a passkey.** A page served on the broker host lists waiting plans with the full review; the human decides with a passkey (WebAuthn with user verification), also from a phone over a private network. The passkey lives on the human's own device (a phone or a hardware key), not on the broker host, so an agent on the same host cannot use it; the page accepts no decision without a fresh WebAuthn assertion.
 3. **GitHub as a channel** (experiment). The plan becomes a deployment that waits for a required reviewer, so the GitHub mobile app notifies and records the decision; the broker accepts it only when it is bound to the plan digest. This ties approval to GitHub.
 4. **Bank-style app.** A key on the human's device signs the plan digest. Only if the stages above fall short.

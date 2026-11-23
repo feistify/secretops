@@ -10,6 +10,9 @@ every value with shlex.quote. Errors name a line number, never its content.
     secretops-configure --token-only    # replace only the token
     secretops-configure --check         # check the saved configuration
     secretops-configure --ca-file PATH  # trust a private CA for the vault
+    secretops-configure --notify-ntfy URL   # tell the human when a plan waits
+    secretops-configure --check-notify  # send a test notification
+    secretops-configure --no-notify     # stop notifications
 
 On a broker that has no project ID or token yet, --ca-file continues with
 the same questions as the plain command, so a vault behind a private CA is
@@ -39,6 +42,7 @@ from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from secretops import notify
 from secretops.terminal_input import input_received_line
 from secretops.validation import VAULT_ENVIRONMENT_PATTERN
 from secretops.vaults.infisical_cli import CA_FILE_KEY, ca_file_problem
@@ -69,6 +73,7 @@ KNOWN_KEYS = (
     "SECRETOPS_PLAN_DIR",
     "SECRETOPS_AUDIT_PATH",
     "SECRETOPS_POLICY_PATH",
+    *notify.NOTIFY_KEYS,
 )
 # Fixed by the installed layout; --init writes them.
 LAYOUT_DEFAULTS = {
@@ -296,6 +301,53 @@ def configure(
     return updated
 
 
+def _notify_setting(validate: Callable[[str], str]) -> Callable[[str], str]:
+    def check(value: str) -> str:
+        try:
+            return validate(value)
+        except notify.NotifySettingsError as error:
+            raise ConfigError(f"{error}; nothing was changed") from None
+
+    return check
+
+
+validate_ntfy_url = _notify_setting(notify.validate_ntfy_url)
+validate_ntfy_token = _notify_setting(notify.validate_ntfy_token)
+
+
+def configure_notify(
+    values: dict[str, str],
+    *,
+    url: str | None,
+    ca_file: str | None,
+    read_hidden: Callable[[str], str] | None = None,
+) -> dict[str, str]:
+    """Set the ntfy topic (asking for its token) and/or its CA file."""
+    read_hidden = read_hidden or hidden_input
+    updated = dict(values)
+    if ca_file is not None:
+        updated[notify.NOTIFY_CA_FILE_KEY] = validate_ca_file(ca_file)
+    if url is not None:
+        updated[notify.NTFY_URL_KEY] = validate_ntfy_url(url)
+        # A saved token is kept only for the same server, so Enter never
+        # sends it to a server it was not made for.
+        old_url = values.get(notify.NTFY_URL_KEY, "")
+        same_server = bool(old_url) and urlsplit(old_url).netloc == urlsplit(url).netloc
+        keeps = same_server and bool(values.get(notify.NTFY_TOKEN_KEY))
+        hint = "Enter keeps the current token" if keeps else "Enter for none"
+        token = read_hidden(f"ntfy access token (hidden; {hint}): ")
+        if token:
+            updated[notify.NTFY_TOKEN_KEY] = validate_ntfy_token(token)
+        elif not keeps:
+            updated.pop(notify.NTFY_TOKEN_KEY, None)
+    try:
+        if notify.is_configured(updated):
+            notify.settings(updated)
+    except notify.NotifySettingsError as error:
+        raise ConfigError(f"{error}; nothing was changed") from None
+    return updated
+
+
 def validate_env_name(value: str) -> str:
     if not ENV_NAME.fullmatch(value):
         raise ConfigError(
@@ -306,6 +358,10 @@ def validate_env_name(value: str) -> str:
 
 def check_command(env: str) -> list[str]:
     return [BROKER_COMMAND, "check-vault-connection", "--env", env]
+
+
+NOTIFY_CHECK_COMMAND = [BROKER_COMMAND, "check-notify"]
+NOTIFY_CHECK_TIMEOUT = notify.TOTAL_SECONDS + CHECK_MARGIN_SECONDS
 
 
 def check_timeout(values: dict[str, str]) -> int:
@@ -320,7 +376,26 @@ def run_check(
     timeout: int = DEFAULT_PROVIDER_TIMEOUT + PROBE_TIMEOUT + CHECK_MARGIN_SECONDS,
     runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
 ) -> int:
-    """Run the vault check as the broker user and print its output.
+    print(f"Checking the vault connection for environment {env} ...", flush=True)
+    return run_as_broker(account, check_command(env), "vault check", timeout, runner)
+
+
+def run_notify_check(
+    account: pwd.struct_passwd,
+    runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+) -> int:
+    print("Sending a test notification ...", flush=True)
+    return run_as_broker(account, NOTIFY_CHECK_COMMAND, "notification check", NOTIFY_CHECK_TIMEOUT, runner)
+
+
+def run_as_broker(
+    account: pwd.struct_passwd,
+    command: list[str],
+    what: str,
+    timeout: int,
+    runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+) -> int:
+    """Run a broker check as the broker user and print its output.
 
     The broker wrapper loads broker.env itself, so neither the token nor any
     other setting is passed here, in the arguments or the environment. The
@@ -329,10 +404,9 @@ def run_check(
     into the terminal. Returns the check's exit status, 1 when it could not
     run or timed out, CHECK_INTERRUPTED on Ctrl+C.
     """
-    print(f"Checking the vault connection for environment {env} ...", flush=True)
     try:
         result = runner(
-            check_command(env),
+            command,
             user=account.pw_uid,
             group=account.pw_gid,
             extra_groups=[],
@@ -346,13 +420,13 @@ def run_check(
             check=False,
         )
     except subprocess.TimeoutExpired:
-        print(f"secretops-configure: the vault check did not finish within {timeout} seconds", file=sys.stderr)
+        print(f"secretops-configure: the {what} did not finish within {timeout} seconds", file=sys.stderr)
         return 1
     except (OSError, subprocess.SubprocessError):
-        print(f"secretops-configure: the vault check could not start {BROKER_COMMAND}", file=sys.stderr)
+        print(f"secretops-configure: the {what} could not start {BROKER_COMMAND}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
-        print("\nsecretops-configure: the vault check was interrupted", file=sys.stderr)
+        print(f"\nsecretops-configure: the {what} was interrupted", file=sys.stderr)
         return CHECK_INTERRUPTED
     sys.stdout.write((result.stdout or b"").decode("utf-8", errors="replace"))
     sys.stdout.flush()
@@ -377,6 +451,34 @@ def init_values(domain: str, infisical_bin: str, gh_bin: str | None) -> dict[str
     return values
 
 
+def configure_notifications(account: pwd.struct_passwd, args: argparse.Namespace) -> int:
+    """Save the notification settings, then send a test as the broker user."""
+    if args.check_notify:
+        return run_notify_check(account)
+    values = read_env(BROKER_ENV, account.pw_uid)
+    if args.no_notify:
+        updated = {key: value for key, value in values.items() if key not in notify.NOTIFY_KEYS}
+        write_env(BROKER_ENV, updated, account.pw_uid, account.pw_gid)
+        print("Notifications are off. Broker configuration saved.")
+        return 0
+    if args.notify_ntfy is not None and not is_interactive():
+        raise ConfigError("an interactive terminal is required for the ntfy token; do not pipe credentials")
+    updated = configure_notify(values, url=args.notify_ntfy, ca_file=args.notify_ca_file)
+    write_env(BROKER_ENV, updated, account.pw_uid, account.pw_gid)
+    print("Broker configuration saved. No credential was displayed.")
+    if not notify.is_configured(updated):
+        print("No ntfy topic is set yet. Next: sudo secretops-configure --notify-ntfy URL")
+        return 0
+    code = run_notify_check(account)
+    if code == CHECK_INTERRUPTED:
+        print("The settings were saved; the test notification was interrupted.")
+        print("Send another test with: sudo secretops-configure --check-notify")
+    elif code != 0:
+        print("The settings were saved, but the test notification failed. Fix the cause above,")
+        print("then send another test: sudo secretops-configure --check-notify")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="secretops-configure", description=__doc__.split("\n\n")[0])
     parser.add_argument("--token-only", action="store_true", help="replace only the access token")
@@ -389,6 +491,15 @@ def main(argv: list[str] | None = None) -> int:
                     help="trust this PEM file for the vault's certificate (a private CA)")
     ca.add_argument("--no-ca-file", action="store_true",
                     help="stop using a separate CA file for the vault")
+    notify_group = parser.add_argument_group("notifications")
+    notify_group.add_argument("--notify-ntfy", metavar="URL",
+                              help="notify the human through this ntfy topic when a plan waits (asks for a token)")
+    notify_group.add_argument("--notify-ca-file", metavar="PATH",
+                              help="trust this PEM file for the ntfy server's certificate (a private CA)")
+    notify_group.add_argument("--check-notify", action="store_true",
+                              help="only send a test notification; changes nothing")
+    notify_group.add_argument("--no-notify", action="store_true",
+                              help="stop notifications and remove their settings")
     parser.add_argument("--init", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--domain", help=argparse.SUPPRESS)
     parser.add_argument("--infisical-bin", help=argparse.SUPPRESS)
@@ -400,6 +511,17 @@ def main(argv: list[str] | None = None) -> int:
         account = pwd.getpwnam(BROKER_USER)
         env = validate_env_name(args.env)
         changes_ca = args.ca_file is not None or args.no_ca_file
+        changes_notify = (
+            args.notify_ntfy is not None or args.notify_ca_file is not None or args.no_notify or args.check_notify
+        )
+        if changes_notify:
+            if args.check or args.token_only or args.init or changes_ca:
+                raise ConfigError("notification options cannot be combined with other options")
+            if (args.no_notify or args.check_notify) and (
+                args.notify_ntfy is not None or args.notify_ca_file is not None or (args.no_notify and args.check_notify)
+            ):
+                raise ConfigError("--no-notify and --check-notify stand alone")
+            return configure_notifications(account, args)
         if args.check:
             if args.token_only or args.init or changes_ca:
                 raise ConfigError("--check cannot be combined with --token-only, --init or a CA option")
