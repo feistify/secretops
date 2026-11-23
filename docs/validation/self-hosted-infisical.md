@@ -117,3 +117,19 @@ Found:
 - **Caddy with a root CA from a Secret** (`pki` → `root` with `pem_file`) keeps the CA across a lost volume or a new cluster, so the CA export of the compose variant is not needed here.
 
 Not tried: a multi-node cluster, another distribution (kubeadm, RKE2, microk8s), an existing ingress controller or cert-manager instead of the NodePort, a broker on another machine.
+
+## One script for one machine
+
+Date: 2026-11-23. `examples/infisical/install-single-machine.sh --host 10.0.2.15 --create-agent-user agent` in a fresh Ubuntu 22.04.5 VM (cloud image, 4 CPUs, 6 GB), prepared like a host that already has a container tool: nerdctl full bundle 2.4.2 (checked against its `SHA256SUMS`), no Python 3.11 or newer, no Infisical CLI, no secretops. The prompts (confirmation, admin email and password) were answered through `expect` with made-up values; the VM was deleted afterwards.
+
+| Step | Result |
+| --- | --- |
+| Plan | listed the eight missing parts and asked before changing anything |
+| Python | python3.12 3.12.16 from the deadsnakes PPA |
+| Vault | files in `/opt/infisical`, `make-env.sh`, `nerdctl compose up -d`, API answered, root certificate in `/etc/secretops-ca/infisical-root.pem`, verified without `-k` |
+| Infisical CLI | 0.45.14 from `artifacts-cli.infisical.com`, signing key matched the pinned fingerprint, held |
+| secretops | 0.1.15 from the release bundle (checked against `SHA256SUMS`), agent account created |
+| Connect | `bootstrap-broker.py` created admin, project, identity and token; `OK vault connection works` |
+
+Run again: every step reported `SKIP` or `OK`, the plan said "nothing to change; only checks", and nothing was asked. With another `--host` it stopped before any change (`.env was written for another host or port`). The output never contained the password. Not tried here: a Kubernetes node (the script never touches its container runtime; it only reports that it is one), Docker Compose, Ubuntu 24.04, Debian 12, and `--agent-user`.
+

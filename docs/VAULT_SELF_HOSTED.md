@@ -4,6 +4,17 @@ How to run your own Infisical for secretops on one machine, a server or a NAS, w
 
 Tested: Ubuntu 22.04 with containerd and nerdctl 2.4.2, without Docker Engine; Infisical v0.167.14, Infisical CLI 0.45.14, secretops 0.1.13; and a Synology NAS with DSM 7.3.2, Docker 24.0.2 and Compose v2.20.1, with secretops 0.1.14 ([record](validation/self-hosted-infisical.md)). On Kubernetes, see [VAULT_KUBERNETES.md](VAULT_KUBERNETES.md). Infisical's own guide: [Docker Compose](https://infisical.com/docs/self-hosting/deployment-options/docker-compose).
 
+## One script for one machine
+
+When the vault and the broker run on the same Linux host and a container tool (nerdctl or Docker Compose) is already installed, one script does the human's part: Python for the broker, the vault (steps 1 to 4 below), the Infisical CLI (pinned and held, signing key checked), secretops from the release bundle, and [Connect the broker](#connect-the-broker) with `bootstrap-broker.py`:
+
+```sh
+# Human, on that host, in a copy of examples/infisical/
+sudo bash install-single-machine.sh --host HOST --create-agent-user agent
+```
+
+It shows what it will change and asks first, skips what is already done (so it can run again after a stop), never installs or changes a container runtime, and prints no key, password or token. It asks only for the first admin's email and password. At the end it prints the next steps: [Keep offline](#keep-offline), the first check, [Back up](#back-up). `--port`, `--dir` and `--agent-user` change the defaults; `--help` lists them. The rest of this page is the same work by hand, and what to do afterwards.
+
 ## What you get
 
 - Infisical, Postgres and Redis, with pinned image versions.
