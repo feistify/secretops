@@ -139,8 +139,11 @@ fi
 # Root runs these files; nobody else may be able to change them.
 for path in "$here" "${VAULT_FILES[@]/#/$here/}"; do
     [[ -e $path ]] || die "$path is missing; run this from a copy of examples/infisical/"
-    read -r owner mode < <(stat -c '%u %a' -- "$path")
-    if [[ -L $path ]] || [[ $owner != 0 && $owner != "$SUDO_UID" ]] || (( (8#$mode & 8#022) != 0 )); then
+    read -r owner group mode < <(stat -c '%u %g %a' -- "$path")
+    # Group write is fine for root's group and your own primary group (on
+    # Ubuntu and Debian a group of your own; a checkout gets mode 664 there).
+    if [[ -L $path ]] || [[ $owner != 0 && $owner != "$SUDO_UID" ]] || (( (8#$mode & 8#002) != 0 )) \
+        || { (( (8#$mode & 8#020) != 0 )) && [[ $group != 0 && $group != "${SUDO_GID:-}" ]]; }; then
         die "$path must belong to you or root and be writable by nobody else (chmod go-w), because root runs it"
     fi
 done
@@ -192,19 +195,29 @@ if [[ -f $dir/.env ]]; then
     grep -qx "INFISICAL_HOST=$host" "$dir/.env" && grep -qx "HTTPS_PORT=$port" "$dir/.env" \
         || die "$dir/.env was written for another host or port; use those, or another --dir"
 fi
+# One vault per broker: a new vault on a host whose broker already trusts or
+# uses another one would be started and then left unconnected.
+if (( fresh_vault )); then
+    [[ ! -f $CA_FILE ]] \
+        || die "$CA_FILE already holds another vault's certificate; give that vault's --dir and --port, or set up a new vault by hand (docs/VAULT_SELF_HOSTED.md)"
+    if grep -q '^INFISICAL_TOKEN=' "$BROKER_ROOT/broker.env" 2>/dev/null; then
+        die "the broker is already connected to a vault; give that vault's --dir and --port"
+    fi
+fi
 [[ ! -e $dir/secrets.tmp ]] || die "a stopped make-env.sh left $dir/secrets.tmp; remove it (sudo rm -rf $dir/secrets.tmp) and run again"
 if (( fresh_vault )); then
     if ss -Htln "sport = :$port" | grep -q .; then die "port $port is in use; choose another --port"; fi
     if command -v iptables-save >/dev/null && iptables-save -t nat 2>/dev/null | grep -Eq -- "--dport $port( |$)"; then
         die "port $port is published by a container or a pod (iptables); choose another --port"
     fi
-    if [[ $compose == nerdctl* ]]; then
-        # containerd's CRI uses the first network file in name order: nerdctl's
-        # own file must not come before the cluster's.
+    if [[ $compose == nerdctl* && ! -e /etc/cni/net.d/nerdctl-bridge.conflist ]]; then
+        # nerdctl may write nerdctl-bridge.conflist into /etc/cni/net.d (the
+        # compose network goes to a subdirectory). containerd's CRI uses the
+        # first file there in name order: it must not come before the cluster's.
         first=$(find /etc/cni/net.d -maxdepth 1 -type f \( -name '*.conf' -o -name '*.conflist' -o -name '*.json' \) \
-            ! -name 'nerdctl-*' -printf '%f\n' 2>/dev/null | sort | head -1)
-        if [[ -n $first && ! $first < nerdctl- ]]; then
-            die "/etc/cni/net.d/$first would come after nerdctl's network file, and the cluster could switch to it; run the vault elsewhere, or by hand with nerdctl's --cni-netconfpath"
+            -printf '%f\n' 2>/dev/null | sort | head -1)
+        if [[ -n $first && ! $first < nerdctl-bridge.conflist ]]; then
+            die "/etc/cni/net.d/$first would come after nerdctl's nerdctl-bridge.conflist, and the cluster could switch to it; run the vault elsewhere"
         fi
     fi
 fi
