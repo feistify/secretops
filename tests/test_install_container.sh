@@ -31,7 +31,16 @@ chmod 0755 /usr/bin/infisical
 PYOPT="" PYINFO=""
 if [ "$(. /etc/os-release && echo "$VERSION_ID")" = 22.04 ]; then
     apt-get install -y -qq --no-install-recommends software-properties-common gpg-agent >/dev/null
-    add-apt-repository -y ppa:deadsnakes/ppa >/dev/null 2>&1
+    # Launchpad is outside this project: say so when it fails, instead of apt's
+    # "Unable to locate package".
+    if ! add-apt-repository -y ppa:deadsnakes/ppa >/tmp/ppa.log 2>&1 ||
+        ! apt-cache show python3.12 >/dev/null 2>&1 ||
+        ! apt-cache show python3.12-venv >/dev/null 2>&1; then
+        echo "Setup failed: Python 3.12 from the deadsnakes PPA is not available" >&2
+        echo "(Launchpad unreachable or the PPA changed; not an installer failure). Output:" >&2
+        { grep -E '^(E|W|Err):' /tmp/ppa.log || tail -n 3 /tmp/ppa.log; } | tail -n 5 >&2
+        exit 1
+    fi
     apt-get install -y -qq --no-install-recommends python3.12 python3.12-venv >/dev/null
     PYOPT="--python /usr/bin/python3.12" PYINFO=/usr/bin/python3.12
 fi
