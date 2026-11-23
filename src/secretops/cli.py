@@ -6,6 +6,7 @@ from importlib.metadata import version as package_version
 import typer
 from rich.console import Console
 
+from secretops import notify
 from secretops.add_client import (
     EXIT_NOT_WRITTEN,
     ClientError,
@@ -36,6 +37,7 @@ from secretops.human_entry import (
 from secretops.import_file import ImportFileError
 from secretops.plan_lifecycle import (
     execute_saved_plan,
+    notify_human,
     pending_plan_lines,
     preflight_saved_plan,
     show_saved_plan,
@@ -194,6 +196,23 @@ def plan(
     if save:
         save_plan_artifact(artifact)
         console.print(f"- plan_id: {shown(artifact.plan_id)}")
+        notify_human(artifact, console)
+
+
+@app.command(
+    "check-notify",
+    help="Send a test notification to the human (human only).",
+    rich_help_panel="Information",
+)
+def check_notify():
+    if not notify.is_configured(os.environ):
+        typer.echo("FAIL notifications are not configured; set them with sudo secretops-configure --notify-ntfy URL")
+        raise typer.Exit(1)
+    outcome = notify.send(notify.TEST_MESSAGE)
+    if outcome != notify.SENT:
+        typer.echo(f"FAIL the test notification was not sent: {outcome}")
+        raise typer.Exit(1)
+    typer.echo("OK test notification sent; check that it arrived")
 
 
 @app.command("show-plan", help="Show a saved plan and its status.", rich_help_panel="Plans")

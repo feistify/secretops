@@ -15,6 +15,9 @@ Every operation that contacts Infisical needs explicit machine authentication an
 | `SECRETOPS_INFISICAL_BIN` | no | absolute path to the `infisical` executable; otherwise only `/usr/local/bin`, `/usr/bin`, and `/bin` are searched, never the caller's `PATH` |
 | `SECRETOPS_INFISICAL_CA_FILE` | no | absolute path to a PEM file with the CA that signed the vault's certificate, for a vault behind a private CA, owned by root and writable only by root; the Infisical CLI and the connection check get it, `gh` never does |
 | `SECRETOPS_PROVIDER_TIMEOUT_SECONDS` | no | timeout for each Infisical and GitHub CLI call, default 60 |
+| `SECRETOPS_NOTIFY_NTFY_URL` | no | ntfy topic URL, `https://host[:port]/topic`, for notifying the human when a plan waits ([how](OPERATIONS.md#notify-the-human-when-a-plan-waits)); plain http only to the broker host itself |
+| `SECRETOPS_NOTIFY_NTFY_TOKEN` | no | ntfy access token that may publish to that topic |
+| `SECRETOPS_NOTIFY_CA_FILE` | no | PEM file with a private CA for the ntfy server, with the same file rules as `SECRETOPS_INFISICAL_CA_FILE`; used only for notifications |
 
 `INFISICAL_DOMAIN` must be the address of your own Infisical instance (its cloud region or your self-hosted server); the installer's required `--infisical-domain` writes it to `broker.env`, and `secretops-configure` asks for it, so the default applies only when it is unset.
 

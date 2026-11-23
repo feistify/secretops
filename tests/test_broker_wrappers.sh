@@ -154,6 +154,14 @@ out=$(SECRETOPS_INFISICAL_CA_FILE=/tmp/planted-ca.pem sh "$BROKER" version 2>&1 
     && check "inherited SECRETOPS_INFISICAL_CA_FILE cleared when broker.env omits it" 0 0 \
     || check "inherited SECRETOPS_INFISICAL_CA_FILE cleared when broker.env omits it (got: $out)" 0 1
 
+# SECRETOPS_NOTIFY_* decide where notifications and the ntfy token go.
+printf '#!/bin/sh\necho "NOTIFY=${SECRETOPS_NOTIFY_NTFY_URL-unset},${SECRETOPS_NOTIFY_NTFY_TOKEN-unset},${SECRETOPS_NOTIFY_CA_FILE-unset}"\n' > "$PROBE"; chmod +x "$PROBE"
+printf 'SECRETOPS_BIN=%s\n' "$PROBE" > "$BROKER_ENV"; chmod 600 "$BROKER_ENV"
+out=$(SECRETOPS_NOTIFY_NTFY_URL=https://planted.example/t SECRETOPS_NOTIFY_NTFY_TOKEN=planted SECRETOPS_NOTIFY_CA_FILE=/tmp/planted-ca.pem sh "$BROKER" version 2>&1 || true)
+[ "$out" = "NOTIFY=unset,unset,unset" ] \
+    && check "inherited SECRETOPS_NOTIFY_* cleared when broker.env omits them" 0 0 \
+    || check "inherited SECRETOPS_NOTIFY_* cleared when broker.env omits them (got: $out)" 0 1
+
 # SECRETOPS_GH_BIN picks the program that receives secret values on stdin and
 # the broker's GitHub login, so it may also come only from broker.env.
 printf '#!/bin/sh\necho "GH_BIN=${SECRETOPS_GH_BIN-unset}"\n' > "$PROBE"; chmod +x "$PROBE"

@@ -130,6 +130,9 @@ How much secretops protects depends on how you run it. From weakest to strongest
 | A multiline paste is stored as its first line, or its next line is shown at or answers `Save?` | entry is refused unless the terminal confirms bracketed paste before the value prompt; a line break inside a paste rejects the whole value; unread input is discarded before `Save?`, a paste there counts as no, and only the letters of yes/no are echoed | 1 |
 | The plan or destination changes between the human's review and submission | submission carries the reviewed digest; the broker re-checks digest, destination, policy, and status under a per-plan lock before any provider call | 1 |
 | Another writer creates the same name between the final check and an Infisical write | none: Infisical CLI `secrets set` is an upsert; `create_secret` declares `atomic_create = false` | accepted limit |
+| A notification reveals what a plan does, or becomes a way to approve | the ntfy message carries only the plan ID and whether it waits for approval or entry, with no link or token; the decision stays on the human's own broker access | 1 |
+| A planted setting sends notifications and the ntfy token elsewhere | the notification settings come only from `broker.env` and are cleared from the caller's environment; https is required except to the broker host, redirects are not followed, and a separate CA file follows the vault CA file's rules | 1 and 3 |
+| A failed notification blocks planning or leaks its settings | the plan is saved first; the failure is printed and audited with a fixed reason, never the URL or the token | 1 |
 | Human approves a plan without reading it | none in secretops; quality of review at `show-plan` time | out of scope |
 
 ## Residual risks and limits

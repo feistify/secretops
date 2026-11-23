@@ -65,6 +65,21 @@ sudo secretops-configure --ca-file /etc/secretops/vault-ca.pem
 
 The file must be a PEM certificate owned by root, readable by every account (it is public) and not writable by others, in a directory that only root can change (not `/tmp`), with no symbolic link on the path: whoever can replace it can make the broker send the token to a forged vault. The broker checks this again at every vault call and stops if it no longer holds. The setting applies only to the vault: the Infisical CLI and the connection check use it, while `gh` keeps the system store for GitHub. On a broker that has no project or token yet (since 0.1.14), the command then asks the same questions as `sudo secretops-configure`, so one run configures everything; the vault check runs after the save. After a CA rotation, replace the file and run `sudo secretops-configure --check`; `sudo secretops-configure --no-ca-file` removes the setting.
 
+## Notify the human when a plan waits
+
+The broker can tell you through [ntfy](https://docs.ntfy.sh/) when `plan --save` stores a plan that waits for your approval or entry:
+
+```sh
+sudo secretops-configure --notify-ntfy https://ntfy.example.com/secretops-plans
+```
+
+It asks for an ntfy access token (hidden; Enter for none), saves the settings and sends a test as the broker user. Subscribe to the topic in the ntfy app or web page. The message says only `secretops: plan <plan_id> waits for approval` (or `for your entry`): no secret names, environments, plan content or link. It cannot approve anything; you still decide with `broker show-plan` and `broker approve-plan`. If a notification fails, the plan is saved anyway, the agent's output says that the human could not be notified and why, and the audit log records `notify_failed` with a fixed reason, never the URL or the token.
+
+- **Server.** For a first try, the public `https://ntfy.sh` with a long random topic name works without a token; anyone who knows the topic can read it, which is why the message carries only the plan ID. For daily use, run your own ntfy server with access control (deny by default, a token that may only publish to the topic for the broker, a read-only user for your devices); see ntfy's [self-hosting guide](https://docs.ntfy.sh/install/). Your phone must reach that server: on an internal network only, it gets messages only there or over a VPN. The iOS app needs the server's `upstream-base-url` for instant delivery.
+- **TLS.** The URL must use https, except for a server on the broker host itself. For a server behind a private CA: `sudo secretops-configure --notify-ca-file /etc/secretops/ntfy-ca.pem`, with the same file rules as the vault CA; it applies only to notifications.
+- **Network.** The broker connects directly, without proxy variables, like the vault connection check, and waits at most 5 seconds.
+- **Commands.** `sudo secretops-configure --check-notify` sends another test; `sudo secretops-configure --no-notify` removes every notification setting.
+
 ## Renew the vault token
 
 The token is renewed by hand. An expired or revoked token fails safely with `vault error`; secretops never falls back to a personal login.

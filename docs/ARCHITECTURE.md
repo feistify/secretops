@@ -142,6 +142,8 @@ Before its first vault or GitHub write, `execute-plan` records `status` `started
 
 Every event of a `vault.secret.copy_many` plan, from planning on, names its target environment in `env` and its source in `source_env`. A refused expired approval records `failure: approval_expired` with `step` `preflight` or `execute`.
 
+When notifications are configured, `plan --save` records `status` `notified` with `channel` `ntfy` after it told the human that the plan waits, or `notify_failed` with a fixed `reason`; neither carries the topic URL or the token.
+
 Audit logs may include:
 
 - action
