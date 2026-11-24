@@ -133,5 +133,18 @@ Date: 2026-11-23. `examples/infisical/install-single-machine.sh --host 10.0.2.15
 
 Run again: every step reported `SKIP` or `OK`, the plan said "nothing to change; only checks", and nothing was asked. With another `--host` it stopped before any change (`.env was written for another host or port`). The output never contained the password.
 
-After the review, the script was run again end to end in a new VM of the same kind, from a copy with the modes of a git checkout (664, group your own): same result, with the vault in containerd's `default` namespace and the plan listing every lasting change (PPA, apt source, broker account, SSH service). Each of these stopped before any change: a second vault (`--dir /opt/other --port 9443`) while the broker trusts the first; a copy of the script writable by others; a `--host` that is not this machine; a network file in `/etc/cni/net.d` that sorts after nerdctl's `nerdctl-bridge.conflist` (nerdctl 2.4.2 puts the compose network in `/etc/cni/net.d/default/`). Not tried here: a Kubernetes node (the script never touches its container runtime; it only reports that it is one), Docker Compose, Ubuntu 24.04, Debian 12, and `--agent-user`.
+After the review, the script was run again end to end in a new VM of the same kind, from a copy with the modes of a git checkout (664, group your own): same result, with the vault in containerd's `default` namespace and the plan listing every lasting change (PPA, apt source, broker account, SSH service). Each of these stopped before any change: a second vault (`--dir /opt/other --port 9443`) while the broker trusts the first; a copy of the script writable by others; a `--host` that is not this machine; a network file in `/etc/cni/net.d` that sorts after nerdctl's `nerdctl-bridge.conflist` (nerdctl 2.4.2 puts the compose network in `/etc/cni/net.d/default/`). Not tried here: a Kubernetes node (the script never touches its container runtime; it only reports that it is one), Docker Compose, and `--agent-user`.
+
+### Ubuntu 24.04 and Debian 12
+
+Date: 2026-11-24. The same command in two fresh VMs (cloud images checked against their published sums, 3 CPUs, 4 GB each): Ubuntu 24.04.5 and Debian 12 (bookworm), each with the nerdctl full bundle 2.4.2 and `expect` added, nothing else; the script installed secretops 0.1.15. Made-up values only; both VMs were deleted afterwards.
+
+| Step | Ubuntu 24.04 | Debian 12 |
+| --- | --- | --- |
+| First run | completed: `OK vault connection works` | stopped before any change: `FAIL gpg is required (apt install ...)`; the Debian cloud image has no `gpg` |
+| After `apt install gnupg` (and the other tools the message names) | — | completed: `OK vault connection works` |
+| Python | system python3 3.12.3 with `python3-venv`, no PPA | system python3 3.11.2 with `python3-venv` |
+| Infisical CLI | 0.45.14, held | 0.45.14, held |
+| Run again | every step `OK` or `SKIP`, nothing asked | same |
+| [First check: vault only](../INSTALL.md#first-check-vault-only) | `secretops add` saved a made-up value; the agent account's `secretops-local` plan and `execute-plan` gave `OK secret exists` | same |
 

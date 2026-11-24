@@ -1,6 +1,6 @@
 # Limitations and tested versions
 
-The supported installation path is a local broker on Ubuntu 24.04 or Debian 12, or Ubuntu 22.04 with a newer Python passed as `--python`; Debian 12 and Ubuntu 22.04 are tested in a container only. The installer refuses other distributions unless `--allow-untested-os` is given. Python 3.11 or newer is required. Tested provider versions are listed below.
+The supported installation path is a local broker on Ubuntu 24.04 or Debian 12, or Ubuntu 22.04 with a newer Python passed as `--python`; Debian 12 and Ubuntu 22.04 are tested in a container and, through the [single-machine script](VAULT_SELF_HOSTED.md#one-script-for-one-machine), in a VM ([record](validation/self-hosted-infisical.md#one-script-for-one-machine)). The installer refuses other distributions unless `--allow-untested-os` is given. Python 3.11 or newer is required. Tested provider versions are listed below.
 
 - Infisical create-only checks existence and writes in separate calls. It refuses an existing secret when observed, but cannot guarantee atomic create-only behavior against a concurrent writer. Keep other writers coordinated; plan destination binding does not add conditional writes.
 - GitHub calls have per-call timeouts and explicit acknowledged/unknown write outcomes, with partial-sync reporting. Acknowledgement relies on the CLI exit status; GitHub does not provide secret-value read-back, and name presence cannot resolve an unknown write.
