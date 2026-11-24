@@ -137,7 +137,7 @@ After the review, the script was run again end to end in a new VM of the same ki
 
 ### Ubuntu 24.04 and Debian 12
 
-Date: 2026-11-24. The same command in two fresh VMs (cloud images checked against their published sums, 3 CPUs, 4 GB each): Ubuntu 24.04.5 and Debian 12 (bookworm), each with the nerdctl full bundle 2.4.2 and `expect` added, nothing else. Made-up values only; both VMs were deleted afterwards.
+Date: 2026-11-24. The same command in two fresh VMs (cloud images checked against their published sums, 3 CPUs, 4 GB each): Ubuntu 24.04.5 and Debian 12 (bookworm), each with the nerdctl full bundle 2.4.2 and `expect` added, nothing else; the script installed secretops 0.1.15. Made-up values only; both VMs were deleted afterwards.
 
 | Step | Ubuntu 24.04 | Debian 12 |
 | --- | --- | --- |
