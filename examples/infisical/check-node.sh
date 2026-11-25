@@ -28,6 +28,20 @@ fi
 say() { printf '%-6s %s\n' "$1" "$2"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 first_line() { "$@" 2>/dev/null | head -n 1; }
+# published PORT LOCAL_ADDRESSES: a NAT rule for PORT on this host. A rule
+# whose -d is another address (a Kubernetes ClusterIP) does not count.
+published() {
+    printf '%s\n' "$nat" | awk -v p="$1" -v locals=" $2 " '
+        { dport = 0; dst = ""; neg = 0
+          for (i = 1; i < NF; i++) {
+              if ($i == "--dport" && $(i + 1) == p) dport = 1
+              if ($i == "-d") { dst = $(i + 1); neg = ($(i - 1) == "!") }
+          }
+          if (!dport) next
+          sub(/\/32$/, "", dst)
+          if (dst == "" || neg || index(locals, " " dst " ")) { found = 1; exit } }
+        END { exit !found }'
+}
 
 echo "== Host"
 if [ -r /etc/os-release ]; then
@@ -72,12 +86,23 @@ else
     listening=""
     say INFO "neither ss nor netstat worked; ports not checked"
 fi
-if [ -n "$listening" ]; then
+# A Kubernetes NodePort or a container's published port has no listener
+# that ss sees; it shows only as a NAT rule, which root can read.
+nat=""
+if [ "$(id -u)" = 0 ] && have iptables-save; then
+    nat=$(iptables-save -t nat 2>/dev/null) || nat=""
+fi
+locals=$(ip -o -4 addr show 2>/dev/null | awk '{ split($4, a, "/"); printf "%s ", a[1] }')
+if [ -n "$listening" ] || [ -n "$nat" ]; then
     for port in 80 443 8443 30843; do
         if echo "$listening" | awk -v p="$port" '{ n = split($4, a, ":"); if (a[n] == p) found = 1 } END { exit !found }'; then
             say WARN "port $port is in use"
-        else
+        elif published "$port" "$locals"; then
+            say WARN "port $port is published through iptables (a Kubernetes NodePort or a container's port)"
+        elif [ -n "$nat" ]; then
             say OK "port $port is free"
+        else
+            say OK "port $port has no listener (run with sudo to also check iptables for NodePorts and container ports)"
         fi
     done
 fi

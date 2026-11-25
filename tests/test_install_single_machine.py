@@ -134,3 +134,16 @@ def test_only_the_pinned_key_reaches_the_keyring(keys, tmp_path):
 def test_a_download_without_the_pinned_key_is_refused(keys, tmp_path):
     (pinned, _), _, only_extra = keys
     assert _pinned_key(pinned, only_extra, tmp_path / "keyring.gpg").returncode == 1
+
+
+def test_published_counts_only_ports_on_this_host():
+    """Same rule shapes as in test_check_node.py, under pipefail with many rules first."""
+    from test_check_node import LOCALS, NAT, PORTS
+
+    filler = "".join(f"-A KUBE-SEP-{n} -p tcp -m tcp -j DNAT --to-destination 10.244.0.{n % 250}:80\n"
+                     for n in range(20000))
+    body = f'set -euo pipefail\n{_function("published")}nat=$(cat)\nif published "$1" "$2"; then echo yes; else echo no; fi\n'
+    for port, found in PORTS:
+        result = subprocess.run(["bash", "-c", body, "test", port, LOCALS], input=filler + NAT,
+                                capture_output=True, text=True, check=True)
+        assert result.stdout.strip() == ("yes" if found else "no"), port

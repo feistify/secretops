@@ -90,6 +90,24 @@ apt_get() { DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get -q -y -o D
 
 # Write only the key with the pinned fingerprint from the downloaded file
 # $1 to the keyring $2; any other key in the download is left out.
+# published PORT LOCAL_ADDRESSES: a NAT rule (in $nat) that sends PORT on
+# this host elsewhere: a NodePort or a container's published port. A rule
+# whose -d is another address (a Kubernetes ClusterIP) does not count.
+# Read from a string, not a pipe: with pipefail, awk's early exit could
+# fail the writer and hide the match.
+published() {
+    awk -v p="$1" -v locals=" $2 " '
+        { dport = 0; dst = ""; neg = 0
+          for (i = 1; i < NF; i++) {
+              if ($i == "--dport" && $(i + 1) == p) dport = 1
+              if ($i == "-d") { dst = $(i + 1); neg = ($(i - 1) == "!") }
+          }
+          if (!dport) next
+          sub(/\/32$/, "", dst)
+          if (dst == "" || neg || index(locals, " " dst " ")) { found = 1; exit } }
+        END { exit !found }' <<<"$nat"
+}
+
 pinned_key() {
     local home status=0
     home=$(mktemp -d)
@@ -210,8 +228,8 @@ if (( fresh_vault )); then
     # Captured first: grep -q would stop the pipe early, and with pipefail a
     # large rule set (kube-proxy) would then hide the match.
     nat=$(iptables-save -t nat 2>/dev/null || true)
-    if grep -Eq -- "--dport $port( |$)" <<<"$nat"; then
-        die "port $port is published by a container or a pod (iptables); choose another --port"
+    if published "$port" "$(ip -o -4 addr show | awk '{ split($4, a, "/"); printf "%s ", a[1] }')"; then
+        die "port $port is published by a NodePort, a pod or a container (iptables); choose another --port"
     fi
     if [[ $compose == nerdctl* && ! -e /etc/cni/net.d/nerdctl-bridge.conflist ]]; then
         # nerdctl may write nerdctl-bridge.conflist into /etc/cni/net.d (the
