@@ -32,14 +32,25 @@ first_line() { "$@" 2>/dev/null | head -n 1; }
 # whose -d is another address (a Kubernetes ClusterIP) does not count.
 published() {
     printf '%s\n' "$nat" | awk -v p="$1" -v locals=" $2 " '
-        { dport = 0; dst = ""; neg = 0
+        { hit = 0; dst = ""; neg = 0
           for (i = 1; i < NF; i++) {
-              if ($i == "--dport" && $(i + 1) == p) dport = 1
+              if ($i == "--dport" || $i == "--dports") {
+                  # One port, a list (multiport), or ranges A:B.
+                  n = split($(i + 1), list, ",")
+                  for (j = 1; j <= n; j++) {
+                      if (split(list[j], r, ":") == 2) {
+                          if (p + 0 >= (r[1] == "" ? 0 : r[1] + 0) && p + 0 <= (r[2] == "" ? 65535 : r[2] + 0)) hit = 1
+                      } else if (list[j] == p) hit = 1
+                  }
+              }
               if ($i == "-d") { dst = $(i + 1); neg = ($(i - 1) == "!") }
           }
-          if (!dport) next
+          if (!hit) next
+          # Only a single address that is not this host (a ClusterIP) is
+          # left out; no -d, a negated one or a wider range counts.
+          if (dst == "" || neg || dst !~ /^[0-9.]+(\/32)?$/) { found = 1; exit }
           sub(/\/32$/, "", dst)
-          if (dst == "" || neg || index(locals, " " dst " ")) { found = 1; exit } }
+          if (index(locals, " " dst " ")) { found = 1; exit } }
         END { exit !found }'
 }
 
@@ -99,8 +110,12 @@ if [ -n "$listening" ] || [ -n "$nat" ]; then
             say WARN "port $port is in use"
         elif published "$port" "$locals"; then
             say WARN "port $port is published through iptables (a Kubernetes NodePort or a container's port)"
-        elif [ -n "$nat" ]; then
+        elif [ -n "$listening" ] && [ -n "$nat" ]; then
             say OK "port $port is free"
+        elif [ -n "$nat" ]; then
+            say INFO "port $port: no NAT rule; listeners not checked"
+        elif [ "$(id -u)" = 0 ]; then
+            say OK "port $port has no listener (iptables-save gave no NAT rules, so NodePorts and container ports are not checked)"
         else
             say OK "port $port has no listener (run with sudo to also check iptables for NodePorts and container ports)"
         fi

@@ -150,7 +150,7 @@ Date: 2026-11-24. The same command in two fresh VMs (cloud images checked agains
 
 ### Kubernetes node, Docker Compose, `--agent-user`
 
-Date: 2026-11-25. Two fresh Ubuntu 24.04.5 VMs (cloud image, sums checked); made-up values only; both VMs were deleted afterwards.
+Date: 2026-11-25. Two fresh Ubuntu 24.04.5 VMs (cloud image, sums checked); the script installed secretops 0.1.15; made-up values only; both VMs were deleted afterwards.
 
 - **A, Kubernetes node:** a one-node kubeadm cluster, Kubernetes v1.31.14, containerd 2.2.1 from Ubuntu with the systemd cgroup driver, flannel v0.26.7 (`10-flannel.conflist`), kube-proxy in iptables mode, two nginx pods behind a NodePort service on 30843; the standalone nerdctl 2.4.2 binary added, using the cluster's CNI plugins in `/opt/cni/bin`. `--create-agent-user agent`.
 - **B, Docker Compose:** `docker.io` 29.1.3 and `docker-compose-v2` 2.40.3 from Ubuntu, and an existing account `coder` for `--agent-user coder`.
@@ -164,4 +164,4 @@ Date: 2026-11-25. Two fresh Ubuntu 24.04.5 VMs (cloud image, sums checked); made
 | [First check: vault only](../INSTALL.md#first-check-vault-only) | `OK secret exists` | `OK secret exists` |
 | After a reboot | vault answered; cluster as above; first check again `OK secret exists` | vault answered; first check again `OK secret exists` |
 
-Found: run with sudo on node A, `check-node.sh` reported the NodePort 30843 as free, because `ss` does not see it. It now also reads the NAT rules as root. The first version of that check, like the script's own port check, also counted a Kubernetes ClusterIP rule (`-d 10.96.0.1/32 ... --dport 443`) as a port on this host. Both scripts now count a rule only when it has no `-d` or its `-d` is an address of this machine; on node A, 8443 (the vault) and 30843 were reported and 80 and 443 (ClusterIPs) were not. Not checked: kube-proxy in IPVS or nftables mode, whose NodePorts are not iptables NAT rules.
+Found: run with sudo on node A, `check-node.sh` reported the NodePort 30843 as free, because `ss` does not see it. It now also reads the NAT rules as root. The first version of that check, like the script's own port check, also counted a Kubernetes ClusterIP rule (`-d 10.96.0.1/32 ... --dport 443`) as a port on this host. Both scripts now count a rule only when it has no `-d` or its `-d` is an address of this machine; on node A, 8443 (the vault) and 30843 were reported and 80 and 443 (ClusterIPs) were not. After the review, a rule also counts when its `-d` is a wider range than one address, and `--dports` lists and port ranges are read; on a Kubernetes node where `iptables-save` gives no NAT rules, the script warns. Not checked: kube-proxy in IPVS or nftables mode and eBPF replacements (Cilium, Calico eBPF), whose NodePorts are not iptables NAT rules.

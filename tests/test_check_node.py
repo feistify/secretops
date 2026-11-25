@@ -69,7 +69,6 @@ def test_systemd_environment_shows_only_the_proxy_host(shell, environment, expec
     assert run(shell, body, environment) == expected
 
 
-
 # Real rule shapes: kube-proxy NodePort and ClusterIP, a CNI portmap DNAT
 # (nerdctl), Docker's DNAT, and one bound to a host address.
 NAT = (
@@ -79,10 +78,15 @@ NAT = (
     "-A CNI-DN-1234 -p tcp -m tcp --dport 8443 -j DNAT --to-destination 10.4.0.2:8443\n"
     "-A DOCKER ! -i docker0 -p tcp -m tcp --dport 9443 -j DNAT --to-destination 172.17.0.2:443\n"
     "-A CNI-DN-5678 -d 192.0.2.10/32 -p tcp -m tcp --dport 7443 -j DNAT --to-destination 10.4.0.3:443\n"
+    # Hand-written shapes: a wider -d, a multiport list, a port range.
+    "-A PREROUTING -d 10.0.0.0/8 -p tcp -m tcp --dport 6443 -j DNAT --to-destination 10.9.0.1:6443\n"
+    "-A PREROUTING -p tcp -m multiport --dports 5000,6000 -j DNAT --to-destination 10.9.0.2\n"
+    "-A PREROUTING -p tcp -m tcp --dport 7000:7100 -j DNAT --to-destination 10.9.0.3\n"
 )
 LOCALS = "127.0.0.1 192.0.2.10 "
 PORTS = [("30843", True), ("8443", True), ("9443", True), ("7443", True),
-         ("443", False), ("80", False), ("3084", False), ("22", False)]
+         ("6443", True), ("6000", True), ("5000", True), ("7050", True), ("7100", True),
+         ("443", False), ("80", False), ("3084", False), ("22", False), ("7101", False), ("600", False)]
 
 
 @pytest.mark.parametrize("shell", SHELLS)
