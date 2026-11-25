@@ -88,6 +88,35 @@ die() { printf 'FAIL %s\n' "$*" >&2; exit 1; }
 # services (needrestart only lists them).
 apt_get() { DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get -q -y -o Dpkg::Options::=--force-confold "$@"; }
 
+# published PORT LOCAL_ADDRESSES: a NAT rule (in $nat) that sends PORT on
+# this host elsewhere: a NodePort or a container's published port. A rule
+# whose -d is another address (a Kubernetes ClusterIP) does not count.
+# Read from a string, not a pipe: with pipefail, awk's early exit could
+# fail the writer and hide the match.
+published() {
+    awk -v p="$1" -v locals=" $2 " '
+        { hit = 0; dst = ""; neg = 0
+          for (i = 1; i < NF; i++) {
+              if ($i == "--dport" || $i == "--dports") {
+                  # One port, a list (multiport), or ranges A:B.
+                  n = split($(i + 1), list, ",")
+                  for (j = 1; j <= n; j++) {
+                      if (split(list[j], r, ":") == 2) {
+                          if (p + 0 >= (r[1] == "" ? 0 : r[1] + 0) && p + 0 <= (r[2] == "" ? 65535 : r[2] + 0)) hit = 1
+                      } else if (list[j] == p) hit = 1
+                  }
+              }
+              if ($i == "-d") { dst = $(i + 1); neg = ($(i - 1) == "!") }
+          }
+          if (!hit) next
+          # Only a single address that is not this host (a ClusterIP) is
+          # left out; no -d, a negated one or a wider range counts.
+          if (dst == "" || neg || dst !~ /^[0-9.]+(\/32)?$/) { found = 1; exit }
+          sub(/\/32$/, "", dst)
+          if (index(locals, " " dst " ")) { found = 1; exit } }
+        END { exit !found }' <<<"$nat"
+}
+
 # Write only the key with the pinned fingerprint from the downloaded file
 # $1 to the keyring $2; any other key in the download is left out.
 pinned_key() {
@@ -210,8 +239,11 @@ if (( fresh_vault )); then
     # Captured first: grep -q would stop the pipe early, and with pipefail a
     # large rule set (kube-proxy) would then hide the match.
     nat=$(iptables-save -t nat 2>/dev/null || true)
-    if grep -Eq -- "--dport $port( |$)" <<<"$nat"; then
-        die "port $port is published by a container or a pod (iptables); choose another --port"
+    if (( node )) && [[ -z $nat ]]; then
+        warn "iptables-save gave no NAT rules: a NodePort on port $port would not be seen (kube-proxy in IPVS or nftables mode, or an eBPF replacement, is not checked either)"
+    fi
+    if published "$port" "$(ip -o -4 addr show | awk '{ split($4, a, "/"); printf "%s ", a[1] }')"; then
+        die "port $port is published by a NodePort, a pod or a container (iptables); choose another --port"
     fi
     if [[ $compose == nerdctl* && ! -e /etc/cni/net.d/nerdctl-bridge.conflist ]]; then
         # nerdctl may write nerdctl-bridge.conflist into /etc/cni/net.d (the

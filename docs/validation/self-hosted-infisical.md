@@ -133,7 +133,7 @@ Date: 2026-11-23. `examples/infisical/install-single-machine.sh --host 10.0.2.15
 
 Run again: every step reported `SKIP` or `OK`, the plan said "nothing to change; only checks", and nothing was asked. With another `--host` it stopped before any change (`.env was written for another host or port`). The output never contained the password.
 
-After the review, the script was run again end to end in a new VM of the same kind, from a copy with the modes of a git checkout (664, group your own): same result, with the vault in containerd's `default` namespace and the plan listing every lasting change (PPA, apt source, broker account, SSH service). Each of these stopped before any change: a second vault (`--dir /opt/other --port 9443`) while the broker trusts the first; a copy of the script writable by others; a `--host` that is not this machine; a network file in `/etc/cni/net.d` that sorts after nerdctl's `nerdctl-bridge.conflist` (nerdctl 2.4.2 puts the compose network in `/etc/cni/net.d/default/`). Not tried here: a Kubernetes node (the script never touches its container runtime; it only reports that it is one), Docker Compose, and `--agent-user`.
+After the review, the script was run again end to end in a new VM of the same kind, from a copy with the modes of a git checkout (664, group your own): same result, with the vault in containerd's `default` namespace and the plan listing every lasting change (PPA, apt source, broker account, SSH service). Each of these stopped before any change: a second vault (`--dir /opt/other --port 9443`) while the broker trusts the first; a copy of the script writable by others; a `--host` that is not this machine; a network file in `/etc/cni/net.d` that sorts after nerdctl's `nerdctl-bridge.conflist` (nerdctl 2.4.2 puts the compose network in `/etc/cni/net.d/default/`). Not tried here: a Kubernetes node, Docker Compose, and `--agent-user` (see [Kubernetes node, Docker Compose, `--agent-user`](#kubernetes-node-docker-compose---agent-user)).
 
 ### Ubuntu 24.04 and Debian 12
 
@@ -148,3 +148,20 @@ Date: 2026-11-24. The same command in two fresh VMs (cloud images checked agains
 | Run again | every step `OK` or `SKIP`, nothing asked | same |
 | [First check: vault only](../INSTALL.md#first-check-vault-only) | `secretops add` saved a made-up value; the agent account's `secretops-local` plan and `execute-plan` gave `OK secret exists` | same |
 
+### Kubernetes node, Docker Compose, `--agent-user`
+
+Date: 2026-11-25. Two fresh Ubuntu 24.04.5 VMs (cloud image, sums checked); the script installed secretops 0.1.15; made-up values only; both VMs were deleted afterwards.
+
+- **A, Kubernetes node:** a one-node kubeadm cluster, Kubernetes v1.31.14, containerd 2.2.1 from Ubuntu with the systemd cgroup driver, flannel v0.26.7 (`10-flannel.conflist`), kube-proxy in iptables mode, two nginx pods behind a NodePort service on 30843; the standalone nerdctl 2.4.2 binary added, using the cluster's CNI plugins in `/opt/cni/bin`. `--create-agent-user agent`.
+- **B, Docker Compose:** `docker.io` 29.1.3 and `docker-compose-v2` 2.40.3 from Ubuntu, and an existing account `coder` for `--agent-user coder`.
+
+| Check | A: Kubernetes node | B: Docker Compose |
+| --- | --- | --- |
+| `--port 30843` (the NodePort) | stopped before any change: `port 30843 is published by a container or a pod (iptables)` (now worded `by a NodePort, a pod or a container`) | — |
+| Install | warned that this is a Kubernetes node; vault in containerd's `default` namespace; `OK vault connection works` | `OK vault connection works`; `PASS: coder reaches the broker` |
+| Cluster afterwards | node Ready; every pod Running without restarts; a new pod got a flannel address and reached a service by DNS; the NodePort answered; `nerdctl-bridge.conflist` came after `10-flannel.conflist` | — |
+| Run again | every step `OK` or `SKIP`, nothing asked | same |
+| [First check: vault only](../INSTALL.md#first-check-vault-only) | `OK secret exists` | `OK secret exists` |
+| After a reboot | vault answered; cluster as above; first check again `OK secret exists` | vault answered; first check again `OK secret exists` |
+
+Found: run with sudo on node A, `check-node.sh` reported the NodePort 30843 as free, because `ss` does not see it. It now also reads the NAT rules as root. The first version of that check, like the script's own port check, also counted a Kubernetes ClusterIP rule (`-d 10.96.0.1/32 ... --dport 443`) as a port on this host. Both scripts now count a rule only when it has no `-d` or its `-d` is an address of this machine; on node A, 8443 (the vault) and 30843 were reported and 80 and 443 (ClusterIPs) were not. After the review, a rule also counts when its `-d` is a wider range than one address, and `--dports` lists and port ranges are read; on a Kubernetes node where `iptables-save` gives no NAT rules, the script warns. Not checked: kube-proxy in IPVS or nftables mode and eBPF replacements (Cilium, Calico eBPF), whose NodePorts are not iptables NAT rules.

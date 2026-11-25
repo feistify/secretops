@@ -2,7 +2,7 @@
 
 How to run your own Infisical for secretops on one machine, a server or a NAS, with TLS and a tested backup. The files are in [`examples/infisical/`](../examples/infisical/). Afterwards continue with [PREPARE.md](PREPARE.md) and [INSTALL.md](INSTALL.md).
 
-Tested: Ubuntu 22.04 with containerd and nerdctl 2.4.2, without Docker Engine; Infisical v0.167.14, Infisical CLI 0.45.14, secretops 0.1.13; and a Synology NAS with DSM 7.3.2, Docker 24.0.2 and Compose v2.20.1, with secretops 0.1.14; `install-single-machine.sh` in Ubuntu 22.04, Ubuntu 24.04 and Debian 12 VMs with nerdctl 2.4.2 and secretops 0.1.15 ([record](validation/self-hosted-infisical.md)). On Kubernetes, see [VAULT_KUBERNETES.md](VAULT_KUBERNETES.md). Infisical's own guide: [Docker Compose](https://infisical.com/docs/self-hosting/deployment-options/docker-compose).
+Tested: Ubuntu 22.04 with containerd and nerdctl 2.4.2, without Docker Engine; Infisical v0.167.14, Infisical CLI 0.45.14, secretops 0.1.13; and a Synology NAS with DSM 7.3.2, Docker 24.0.2 and Compose v2.20.1, with secretops 0.1.14; `install-single-machine.sh` in Ubuntu 22.04, Ubuntu 24.04 and Debian 12 VMs with nerdctl 2.4.2, also on a one-node kubeadm cluster and with Docker Compose, each with secretops 0.1.15 ([record](validation/self-hosted-infisical.md)). On Kubernetes, see [VAULT_KUBERNETES.md](VAULT_KUBERNETES.md). Infisical's own guide: [Docker Compose](https://infisical.com/docs/self-hosting/deployment-options/docker-compose).
 
 ## One script for one machine
 
@@ -15,7 +15,7 @@ sudo bash install-single-machine.sh --host HOST --create-agent-user agent
 
 It shows what it will change and asks first (`--yes` skips the question), skips what is already done (so it can run again after a stop), and prints no key, password or token; it asks only for the first admin's email and password. `HOST` must be an address of this machine. Use `--agent-user USER` instead for an existing agent account; `--port` and `--dir` change the defaults; `--help` lists them. Copy the directory so that only you and root can change it: root runs its files.
 
-- **Kubernetes node.** It never installs or restarts a container runtime, runs the vault in containerd's `default` namespace, refuses a port that a pod or container already publishes, and stops if nerdctl's `nerdctl-bridge.conflist` would come before the cluster's network file in `/etc/cni/net.d`. The vault needs about 1 to 2 GB of memory outside the kubelet's accounting. Run `check-node.sh` with sudo first.
+- **Kubernetes node.** It never installs or restarts a container runtime, runs the vault in containerd's `default` namespace, refuses a port that a NodePort, a pod's host port or a container already publishes (seen in iptables; kube-proxy in IPVS or nftables mode, or an eBPF replacement such as Cilium's, is not checked), and stops if nerdctl's `nerdctl-bridge.conflist` would come before the cluster's network file in `/etc/cni/net.d`. The vault needs about 1 to 2 GB of memory outside the kubelet's accounting. Run `check-node.sh` with sudo first.
 - **Checks.** The Infisical CLI's apt source trusts only Infisical's signing key with the fingerprint pinned in the script. The release bundle is compared with the release's `SHA256SUMS`, which comes from the same place: that catches a broken download, not a forged release; the bundle pins the program's hash, which pip checks against PyPI.
 - **Proxy.** Downloads go direct; to use a proxy, pass it: `sudo https_proxy=http://PROXY:PORT bash install-single-machine.sh ...`. The vault is always reached directly.
 
@@ -32,7 +32,7 @@ Run the vault on a machine of its own or one you trust: root and anyone with con
 
 ## Choose the container tool
 
-Not sure what the host has? [`check-node.sh`](../examples/infisical/check-node.sh) is read-only: it reports the container tools, a Kubernetes cluster (node taints, storage and whether it is node-local, ingress, your rights), the ports, the uids the containers need, the proxy (host and port only, also the one containerd or k3s uses), which download sites answer directly or only through the proxy, and whether the proxy intercepts TLS. Run `sh check-node.sh`, and again with `sudo` for containerd's namespaces; once the vault runs, `sh check-node.sh https://VAULT:PORT` also shows whether the vault needs to be in `NO_PROXY`. Keep or share its output; it holds no secret.
+Not sure what the host has? [`check-node.sh`](../examples/infisical/check-node.sh) is read-only: it reports the container tools, a Kubernetes cluster (node taints, storage and whether it is node-local, ingress, your rights), the ports, the uids the containers need, the proxy (host and port only, also the one containerd or k3s uses), which download sites answer directly or only through the proxy, and whether the proxy intercepts TLS. Run `sh check-node.sh`, and again with `sudo` for containerd's namespaces and for ports published through iptables (a NodePort has no listener that `ss` sees); once the vault runs, `sh check-node.sh https://VAULT:PORT` also shows whether the vault needs to be in `NO_PROXY`. Keep or share its output; it holds no secret.
 
 Every command below uses `$COMPOSE`. Set it once in the shell you work in:
 
